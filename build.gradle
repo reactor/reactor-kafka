@@ -1,0 +1,89 @@
+description = 'Reactive interface for Apache Kafka'
+
+apply plugin: 'java'
+apply plugin: 'eclipse'
+apply plugin: 'idea'
+apply plugin: 'checkstyle'
+
+
+group = 'reactor.kafka'
+
+repositories {
+    maven { url 'http://repo.spring.io/libs-snapshot' }
+    maven { url 'https://repository.apache.org/content/groups/staging' }
+    mavenCentral()
+}
+
+sourceCompatibility = targetCompatibility = 1.8
+
+ext {
+    kafkaVersion = '0.10.0.0'
+    scalaVersion = '2.11'
+    junitVersion = '4.12'
+    log4jVersion = '1.2.17'
+    reactorVersion = '2.5.0.BUILD-SNAPSHOT'
+    argparseVersion = '0.5.0'
+
+    assertjVersion = '3.3.0'
+    gsCollectionsVersion = '5.0.0'
+    springRetryVersion = '1.1.2.RELEASE'
+    springVersion = '4.2.5.RELEASE'
+
+
+}
+
+eclipse.project.natures += 'org.springframework.ide.eclipse.core.springnature'
+
+
+sourceSets {
+    test {
+        resources {
+            srcDirs = ['src/test/resources', 'src/test/java']
+        }
+    }
+}
+
+dependencies {
+    compile "org.apache.kafka:kafka-clients:$kafkaVersion"
+    compile "io.projectreactor:reactor-core:$reactorVersion"
+
+    testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion"
+    testCompile "org.apache.kafka:kafka-clients:$kafkaVersion:test"
+    testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion:test"
+    testCompile "junit:junit:$junitVersion"
+    testCompile "net.sourceforge.argparse4j:argparse4j:$argparseVersion"
+
+    testCompile files("libs/spring-kafka-test-010.jar")
+    testCompile "com.goldmansachs:gs-collections:$gsCollectionsVersion"
+    testCompile "org.springframework:spring-test:$springVersion"
+    testCompile "org.springframework.retry:spring-retry:$springRetryVersion"
+    testCompile "org.assertj:assertj-core:$assertjVersion"
+
+}
+
+[compileJava, compileTestJava]*.options*.compilerArgs = ['-Xlint:all,-options']
+
+test {
+    maxHeapSize = "1024m"
+    testLogging {
+      events "passed", "skipped", "failed"
+      //showStandardStreams = true
+      exceptionFormat = 'full'
+    }
+
+}
+
+checkstyle {
+    configFile = new File(rootDir, "checkstyle/checkstyle.xml")
+}
+test.dependsOn('checkstyleMain', 'checkstyleTest')
+
+task sourcesJar(type: Jar) {
+    classifier = 'sources'
+    from sourceSets.main.allJava
+}
+
+artifacts {
+    archives sourcesJar
+}
+
