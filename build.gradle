@@ -3,13 +3,13 @@ description = 'Reactive interface for Apache Kafka'
 group = 'reactor.kafka'
 
 allprojects {
-
     repositories {
+        mavenLocal()
         maven { url 'http://repo.spring.io/libs-snapshot' }
         maven { url 'https://repository.apache.org/content/groups/staging' }
         mavenCentral()
     }
-
+    apply plugin: 'maven'
 }
 
 ext {
@@ -42,14 +42,6 @@ subprojects {
     eclipse.project.natures += 'org.springframework.ide.eclipse.core.springnature'
 
     [compileJava, compileTestJava]*.options*.compilerArgs = ['-Xlint:all,-options']
-
-    sourceSets {
-        test {
-            resources {
-                srcDirs = ['src/test/resources', 'src/test/java']
-            }
-        }
-    }
 
     test {
         maxHeapSize = "1024m"

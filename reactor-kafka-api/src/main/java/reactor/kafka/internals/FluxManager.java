@@ -1,6 +1,21 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ **/
 package reactor.kafka.internals;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -204,10 +219,20 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
                 consumer.wakeup();
                 CloseEvent closeEvent = new CloseEvent();
                 emit(closeEvent);
-                isConsumerClosed = closeEvent.await(config.closeTimeout());
+                long waitStartMs = System.currentTimeMillis();
+                long waitEndMs = waitStartMs + config.closeTimeout().toMillis();
+                long remainingTimeMs = waitEndMs - waitStartMs;
+                while (!isConsumerClosed && remainingTimeMs > 0) {
+                    try {
+                        isConsumerClosed = closeEvent.await(remainingTimeMs);
+                        remainingTimeMs = waitEndMs - System.currentTimeMillis();
+                    } catch (InterruptedException e) {
+                        // ignore
+                    }
+                }
                 eventScheduler.shutdown();
-            } catch (InterruptedException e) {
-                // ignore
+            } catch (Exception e) {
+                log.debug("Cancel exception " + e);
             } finally {
                 try {
                     for (Cancellation cancellation : cancellations)
@@ -283,10 +308,12 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
                 isActive.set(true);
                 consumer = ConsumerFactory.INSTANCE.createConsumer(config);
                 kafkaSubscribeOrAssign.accept(kafkaFlux);
-                consumer.poll(0);
+                consumer.poll(0); // wait for assignment
             } catch (Exception e) {
-                log.error("Unexpected exception", e);
-                onException(e);
+                if (isActive.get()) {
+                    log.error("Unexpected exception", e);
+                    onException(e);
+                }
             }
         }
     }
@@ -428,8 +455,8 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
                 onException(e);
             }
         }
-        boolean await(Duration timeout) throws InterruptedException {
-            return semaphore.tryAcquire(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        boolean await(long timeoutMs) throws InterruptedException {
+            return semaphore.tryAcquire(timeoutMs, TimeUnit.MILLISECONDS);
         }
     }
 
@@ -495,6 +522,11 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
                     commitEvent.commitBatch.addCallbackEmitter(emitter);
                     commitEvent.scheduleIfRequired();
                 });
+        }
+
+        @Override
+        public String toString() {
+            return topicPartition + ":" + commitOffset;
         }
     }
 }
