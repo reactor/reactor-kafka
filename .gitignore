@@ -5,3 +5,6 @@ build/
 .project
 .classpath
 bin/
+gradle/wrapper/*
+gradlew
+gradlew.bat
