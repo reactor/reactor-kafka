@@ -39,15 +39,15 @@ import org.reactivestreams.Subscriber;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import reactor.core.flow.Cancellation;
+import reactor.core.Cancellation;
+import reactor.core.publisher.BlockingSink;
+import reactor.core.publisher.BlockingSink.Emission;
 import reactor.core.publisher.EmitterProcessor;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.MonoEmitter;
+import reactor.core.publisher.MonoSink;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
-import reactor.core.subscriber.SubmissionEmitter;
-import reactor.core.subscriber.SubmissionEmitter.Emission;
 import reactor.kafka.ConsumerMessage;
 import reactor.kafka.ConsumerOffset;
 import reactor.kafka.KafkaFlux;
@@ -63,9 +63,9 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
     private final KafkaFlux<K, V> kafkaFlux;
     private final FluxConfig<K, V> config;
     private final EmitterProcessor<Event<?>> eventEmitter;
-    private final SubmissionEmitter<Event<?>> eventSubmission;
+    private final BlockingSink<Event<?>> eventSubmission;
     private final EmitterProcessor<ConsumerRecords<K, V>> recordEmitter;
-    private final SubmissionEmitter<ConsumerRecords<K, V>> recordSubmission;
+    private final BlockingSink<ConsumerRecords<K, V>> recordSubmission;
     private final Consumer<KafkaFlux<K, V>> kafkaSubscribeOrAssign;
     private final List<Flux<? extends Event<?>>> fluxList = new ArrayList<>();
     private final List<Cancellation> cancellations = new ArrayList<>();
@@ -95,9 +95,9 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
         this.kafkaSubscribeOrAssign = kafkaSubscribeOrAssign;
         this.eventScheduler = Schedulers.newSingle("reactive-kafka-" + config.groupId());
         eventEmitter = EmitterProcessor.create();
-        eventSubmission = eventEmitter.connectEmitter();
+        eventSubmission = eventEmitter.connectSink();
         recordEmitter = EmitterProcessor.create();
-        recordSubmission = recordEmitter.connectEmitter();
+        recordSubmission = recordEmitter.connectSink();
     }
 
     @Override
@@ -383,7 +383,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
         private void handleSuccess(CommitArgs commitArgs, Map<TopicPartition, OffsetAndMetadata> offsets) {
             consecutiveCommitFailures.set(0);
             if (commitArgs.callbackEmitters != null) {
-                for (MonoEmitter<Void> emitter : commitArgs.callbackEmitters) {
+                for (MonoSink<Void> emitter : commitArgs.callbackEmitters) {
                     emitter.complete();
                 }
             }
@@ -397,7 +397,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
                     ackMode != AckMode.MANUAL_COMMIT && ackMode != AckMode.ATMOST_ONCE;
             if (ackMode == AckMode.MANUAL_COMMIT) {
                 commitBatch.restoreOffsets(commitArgs);
-                for (MonoEmitter<Void> emitter : commitArgs.callbackEmitters()) {
+                for (MonoSink<Void> emitter : commitArgs.callbackEmitters()) {
                     emitter.fail(exception);
                 }
             } else if (!mayRetry) {
@@ -526,7 +526,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
 
         @Override
         public String toString() {
-            return topicPartition + ":" + commitOffset;
+            return topicPartition + "@" + commitOffset;
         }
     }
 }

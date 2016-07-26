@@ -27,7 +27,7 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import reactor.core.flow.Cancellation;
+import reactor.core.Cancellation;
 import reactor.kafka.ConsumerOffset;
 import reactor.kafka.FluxConfig;
 import reactor.kafka.KafkaFlux;

@@ -23,6 +23,7 @@ import java.util.concurrent.TimeUnit;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.slf4j.Logger;
@@ -68,17 +69,17 @@ public class SampleProducer {
     }
 
     public void sendMessages(String topic, int count, CountDownLatch latch) throws InterruptedException, ExecutionException {
-        Flux.range(1,  count)
+        Flux<RecordMetadata> sendFlux = Flux.range(1,  count)
             .flatMap(i -> sender.send(new ProducerRecord<>(topic, i, "Message_" + i)))
-            .doOnError(e-> log.error("Send failed", e))
-            .subscribe(metadata -> {
-                    System.out.printf("Message sent successfully, topic-partition=%s-%d offset=%d timestamp=%s\n",
-                            metadata.topic(),
-                            metadata.partition(),
-                            metadata.offset(),
-                            dateFormat.format(new Date(metadata.timestamp())));
-                    latch.countDown();
-                });
+            .doOnError(e-> log.error("Send failed", e));
+        sendFlux.subscribe(metadata -> {
+                System.out.printf("Message sent successfully, topic-partition=%s-%d offset=%d timestamp=%s\n",
+                        metadata.topic(),
+                        metadata.partition(),
+                        metadata.offset(),
+                        dateFormat.format(new Date(metadata.timestamp())));
+                latch.countDown();
+            });
     }
 
     public void close() {

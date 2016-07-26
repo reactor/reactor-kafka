@@ -42,7 +42,7 @@ import net.sourceforge.argparse4j.ArgumentParsers;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
-import reactor.core.flow.Cancellation;
+import reactor.core.Cancellation;
 import reactor.kafka.KafkaFlux;
 import reactor.kafka.KafkaSender;
 import reactor.kafka.FluxConfig;

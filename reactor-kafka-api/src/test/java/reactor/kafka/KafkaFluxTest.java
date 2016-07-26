@@ -44,7 +44,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import reactor.core.flow.Cancellation;
+import reactor.core.Cancellation;
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -536,7 +536,6 @@ public class KafkaFluxTest extends AbstractKafkaTest {
         Flux<ConsumerMessage<Integer, String>> kafkaFlux = KafkaFlux.listenOn(fluxConfig, Collections.singletonList(topic))
                          .doOnPartitionsRevoked(partitions -> revoked.addAndGet(partitions.size()))
                          .doOnPartitionsAssigned(this::onPartitionsAssigned)
-                         .useCapacity(2)
                          .doOnNext(record -> TestUtils.sleep(sessionTimeoutMillis + 1000));
 
         sendReceive(kafkaFlux, 0, count, 0, count);
@@ -656,7 +655,6 @@ public class KafkaFluxTest extends AbstractKafkaTest {
         Semaphore receiveSemaphore = new Semaphore(0);
         AtomicInteger receivedCount = new AtomicInteger();
         Flux<ConsumerMessage<Integer, String>> kafkaFlux = createTestFlux(AckMode.AUTO_ACK).kafkaFlux()
-                         .useCapacity(2)
                          .doOnNext(record -> {
                                  receivedCount.incrementAndGet();
                                  receiveSemaphore.release();

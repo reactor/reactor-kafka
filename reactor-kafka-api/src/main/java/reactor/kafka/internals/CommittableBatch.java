@@ -25,13 +25,13 @@ import java.util.Map;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 
-import reactor.core.publisher.MonoEmitter;
+import reactor.core.publisher.MonoSink;
 
 public class CommittableBatch {
 
     private final Map<TopicPartition, Long> commitOffsets = new HashMap<>();
     private int batchSize;
-    private List<MonoEmitter<Void>> callbackEmitters = new ArrayList<>();
+    private List<MonoSink<Void>> callbackEmitters = new ArrayList<>();
 
     public synchronized int updateOffset(TopicPartition topicPartition, long offset) {
         if (commitOffsets.put(topicPartition, offset) != (Long) offset)
@@ -39,7 +39,7 @@ public class CommittableBatch {
         return batchSize;
     }
 
-    public synchronized void addCallbackEmitter(MonoEmitter<Void> emitter) {
+    public synchronized void addCallbackEmitter(MonoSink<Void> emitter) {
         callbackEmitters.add(emitter);
     }
 
@@ -61,7 +61,7 @@ public class CommittableBatch {
         }
         batchSize = 0;
 
-        List<MonoEmitter<Void>> currentCallbackEmitters;
+        List<MonoSink<Void>> currentCallbackEmitters;
         if (!callbackEmitters.isEmpty()) {
             currentCallbackEmitters = callbackEmitters;
             callbackEmitters = new ArrayList<>();
@@ -85,8 +85,8 @@ public class CommittableBatch {
 
     static class CommitArgs {
         Map<TopicPartition, OffsetAndMetadata> offsets;
-        List<MonoEmitter<Void>> callbackEmitters;
-        CommitArgs(Map<TopicPartition, OffsetAndMetadata> offsets, List<MonoEmitter<Void>> callbackEmitters) {
+        List<MonoSink<Void>> callbackEmitters;
+        CommitArgs(Map<TopicPartition, OffsetAndMetadata> offsets, List<MonoSink<Void>> callbackEmitters) {
             this.offsets = offsets;
             this.callbackEmitters = callbackEmitters;
         }
@@ -94,7 +94,7 @@ public class CommittableBatch {
         Map<TopicPartition, OffsetAndMetadata> offsets() {
             return offsets;
         }
-        List<MonoEmitter<Void>> callbackEmitters() {
+        List<MonoSink<Void>> callbackEmitters() {
             return callbackEmitters;
         }
     }

@@ -29,7 +29,7 @@ import java.util.Properties;
 import java.util.concurrent.Semaphore;
 import java.util.regex.Pattern;
 
-import reactor.core.flow.Cancellation;
+import reactor.core.Cancellation;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -73,7 +73,7 @@ public class MirrorMakerReactive extends MirrorMaker {
         boolean sync = producerProps.getProperty("producer.type", "async").equals("sync");
         SenderConfig<byte[], byte[]> config = new SenderConfig<>(toConfig(producerProps));
         sender = new MirrorMakerProducer(config, sync);
-        mirrorMakerStreams = createConsumerStreams(numStreams, consumerProps, (ConsumerRebalanceListener) customRebalanceListener, whitelist);
+        mirrorMakerStreams = createConsumerStreams(numStreams, consumerProps, customRebalanceListener, whitelist);
         shutdownSemaphore = new Semaphore(0 - numStreams);
 
     }

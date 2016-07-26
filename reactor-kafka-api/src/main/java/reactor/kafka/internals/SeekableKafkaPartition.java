@@ -57,4 +57,9 @@ public class SeekableKafkaPartition implements SeekablePartition {
     public long position(TopicPartition partition) {
         return this.consumer.position(partition);
     }
+
+    @Override
+    public String toString() {
+        return String.valueOf(topicPartition);
+    }
 }

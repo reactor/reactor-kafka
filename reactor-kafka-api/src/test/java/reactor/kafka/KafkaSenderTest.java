@@ -46,7 +46,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
-import reactor.core.util.Exceptions.CancelException;
 import reactor.kafka.internals.ConsumerFactory;
 import reactor.kafka.util.TestUtils;
 
@@ -166,8 +165,9 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                 .flatMap(record -> kafkaSender.send(record)
                                               .doOnError(t -> errorSemaphore.release()))
                 .subscribe();
-        } catch (CancelException e) {
+        } catch (Exception e) {
             // ignore
+            assertTrue("Invalid exception " + e, e.getClass().getName().contains("CancelException"));
         }
         waitForMessages(consumer, 1, true);
     }

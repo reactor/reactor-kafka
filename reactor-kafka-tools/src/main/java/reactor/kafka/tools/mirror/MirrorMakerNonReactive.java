@@ -80,10 +80,7 @@ public class MirrorMakerNonReactive extends MirrorMaker {
         this.abortOnSendFailure = abortOnSendFailure;
         this.messageHandler = messageHandler;
 
-        mirrorMakerStreams = createConsumerStreams(numStreams, consumerProps,
-                    (ConsumerRebalanceListener) customRebalanceListener, whitelist);
-
-
+        mirrorMakerStreams = createConsumerStreams(numStreams, consumerProps, customRebalanceListener, whitelist);
     }
 
     public void start() {
