@@ -99,6 +99,8 @@ public class ProducerPerformance {
                 long sendBufSize = sendBufSizeOverride != null ? Long.parseLong(sendBufSizeOverride) : DEFAULT_PRODUCER_BUFFER_SIZE;
                 int payloadSizeLowerPowerOf2 = 1 << (payload.length < 2 ? 0 : 31 - Integer.numberOfLeadingZeros(payload.length - 1));
                 int callbackBufferSize = (int) (sendBufSize / payloadSizeLowerPowerOf2);
+                //  Large buffers impact performance with small messages, need to figure out best way to set callback buffer size
+                if (callbackBufferSize > 64 * 1024) callbackBufferSize = 64 * 1024;
                 System.out.println("Running in reactor mode " + reactiveMode + " with callback buffer size " + callbackBufferSize);
 
                 CountDownLatch latch = new CountDownLatch((int) numRecords);

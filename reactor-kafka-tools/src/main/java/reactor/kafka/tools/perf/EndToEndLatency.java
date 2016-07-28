@@ -140,9 +140,11 @@ public class EndToEndLatency {
             System.out.printf("Avg latency: %.4f ms\n\n", totalTime / numMessages / 1000.0 / 1000.0);
             Arrays.sort(latencies);
             double p50 = latencies[(int) (latencies.length * 0.5)];
+            double p75 = latencies[(int) (latencies.length * 0.75)];
+            double p90 = latencies[(int) (latencies.length * 0.90)];
             double p99 = latencies[(int) (latencies.length * 0.99)];
             double p999 = latencies[(int) (latencies.length * 0.999)];
-            System.out.printf("Percentiles: 50th = %.4f, 99th = %.4f, 99.9th = %.4f\n", p50, p99, p999);
+            System.out.printf("Percentiles: 50th = %.4f, 75th = %.4f, 90th = %.4f, 99th = %.4f, 99.9th = %.4f\n", p50, p75, p90, p99, p999);
 
             client.finalize();
 
@@ -288,6 +290,7 @@ public class EndToEndLatency {
         final KafkaSender<byte[], byte[]> sender;
         final KafkaFlux<byte[], byte[]> flux;
         final LinkedBlockingQueue<ConsumerRecord<byte[], byte[]>> receiveQueue;
+        final Semaphore sendSemaphore = new Semaphore(0);
         Cancellation consumerCancel;
 
         ReactiveClient(Map<String, Object> consumerProps, Map<String, Object> producerProps, String topic) {
@@ -314,7 +317,9 @@ public class EndToEndLatency {
             }
         }
         public Iterator<ConsumerRecord<byte[], byte[]>> sendAndReceive(String topic, byte[] message, long timeout) throws Exception {
-            sender.send(new ProducerRecord<byte[], byte[]>(topic, message)).block();
+            sender.send(new ProducerRecord<byte[], byte[]>(topic, message))
+                  .subscribe(r -> sendSemaphore.release());
+            sendSemaphore.acquire();
             ConsumerRecord<byte[], byte[]> record = receiveQueue.poll(timeout, TimeUnit.MILLISECONDS);
             ArrayList<ConsumerRecord<byte[], byte[]>> recordList = new ArrayList<>();
             if (record != null) recordList.add(record);
