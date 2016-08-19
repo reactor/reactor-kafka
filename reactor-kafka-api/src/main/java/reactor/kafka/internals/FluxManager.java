@@ -207,7 +207,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
 
     private void onException(Throwable e) {
         log.error("Consumer flux exception", e);
-        recordSubmission.fail(e);
+        recordSubmission.error(e);
         cancel();
     }
 
@@ -384,7 +384,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
             consecutiveCommitFailures.set(0);
             if (commitArgs.callbackEmitters != null) {
                 for (MonoSink<Void> emitter : commitArgs.callbackEmitters) {
-                    emitter.complete();
+                    emitter.success();
                 }
             }
         }
@@ -398,7 +398,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
             if (ackMode == AckMode.MANUAL_COMMIT) {
                 commitBatch.restoreOffsets(commitArgs);
                 for (MonoSink<Void> emitter : commitArgs.callbackEmitters()) {
-                    emitter.fail(exception);
+                    emitter.error(exception);
                 }
             } else if (!mayRetry) {
                 onException(exception);

@@ -119,9 +119,9 @@ public class KafkaSender<K, V> {
     private Mono<RecordMetadata> doSend(KafkaProducer<K, V> producer, ProducerRecord<K, V> record) {
         Mono<RecordMetadata> sendMono = Mono.create(emitter -> producer.send(record, (metadata, exception) -> {
                 if (exception == null)
-                    emitter.complete(metadata);
+                    emitter.success(metadata);
                 else
-                    emitter.fail(exception);
+                    emitter.error(exception);
             }));
         if (callbackScheduler != null)
             sendMono = sendMono.publishOn(callbackScheduler);
