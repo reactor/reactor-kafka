@@ -624,7 +624,8 @@ public class KafkaFluxTest extends AbstractKafkaTest {
             executionSemaphores[i] = new Semaphore(1);
 
         Random random = new Random();
-        Hooks.onOperator(p -> p.log("", Level.INFO));
+
+        Hooks.onOperator(p -> p.log("", Level.INFO).operatorStacktrace());
 
         kafkaFlux.groupBy(m -> m.consumerOffset().topicPartition())
                  .flatMap(partitionFlux -> partitionFlux)
@@ -647,6 +648,8 @@ public class KafkaFluxTest extends AbstractKafkaTest {
         waitForMessages(latch);
         checkConsumedMessages(0, count);
         assertNotEquals("No concurrent executions across partitions", 0, concurrentExecutions.get());
+
+        Hooks.resetOnOperator();
         scheduler.shutdown();
     }
 
