@@ -280,7 +280,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
     private void emit(Event<?> event) {
         Emission emission = eventSubmission.emit(event);
         if (emission != Emission.OK)
-            log.error("Event emission failed: "+ emission);
+            log.error("Event emission failed: {} {}", event.eventType, emission);
     }
 
     public abstract class Event<R> implements Runnable {

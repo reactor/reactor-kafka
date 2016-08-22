@@ -23,6 +23,10 @@
 
   <module name="FileTabCharacter"/>
 
+  <module name="SuppressionFilter">
+    <property name="file" value="${suppressionsXml}"/>
+  </module>
+
 
   <module name="TreeWalker">
 

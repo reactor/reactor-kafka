@@ -106,7 +106,7 @@ public class ProducerPerformance {
                 CountDownLatch latch = new CountDownLatch((int) numRecords);
                 Flux<?> flux;
                 if (reactiveMode == ReactiveMode.FLAT_MAP)
-                    flux = createReactiveFlatMapFlux(numRecords, payload, record, sender, stats, throttler, latch, callbackBufferSize);
+                    flux = createReactiveFlatMapFlux(numRecords, payload, record, sender, stats, throttler, latch);
                 else
                     flux = createReactiveFlux(numRecords, payload, record, sender, stats, throttler, latch, callbackBufferSize);
                 System.out.println("Running test using reactive API");
@@ -131,9 +131,9 @@ public class ProducerPerformance {
 
     private static Flux<RecordMetadata> createReactiveFlatMapFlux(long numRecords, byte[] payload, ProducerRecord<byte[], byte[]> record,
             KafkaSender<byte[], byte[]> sender, Stats stats,
-            ThroughputThrottler throttler, CountDownLatch latch, int callbackBufferSize) {
+            ThroughputThrottler throttler, CountDownLatch latch) {
 
-        sender.callbackScheduler(Schedulers.newComputation("send-callback", 2, callbackBufferSize));
+        sender.callbackScheduler(Schedulers.newParallel("send-callback", 2));
         Flux<RecordMetadata> flux = Flux.range(1, (int) numRecords)
                            .flatMap(i -> {
                                    long sendStartMs = System.currentTimeMillis();
