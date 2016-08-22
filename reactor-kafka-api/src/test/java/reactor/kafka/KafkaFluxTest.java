@@ -29,6 +29,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Level;
 import java.util.regex.Pattern;
 
 import static org.junit.Assert.assertEquals;
@@ -46,6 +47,7 @@ import org.junit.Test;
 
 import reactor.core.Cancellation;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Hooks;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.kafka.KafkaFlux.AckMode;
@@ -615,17 +617,17 @@ public class KafkaFluxTest extends AbstractKafkaTest {
         int count = 10000;
         Flux<ConsumerMessage<Integer, String>> kafkaFlux = createTestFlux(AckMode.MANUAL_ACK).kafkaFlux();
         CountDownLatch latch = new CountDownLatch(count);
-        ExecutorService executor = Executors.newFixedThreadPool(partitions);
-        Scheduler scheduler = Schedulers.fromExecutor(executor);
+        Scheduler scheduler = Schedulers.newParallel("test-groupBy", partitions);
         AtomicInteger concurrentExecutions = new AtomicInteger();
         Semaphore[] executionSemaphores = new Semaphore[partitions];
         for (int i = 0; i < executionSemaphores.length; i++)
             executionSemaphores[i] = new Semaphore(1);
 
         Random random = new Random();
+        Hooks.onOperator(p -> p.log("", Level.INFO));
 
         kafkaFlux.groupBy(m -> m.consumerOffset().topicPartition())
-                 .flatMap(partitionFlux -> partitionFlux.publishOn(scheduler))
+                 .flatMap(partitionFlux -> partitionFlux)
                  .parallel(partitions)
                  .runOn(scheduler)
                  .subscribe(record -> {
@@ -645,7 +647,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
         waitForMessages(latch);
         checkConsumedMessages(0, count);
         assertNotEquals("No concurrent executions across partitions", 0, concurrentExecutions.get());
-        executor.shutdownNow();
+        scheduler.shutdown();
     }
 
     @Test
