@@ -47,6 +47,7 @@ import org.junit.Test;
 import reactor.core.Cancellation;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Hooks;
+import reactor.core.publisher.SignalType;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.kafka.KafkaFlux.AckMode;
@@ -633,7 +634,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
         checkConsumedMessages(0, count);
     }
 
-    @Ignore // RS: FIXME This test fails intermittently
+    //@Ignore // RS: FIXME This test fails intermittently
     @Test
     public final void groupByPartitionTest() throws Exception {
         int count = 10000;
@@ -647,7 +648,8 @@ public class KafkaFluxTest extends AbstractKafkaTest {
 
         Random random = new Random();
 
-        Hooks.onOperator(p -> p.log("reactor.", Level.INFO, true));
+//        Hooks.onOperator(p -> p.ifParallelFlux().log("reactor.", Level.INFO, true,
+//                SignalType.ON_NEXT));
 
         kafkaFlux.groupBy(m -> m.consumerOffset().topicPartition())
                  .flatMap(partitionFlux -> partitionFlux)
@@ -655,7 +657,8 @@ public class KafkaFluxTest extends AbstractKafkaTest {
                  .runOn(scheduler)
                  .subscribe(record -> {
                          int partition = record.consumerRecord().partition();
-                         assertTrue("Concurrent executions for partition", executionSemaphores[partition].tryAcquire());
+                         assertTrue("Concurrent executions for partition",
+                             executionSemaphores[partition].tryAcquire());
                          if (executionSemaphores[(partition + 1) % partitions].availablePermits() == 0)
                               concurrentExecutions.incrementAndGet();
                          TestUtils.sleep(random.nextInt(5));
