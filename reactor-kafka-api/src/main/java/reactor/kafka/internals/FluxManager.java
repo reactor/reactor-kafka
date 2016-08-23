@@ -169,7 +169,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
         consumerFlux
                 .doOnRequest(r -> {
                         if (requestsPending.addAndGet(r) > 0)
-                             emit(pollEvent);
+                             pollEvent.scheduleIfRequired();
                     })
                 .subscribe(subscriber);
     }
@@ -213,7 +213,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
 
     private void cancel() {
         log.debug("cancel {}", isActive);
-        if (isActive.getAndSet(false)) {
+        if (isActive.compareAndSet(true, false)) {
             boolean isConsumerClosed = false;
             try {
                 consumer.wakeup();
@@ -320,6 +320,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
 
     private class PollEvent extends Event<ConsumerRecords<K, V>> {
 
+        private final AtomicBoolean isPending = new AtomicBoolean();
         private final long pollTimeoutMs;
         PollEvent() {
             super(EventType.POLL);
@@ -336,8 +337,9 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
                     ConsumerRecords<K, V> records = consumer.poll(pollTimeoutMs);
                     if (records.count() > 0)
                         recordSubmission.emit(records);
+                    isPending.compareAndSet(true, false);
                     if (requestsPending.addAndGet(0 - records.count()) > 0 && isActive.get())
-                        emit(this);
+                        scheduleIfRequired();
                 }
             } catch (Exception e) {
                 if (isActive.get()) {
@@ -345,6 +347,11 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
                     onException(e);
                 }
             }
+        }
+
+        void scheduleIfRequired() {
+            if (isPending.compareAndSet(false, true))
+                emit(this);
         }
     }
 
@@ -361,12 +368,16 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
             final CommitArgs commitArgs = commitBatch.getAndClearOffsets();
             try {
                 if (commitArgs != null) {
-                    consumer.commitAsync(commitArgs.offsets(), (offsets, exception) -> {
-                            if (exception == null)
-                                handleSuccess(commitArgs, offsets);
-                            else
-                                handleFailure(commitArgs, exception);
-                        });
+                    if (!commitArgs.offsets.isEmpty()) {
+                        consumer.commitAsync(commitArgs.offsets(), (offsets, exception) -> {
+                                if (exception == null)
+                                    handleSuccess(commitArgs, offsets);
+                                else
+                                    handleFailure(commitArgs, exception);
+                            });
+                    } else {
+                        handleSuccess(commitArgs, commitArgs.offsets);
+                    }
                 }
             } catch (Exception e) {
                 log.error("Unexpected exception", e);
@@ -375,13 +386,14 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
         }
 
         void runIfRequired(boolean force) {
-            if (isPending.getAndSet(false) || force) {
+            if (isPending.compareAndSet(true, false) || force) {
                 run();
             }
         }
 
         private void handleSuccess(CommitArgs commitArgs, Map<TopicPartition, OffsetAndMetadata> offsets) {
-            consecutiveCommitFailures.set(0);
+            if (!offsets.isEmpty())
+                consecutiveCommitFailures.set(0);
             if (commitArgs.callbackEmitters != null) {
                 for (MonoSink<Void> emitter : commitArgs.callbackEmitters) {
                     emitter.success();
@@ -409,7 +421,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
         }
 
         private void scheduleIfRequired() {
-            if (!isPending.getAndSet(true))
+            if (isPending.compareAndSet(false, true))
                 emit(this);
         }
 
