@@ -45,7 +45,10 @@ import reactor.kafka.internals.TestableKafkaFlux;
 import reactor.kafka.util.TestSubscriber;
 import reactor.kafka.util.TestUtils;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+import static org.junit.Assert.assertNotEquals;
 
 // AutoAck commit interval, count, interval+count tests
 public class KafkaFluxTest extends AbstractKafkaTest {
