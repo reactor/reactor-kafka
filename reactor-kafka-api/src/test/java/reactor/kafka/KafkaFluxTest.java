@@ -817,10 +817,11 @@ public class KafkaFluxTest extends AbstractKafkaTest {
     }
 
     private void sendMessages(int startIndex, int count) throws Exception {
-        Flux.range(startIndex, count)
+        Cancellation cancellation = Flux.range(startIndex, count)
             .map(i -> createProducerRecord(i, true))
             .concatMap(record -> kafkaSender.send(record))
             .subscribe();
+        subscribeCancellations.add(cancellation);
     }
 
     private void sendMessagesSync(int startIndex, int count) throws Exception {

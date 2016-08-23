@@ -42,10 +42,10 @@ public class AbstractKafkaTest {
 
     protected final String topic = "testtopic";
     protected final int partitions = 4;
-    protected long receiveTimeoutMillis = 20000;
-    protected final long requestTimeoutMillis = 1000;
-    protected final long sessionTimeoutMillis = 6000;
-    protected final long heartbeatIntervalMillis = 2000;
+    protected long receiveTimeoutMillis = 30000;
+    protected final long requestTimeoutMillis = 2000;
+    protected final long sessionTimeoutMillis = 10000;
+    protected final long heartbeatIntervalMillis = 2500;
 
     @Rule
     public KafkaEmbedded embeddedKafka = new KafkaEmbedded(1, true, partitions, topic);
