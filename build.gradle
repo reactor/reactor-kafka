@@ -18,7 +18,7 @@ ext {
     scalaVersion = '2.11'
     junitVersion = '4.12'
     log4jVersion = '1.2.17'
-    reactorVersion = '3.0.0.RELEASE'
+    reactorVersion = '3.0.1.BUILD-SNAPSHOT'
     argparseVersion = '0.5.0'
     metricsVersion = '2.2.0'
     joptVersion = '4.9'

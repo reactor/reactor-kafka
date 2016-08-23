@@ -647,7 +647,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
 
         Random random = new Random();
 
-        Hooks.onOperator(p -> p.log("", Level.INFO).operatorStacktrace());
+        Hooks.onOperator(p -> p.log("reactor.", Level.INFO, true));
 
         kafkaFlux.groupBy(m -> m.consumerOffset().topicPartition())
                  .flatMap(partitionFlux -> partitionFlux)
