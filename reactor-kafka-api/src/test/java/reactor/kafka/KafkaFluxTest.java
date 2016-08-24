@@ -649,8 +649,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
         //        SignalType.ON_NEXT));
 
         kafkaFlux.groupBy(m -> m.consumerOffset().topicPartition())
-                 .subscribe(partitionFlux -> partitionFlux.publishOn(scheduler)
-                                                          .subscribe(record -> {
+                 .subscribe(partitionFlux -> partitionFlux.publishOn(scheduler).subscribe(record -> {
                          int partition = record.consumerRecord().partition();
                          String current = Thread.currentThread().getName() + ":" + record.consumerOffset();
                          String inProgress = inProgressMap.putIfAbsent(partition, current);
@@ -666,7 +665,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
                          latch.countDown();
                          record.consumerOffset().acknowledge();
                          inProgressMap.remove(partition);
-                                                          }));
+                 }));
 
         try {
             assertTrue("Partitions not assigned", assignSemaphore.tryAcquire(sessionTimeoutMillis + 1000, TimeUnit.MILLISECONDS));
