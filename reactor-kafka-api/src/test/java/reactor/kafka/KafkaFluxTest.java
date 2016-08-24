@@ -21,7 +21,9 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -35,6 +37,7 @@ import org.apache.kafka.common.TopicPartition;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+
 import reactor.core.Cancellation;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Hooks;
@@ -51,7 +54,6 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.fail;
 import static org.junit.Assert.assertNotEquals;
 
-// AutoAck commit interval, count, interval+count tests
 public class KafkaFluxTest extends AbstractKafkaTest {
 
     private KafkaSender<Integer, String> kafkaSender;
@@ -140,7 +142,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
                 KafkaFlux.assign(fluxConfig, getTopicPartitions())
                          .autoAck()
                          .doOnSubscribe(s -> assignSemaphore.release());
-        sendReceiveWithSendDelay(kafkaFlux, Duration.ofMillis(500), 0, 10);
+        sendReceiveWithSendDelay(kafkaFlux, Duration.ofMillis(1000), 0, 10);
     }
 
     @Test
@@ -158,7 +160,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
 
     @Test
     public final void atmostOnceTest() throws Exception {
-        fluxConfig.closeTimeout(Duration.ofMillis(500));
+        fluxConfig.closeTimeout(Duration.ofMillis(1000));
         TestableKafkaFlux testFlux = createTestFlux(AckMode.ATMOST_ONCE);
         sendReceive(testFlux.kafkaFlux(), 0, 100, 0, 100);
 
@@ -168,7 +170,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
 
     @Test
     public final void atleastOnceCommitRecord() throws Exception {
-        fluxConfig.closeTimeout(Duration.ofMillis(500));
+        fluxConfig.closeTimeout(Duration.ofMillis(1000));
         fluxConfig.commitBatchSize(1);
         fluxConfig.commitInterval(Duration.ofMillis(60000));
         TestableKafkaFlux testFlux = createTestFlux(AckMode.MANUAL_ACK);
@@ -181,7 +183,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
 
     @Test
     public final void atleastOnceCommitBatchSize() throws Exception {
-        fluxConfig.closeTimeout(Duration.ofMillis(500));
+        fluxConfig.closeTimeout(Duration.ofMillis(1000));
         fluxConfig.commitBatchSize(10);
         fluxConfig.commitInterval(Duration.ofMillis(60000));
         TestableKafkaFlux testFlux = createTestFlux(AckMode.MANUAL_ACK);
@@ -194,7 +196,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
 
     @Test
     public final void atleastOnceCommitInterval() throws Exception {
-        fluxConfig.closeTimeout(Duration.ofMillis(500));
+        fluxConfig.closeTimeout(Duration.ofMillis(1000));
         fluxConfig.commitBatchSize(Integer.MAX_VALUE);
         fluxConfig.commitInterval(Duration.ofMillis(1000));
         TestableKafkaFlux testFlux = createTestFlux(AckMode.MANUAL_ACK);
@@ -230,7 +232,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
 
     @Test
     public final void atleastOnceCloseTest() throws Exception {
-        fluxConfig.closeTimeout(Duration.ofMillis(500));
+        fluxConfig.closeTimeout(Duration.ofMillis(1000));
         fluxConfig.commitBatchSize(10);
         fluxConfig.commitInterval(Duration.ofMillis(60000));
         TestableKafkaFlux testFlux = createTestFlux(AckMode.MANUAL_ACK);
@@ -369,7 +371,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
         cancelSubscriptions(true);
         clearReceivedMessages();
         Flux<ConsumerMessage<Integer, String>> kafkaFlux2 = createTestFlux(AckMode.AUTO_ACK).kafkaFlux();
-        sendReceive(kafkaFlux2, 100, 100, 75, 125);
+        sendReceive(kafkaFlux2, 100, 100, 50, 150);
     }
 
     @Test
@@ -583,8 +585,8 @@ public class KafkaFluxTest extends AbstractKafkaTest {
     @Test
     public final void closeTest() throws Exception {
         int count = 10;
-        Collection<SeekablePartition> seekablePartitions = new ArrayList<>();
         for (int i = 0; i < 2; i++) {
+            Collection<SeekablePartition> seekablePartitions = new ArrayList<>();
             Flux<ConsumerMessage<Integer, String>> kafkaFlux = KafkaFlux.listenOn(fluxConfig, Collections.singletonList(topic))
                              .doOnPartitionsAssigned(partitions -> {
                                      seekablePartitions.addAll(partitions);
@@ -630,7 +632,6 @@ public class KafkaFluxTest extends AbstractKafkaTest {
         checkConsumedMessages(0, count);
     }
 
-    //@Ignore // RS: FIXME This test fails intermittently
     @Test
     public final void groupByPartitionTest() throws Exception {
         int count = 10000;
@@ -638,14 +639,15 @@ public class KafkaFluxTest extends AbstractKafkaTest {
         CountDownLatch latch = new CountDownLatch(count);
         Scheduler scheduler = Schedulers.newParallel("test-groupBy", partitions);
         AtomicInteger concurrentExecutions = new AtomicInteger();
-        Semaphore[] executionSemaphores = new Semaphore[partitions];
-        for (int i = 0; i < executionSemaphores.length; i++)
-            executionSemaphores[i] = new Semaphore(1);
+        AtomicInteger concurrentPartitionExecutions = new AtomicInteger();
+        Map<Integer, String> inProgressMap = new ConcurrentHashMap<>();
 
         Random random = new Random();
+        int maxProcessingMs = 5;
+        this.receiveTimeoutMillis = maxProcessingMs * count + 5000;
 
-//        Hooks.onOperator(p -> p.ifParallelFlux().log("reactor.", Level.INFO, true,
-//                SignalType.ON_NEXT));
+        //Hooks.onOperator(p -> p.ifParallelFlux().log("reactor.", Level.INFO, true,
+        //        SignalType.ON_NEXT));
 
         kafkaFlux.groupBy(m -> m.consumerOffset().topicPartition())
                  .flatMap(partitionFlux -> partitionFlux)
@@ -653,25 +655,35 @@ public class KafkaFluxTest extends AbstractKafkaTest {
                  .runOn(scheduler)
                  .subscribe(record -> {
                          int partition = record.consumerRecord().partition();
-                         assertTrue("Concurrent executions for partition",
-                             executionSemaphores[partition].tryAcquire());
-                         if (executionSemaphores[(partition + 1) % partitions].availablePermits() == 0)
-                              concurrentExecutions.incrementAndGet();
-                         TestUtils.sleep(random.nextInt(5));
+                         String current = Thread.currentThread().getName() + ":" + record.consumerOffset();
+                         String inProgress = inProgressMap.putIfAbsent(partition, current);
+                         if (inProgress != null) {
+                             System.err.println("ERROR: Concurrent execution on partition " + partition +
+                                     " current=" + current + ", inProgress=" + inProgress);
+                             concurrentPartitionExecutions.incrementAndGet();
+                         }
+                         if (inProgressMap.size() > 1)
+                             concurrentExecutions.incrementAndGet();
+                         TestUtils.sleep(random.nextInt(maxProcessingMs));
                          onReceive(record.consumerRecord());
                          latch.countDown();
                          record.consumerOffset().acknowledge();
-                         executionSemaphores[partition].release();
+                         inProgressMap.remove(partition);
                      });
-        assertTrue("Partitions not assigned", assignSemaphore.tryAcquire(sessionTimeoutMillis + 1000, TimeUnit.MILLISECONDS));
 
-        sendMessages(0, count);
-        waitForMessages(latch);
-        checkConsumedMessages(0, count);
-        assertNotEquals("No concurrent executions across partitions", 0, concurrentExecutions.get());
+        try {
+            assertTrue("Partitions not assigned", assignSemaphore.tryAcquire(sessionTimeoutMillis + 1000, TimeUnit.MILLISECONDS));
 
-        Hooks.resetOnOperator();
-        scheduler.shutdown();
+            sendMessages(0, count);
+            waitForMessages(latch);
+            assertEquals("Concurrent executions on partition", 0, concurrentPartitionExecutions.get());
+            checkConsumedMessages(0, count);
+            assertNotEquals("No concurrent executions across partitions", 0, concurrentExecutions.get());
+
+            Hooks.resetOnOperator();
+        } finally {
+            scheduler.shutdown();
+        }
     }
 
     @Test

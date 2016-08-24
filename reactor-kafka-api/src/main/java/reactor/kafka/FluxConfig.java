@@ -31,7 +31,7 @@ public class FluxConfig<K, V> {
     private final Map<String, Object> properties = new HashMap<>();
 
     private Duration pollTimeout = Duration.ofMillis(100);
-    private Duration closeTimeout = Duration.ofMillis(Long.MAX_VALUE);
+    private Duration closeTimeout = Duration.ofNanos(Long.MAX_VALUE);
     private Duration commitInterval = ConsumerFactory.INSTANCE.defaultAutoCommitInterval();
     private int commitBatchSize = Integer.MAX_VALUE;
     private int maxAutoCommitAttempts = Integer.MAX_VALUE;

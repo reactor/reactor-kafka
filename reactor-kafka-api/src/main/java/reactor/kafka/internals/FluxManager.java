@@ -217,29 +217,32 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
             boolean isConsumerClosed = false;
             try {
                 consumer.wakeup();
-                CloseEvent closeEvent = new CloseEvent();
+                long closeStartNanos = System.nanoTime();
+                long closeEndNanos = closeStartNanos + config.closeTimeout().toNanos();
+                CloseEvent closeEvent = new CloseEvent(closeEndNanos);
                 emit(closeEvent);
-                long waitStartMs = System.currentTimeMillis();
-                long waitEndMs = waitStartMs + config.closeTimeout().toMillis();
-                long remainingTimeMs = waitEndMs - waitStartMs;
-                while (!isConsumerClosed && remainingTimeMs > 0) {
-                    try {
-                        isConsumerClosed = closeEvent.await(remainingTimeMs);
-                        remainingTimeMs = waitEndMs - System.currentTimeMillis();
-                    } catch (InterruptedException e) {
-                        // ignore
-                    }
-                }
-                eventScheduler.shutdown();
+                isConsumerClosed = closeEvent.await();
             } catch (Exception e) {
-                log.debug("Cancel exception " + e);
+                log.warn("Cancel exception: " + e);
             } finally {
+                eventScheduler.shutdown();
                 try {
                     for (Cancellation cancellation : cancellations)
                         cancellation.dispose();
                 } finally {
-                    if (!isConsumerClosed)
-                        consumer.close();
+                    // If the consumer was not closed within the specified timeout
+                    // try to close again. This is not safe, so ignore exceptions and
+                    // retry.
+                    int maxRetries = 10;
+                    for (int i = 0; i < maxRetries && !isConsumerClosed; i++) {
+                        try {
+                            consumer.close();
+                            isConsumerClosed = true;
+                        } catch (Exception e) {
+                            if (i == maxRetries - 1)
+                                log.warn("Consumer could not be closed", e);
+                        }
+                    }
                     isClosed.set(true);
                 }
             }
@@ -279,8 +282,8 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
 
     private void emit(Event<?> event) {
         Emission emission = eventSubmission.emit(event);
-        if (emission != Emission.OK && log.isDebugEnabled())
-            log.debug("Event emission failed: {} {}", event.eventType, emission);
+        if (emission != Emission.OK)
+            log.error("Event emission failed: {} {}", event.eventType, emission);
     }
 
     public abstract class Event<R> implements Runnable {
@@ -386,7 +389,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
         }
 
         void runIfRequired(boolean force) {
-            if (isPending.compareAndSet(true, false) || force) {
+            if (isPending.compareAndSet(true, false) || (force && ackMode != AckMode.MANUAL_COMMIT)) {
                 run();
             }
         }
@@ -445,9 +448,11 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
     }
 
     private class CloseEvent extends Event<ConsumerRecords<K, V>> {
+        private final long closeEndTimeNanos;
         private Semaphore semaphore = new Semaphore(0);
-        CloseEvent() {
+        CloseEvent(long closeEndTimeNanos) {
             super(EventType.CLOSE);
+            this.closeEndTimeNanos = closeEndTimeNanos;
         }
         @Override
         public void run() {
@@ -459,6 +464,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
                         // ignore
                     }
                     commitEvent.runIfRequired(true);
+                    consumer.poll(0);
                     consumer.close();
                 }
                 semaphore.release();
@@ -467,8 +473,20 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
                 onException(e);
             }
         }
-        boolean await(long timeoutMs) throws InterruptedException {
-            return semaphore.tryAcquire(timeoutMs, TimeUnit.MILLISECONDS);
+        boolean await(long timeoutNanos) throws InterruptedException {
+            return semaphore.tryAcquire(timeoutNanos, TimeUnit.NANOSECONDS);
+        }
+        boolean await() {
+            boolean closed = false;
+            long remainingNanos;
+            while (!closed && (remainingNanos = closeEndTimeNanos - System.nanoTime()) > 0) {
+                try {
+                    closed = await(remainingNanos);
+                } catch (InterruptedException e) {
+                    // ignore
+                }
+            }
+            return closed;
         }
     }
 
