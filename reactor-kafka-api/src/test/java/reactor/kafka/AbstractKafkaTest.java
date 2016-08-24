@@ -113,7 +113,7 @@ public class AbstractKafkaTest {
     }
     public void checkConsumedMessages(int receiveStartIndex, int receiveCount) {
         for (int i = 0; i < partitions; i++)
-            checkConsumedMessages(i, receiveStartIndex, receiveStartIndex + receiveCount);
+            checkConsumedMessages(i, receiveStartIndex, receiveStartIndex + receiveCount - 1);
     }
 
     public void checkConsumedMessages(int partition, int receiveStartIndex, int receiveEndIndex) {

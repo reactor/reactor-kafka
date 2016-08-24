@@ -665,7 +665,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
                          latch.countDown();
                          record.consumerOffset().acknowledge();
                          inProgressMap.remove(partition);
-                 }));
+                     }));
 
         try {
             assertTrue("Partitions not assigned", assignSemaphore.tryAcquire(sessionTimeoutMillis + 1000, TimeUnit.MILLISECONDS));
@@ -713,6 +713,51 @@ public class KafkaFluxTest extends AbstractKafkaTest {
             assertTrue("Message not received " + receivedCount, receiveSemaphore.tryAcquire(requestTimeoutMillis, TimeUnit.MILLISECONDS));
             Thread.sleep(10);
         }
+    }
+
+    @Test
+    public final void messageProcessingFailureTest() throws Exception {
+        int count = 200;
+        int successfulReceives = 100;
+        CountDownLatch receiveLatch = new CountDownLatch(successfulReceives);
+        Flux<ConsumerMessage<Integer, String>> kafkaFlux =
+                KafkaFlux.listenOn(fluxConfig, Collections.singletonList(topic))
+                         .doOnPartitionsAssigned(this::onPartitionsAssigned)
+                         .manualAck()
+                         .doOnNext(record -> {
+                                 receiveLatch.countDown();
+                                 if (receiveLatch.getCount() < 0)
+                                     throw new RuntimeException("Test exception");
+                                 record.consumerOffset().acknowledge();
+                             });
+
+        sendReceive(kafkaFlux, 0, count, 0, successfulReceives);
+    }
+
+    @Test
+    public final void messageProcessingRetryTest() throws Exception {
+        int count = 300;
+        CountDownLatch receiveLatch = new CountDownLatch(count);
+        TestSubscriber<ConsumerMessage<Integer, String>> subscriber = TestSubscriber.create(1);
+        Flux<ConsumerMessage<Integer, String>> kafkaFlux =
+                KafkaFlux.listenOn(fluxConfig, Collections.singletonList(topic))
+                         .doOnPartitionsAssigned(this::onPartitionsAssigned)
+                         .manualAck()
+                         .doOnNext(record -> {
+                                 receiveLatch.countDown();
+                                 if (receiveLatch.getCount() % 100 == 0)
+                                     throw new RuntimeException("Test exception");
+                                 record.consumerOffset().acknowledge();
+                                 subscriber.request(1);
+                             })
+                         .doOnError(e -> e.printStackTrace())
+                         .retry(count / 100 + 1);
+
+        kafkaFlux.subscribe(subscriber);
+        subscriber.assertSubscribed();
+        assertTrue("Partitions not assigned", assignSemaphore.tryAcquire(sessionTimeoutMillis + 1000, TimeUnit.MILLISECONDS));
+        sendMessages(0, count);
+        waitForMessages(receiveLatch);
     }
 
     private Cancellation sendAndWaitForMessages(Flux<? extends ConsumerMessage<Integer, String>> kafkaFlux, int count) throws Exception {

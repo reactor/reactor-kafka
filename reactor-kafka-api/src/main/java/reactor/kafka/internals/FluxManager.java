@@ -62,10 +62,6 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
 
     private final KafkaFlux<K, V> kafkaFlux;
     private final FluxConfig<K, V> config;
-    private final EmitterProcessor<Event<?>> eventEmitter;
-    private final BlockingSink<Event<?>> eventSubmission;
-    private final EmitterProcessor<ConsumerRecords<K, V>> recordEmitter;
-    private final BlockingSink<ConsumerRecords<K, V>> recordSubmission;
     private final Consumer<KafkaFlux<K, V>> kafkaSubscribeOrAssign;
     private final List<Flux<? extends Event<?>>> fluxList = new ArrayList<>();
     private final List<Cancellation> cancellations = new ArrayList<>();
@@ -78,6 +74,10 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
     private final AtomicBoolean isActive = new AtomicBoolean();
     private final AtomicBoolean isClosed = new AtomicBoolean();
     private AckMode ackMode = AckMode.AUTO_ACK;
+    private EmitterProcessor<Event<?>> eventEmitter;
+    private BlockingSink<Event<?>> eventSubmission;
+    private EmitterProcessor<ConsumerRecords<K, V>> recordEmitter;
+    private BlockingSink<ConsumerRecords<K, V>> recordSubmission;
     private PollEvent pollEvent;
     private HeartbeatEvent heartbeatEvent;
     private CommitEvent commitEvent;
@@ -94,10 +94,6 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
         this.config = config;
         this.kafkaSubscribeOrAssign = kafkaSubscribeOrAssign;
         this.eventScheduler = Schedulers.newSingle("reactive-kafka-" + config.groupId());
-        eventEmitter = EmitterProcessor.create();
-        eventSubmission = eventEmitter.connectSink();
-        recordEmitter = EmitterProcessor.create();
-        recordSubmission = recordEmitter.connectSink();
     }
 
     @Override
@@ -124,9 +120,14 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
 
     public void onSubscribe(Subscriber<? super ConsumerMessage<K, V>> subscriber) {
         log.debug("subscribe");
-        if (consumerFlux != null)
-            throw new IllegalStateException("Already subscribed.");
+        if (consumerFlux != null) {
+            cancel();
+        }
 
+        eventEmitter = EmitterProcessor.create();
+        eventSubmission = eventEmitter.connectSink();
+        recordEmitter = EmitterProcessor.create();
+        recordSubmission = recordEmitter.connectSink();
         eventScheduler.start();
 
         pollEvent = new PollEvent();
@@ -225,6 +226,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
             } catch (Exception e) {
                 log.warn("Cancel exception: " + e);
             } finally {
+                fluxList.clear();
                 eventScheduler.shutdown();
                 try {
                     for (Cancellation cancellation : cancellations)
@@ -309,6 +311,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
         public void run() {
             try {
                 isActive.set(true);
+                isClosed.set(false);
                 consumer = ConsumerFactory.INSTANCE.createConsumer(config);
                 kafkaSubscribeOrAssign.accept(kafkaFlux);
                 consumer.poll(0); // wait for assignment
