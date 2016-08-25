@@ -364,6 +364,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
     class CommitEvent extends Event<Map<TopicPartition, OffsetAndMetadata>> {
         private final CommittableBatch commitBatch;
         private final AtomicBoolean isPending = new AtomicBoolean();
+        private final AtomicInteger inProgress = new AtomicInteger();
         CommitEvent() {
             super(EventType.COMMIT);
             this.commitBatch = new CommittableBatch();
@@ -375,7 +376,9 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
             try {
                 if (commitArgs != null) {
                     if (!commitArgs.offsets.isEmpty()) {
+                        inProgress.incrementAndGet();
                         consumer.commitAsync(commitArgs.offsets(), (offsets, exception) -> {
+                                inProgress.decrementAndGet();
                                 if (exception == null)
                                     handleSuccess(commitArgs, offsets);
                                 else
@@ -387,6 +390,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
                 }
             } catch (Exception e) {
                 log.error("Unexpected exception", e);
+                inProgress.decrementAndGet();
                 handleFailure(commitArgs, e);
             }
         }
@@ -431,6 +435,12 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
                 emit(this);
         }
 
+        private void waitFor(long endTimeNanos) {
+            while (inProgress.get() > 0 && endTimeNanos - System.nanoTime() > 0) {
+                consumer.poll(1);
+            }
+        }
+
         protected boolean isRetriableException(Exception exception) {
             return exception instanceof RetriableCommitFailedException;
         }
@@ -467,7 +477,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
                         // ignore
                     }
                     commitEvent.runIfRequired(true);
-                    consumer.poll(0);
+                    commitEvent.waitFor(closeEndTimeNanos);
                     consumer.close();
                 }
                 semaphore.release();
