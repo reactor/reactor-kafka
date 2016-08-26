@@ -22,6 +22,7 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 
 import static org.junit.Assert.assertEquals;
 
@@ -40,8 +41,8 @@ import kafka.utils.ZkUtils;
 
 public class AbstractKafkaTest {
 
-    protected final String topic = "testtopic";
-    protected final int partitions = 4;
+    protected String topic = "testtopic";
+    protected int partitions = 4;
     protected long receiveTimeoutMillis = 30000;
     protected final long requestTimeoutMillis = 2000;
     protected final long sessionTimeoutMillis = 10000;
@@ -60,14 +61,10 @@ public class AbstractKafkaTest {
 
     public void setUp() throws Exception {
         System.out.println("********** RUNNING " + getClass().getName() + "." + testName.getMethodName());
-        for (int i = 0; i < partitions; i++)
-            expectedMessages.add(new ArrayList<>());
-        for (int i = 0; i < partitions; i++)
-            receivedMessages.add(new ArrayList<>());
 
         senderConfig = createKafkaProducerConfig();
         fluxConfig = createKafkaConsumerConfig();
-        embeddedKafka.waitUntilSynced(topic, 0);
+        waitForTopic(topic, partitions, true);
     }
 
     public FluxConfig<Integer, String> createKafkaConsumerConfig() {
@@ -136,9 +133,32 @@ public class AbstractKafkaTest {
         return topicParts;
     }
 
+    public String createNewTopic(String newTopic, int partitions) {
+        deleteTopic(this.topic);
+        this.topic = newTopic;
+        this.partitions = partitions;
+        ZkUtils zkUtils = new ZkUtils(embeddedKafka.getZkClient(), null, false);
+        Properties props = new Properties();
+        AdminUtils.createTopic(zkUtils, topic, partitions, 1, props, null);
+        waitForTopic(topic, partitions, true);
+        return topic;
+    }
+
     public void deleteTopic(String topic) {
         ZkUtils zkUtils = new ZkUtils(embeddedKafka.getZkClient(), null, false);
         AdminUtils.deleteTopic(zkUtils, topic);
+    }
+
+    protected void waitForTopic(String topic, int partitions, boolean resetMessages) {
+        embeddedKafka.waitUntilSynced(topic, 0);
+        if (resetMessages) {
+            expectedMessages.clear();
+            receivedMessages.clear();
+            for (int i = 0; i < partitions; i++)
+                expectedMessages.add(new ArrayList<>());
+            for (int i = 0; i < partitions; i++)
+                receivedMessages.add(new ArrayList<>());
+        }
     }
 
     public void clearReceivedMessages() {

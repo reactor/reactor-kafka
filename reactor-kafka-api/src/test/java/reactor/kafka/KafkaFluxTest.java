@@ -20,9 +20,11 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Semaphore;
@@ -37,6 +39,9 @@ import org.apache.kafka.common.TopicPartition;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import reactor.core.Cancellation;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Hooks;
@@ -55,11 +60,14 @@ import static org.junit.Assert.assertNotEquals;
 
 public class KafkaFluxTest extends AbstractKafkaTest {
 
+    private static final Logger log = LoggerFactory.getLogger(KafkaFluxTest.class.getName());
+
     private KafkaSender<Integer, String> kafkaSender;
 
     private Scheduler consumerScheduler;
     private Semaphore assignSemaphore = new Semaphore(0);
     private List<Cancellation> subscribeCancellations = new ArrayList<>();
+    private TestSubscriber<ConsumerMessage<Integer, String>> testSubscriber;
 
     @Before
     public void setUp() throws Exception {
@@ -70,9 +78,12 @@ public class KafkaFluxTest extends AbstractKafkaTest {
 
     @After
     public void tearDown() {
+        if (testSubscriber != null)
+            testSubscriber.cancel();
         cancelSubscriptions(true);
         kafkaSender.close();
         consumerScheduler.shutdown();
+        Schedulers.shutdownNow();
     }
 
     @Test
@@ -121,7 +132,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
                                      partition.seek(1);
                              })
                          .autoAck()
-                         .doOnError(e -> e.printStackTrace());
+                         .doOnError(e -> log.error("KafkaFlux exception", e));
 
         sendReceive(kafkaFlux, count, count, partitions, count * 2 - partitions);
     }
@@ -260,7 +271,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
                          .doOnNext(record -> record.consumerOffset()
                                                    .commit()
                                                    .doOnSuccess(i -> onCommit(record, commitLatch, committedOffsets))
-                                                   .doOnError(e -> e.printStackTrace())
+                                                   .doOnError(e -> log.error("Commit exception", e))
                                                    .subscribe());
 
         subscribe(kafkaFlux, new CountDownLatch(count));
@@ -285,7 +296,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
                                        .doOnSuccess(i -> commitSuccess.set(true))
                                        .subscribe();
                              })
-                         .doOnError(e -> e.printStackTrace());
+                         .doOnError(e -> log.error("KafkaFlux exception", e));
 
         subscribe(kafkaFlux, new CountDownLatch(count));
         sendMessages(1, count);
@@ -308,7 +319,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
                                        .subscribe()
                                        .block();
                              })
-                         .doOnError(e -> e.printStackTrace());
+                         .doOnError(e -> log.error("KafkaFlux exception", e));
 
         sendAndWaitForMessages(kafkaFlux, count);
         checkCommitCallbacks(commitLatch, committedOffsets);
@@ -331,12 +342,12 @@ public class KafkaFluxTest extends AbstractKafkaTest {
                                  if (uncommitted.size() == commitIntervalMessages) {
                                      offset.commit()
                                            .doOnSuccess(i -> onCommit(uncommitted, commitLatch, committedOffsets))
-                                           .doOnError(e -> e.printStackTrace())
+                                           .doOnError(e -> log.error("Commit exception", e))
                                            .subscribe()
                                            .block();
                                  }
                              })
-                         .doOnError(e -> e.printStackTrace());
+                         .doOnError(e -> log.error("KafkaFlux exception", e));
 
         sendAndWaitForMessages(kafkaFlux, count);
         checkCommitCallbacks(commitLatch, committedOffsets);
@@ -356,7 +367,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
                                      record.consumerOffset()
                                            .commit()
                                            .doOnSuccess(i -> onCommit(record, commitLatch, committedOffsets))
-                                           .doOnError(e -> e.printStackTrace())
+                                           .doOnError(e -> log.error("Commit exception", e))
                                            .subscribe();
                                  } else if (messageCount < 75) {
                                      record.consumerOffset()
@@ -488,7 +499,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
                          .doOnPartitionsAssigned(this::seekToBeginning)
                          .autoAck()
                          .doOnPartitionsAssigned(this::onPartitionsAssigned)
-                         .doOnError(e -> e.printStackTrace());
+                         .doOnError(e -> log.error("KafkaFlux exception", e));
         subscribe(partition1Flux, receiveLatch1);
 
         // Receive from partition 0 and send to partition 1
@@ -506,8 +517,8 @@ public class KafkaFluxTest extends AbstractKafkaTest {
                                                        sendLatch1.countDown();
                                                    });
                          })
-                     .doOnError(e -> e.printStackTrace())
-                     .subscribeOn(consumerScheduler)
+                     .doOnError(e -> log.error("KafkaFlux exception", e))
+                     .publishOn(consumerScheduler)
                      .subscribe();
         subscribeCancellations.add(cancellation0);
 
@@ -515,7 +526,6 @@ public class KafkaFluxTest extends AbstractKafkaTest {
         Flux.range(0, count)
             .flatMap(i -> kafkaSender.send(new ProducerRecord<Integer, String>(topic, 0, i, "Message " + i))
                                      .doOnSuccess(metadata -> sendLatch0.countDown()))
-            .doOnError(e -> e.printStackTrace())
             .subscribe();
 
         if (!sendLatch0.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS))
@@ -536,7 +546,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
         AtomicInteger revoked = new AtomicInteger();
         AtomicInteger commitFailures = new AtomicInteger();
         Semaphore commitSemaphore = new Semaphore(0);
-        TestSubscriber<ConsumerMessage<Integer, String>> subscriber = TestSubscriber.create(1);
+        testSubscriber = TestSubscriber.create(1);
         Flux<ConsumerMessage<Integer, String>> kafkaFlux = KafkaFlux.listenOn(fluxConfig, Collections.singletonList(topic))
                          .doOnPartitionsRevoked(partitions -> revoked.addAndGet(partitions.size()))
                          .doOnPartitionsAssigned(this::onPartitionsAssigned)
@@ -550,11 +560,11 @@ public class KafkaFluxTest extends AbstractKafkaTest {
                                                         .doOnError(e -> commitFailures.incrementAndGet())
                                                         .doOnSuccess(v -> commitSemaphore.release())
                                                         .subscribe();
-                                 subscriber.request(1);
+                                 testSubscriber.request(1);
                              });
 
-        kafkaFlux.subscribe(subscriber);
-        subscriber.assertSubscribed();
+        kafkaFlux.subscribe(testSubscriber);
+        testSubscriber.assertSubscribed();
         assertTrue("Partitions not assigned", assignSemaphore.tryAcquire(sessionTimeoutMillis + 1000, TimeUnit.MILLISECONDS));
         sendMessages(0, count);
         waitForMessages(latch);
@@ -568,7 +578,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
         int sendBatchSize = 10;
         fluxConfig = fluxConfig.maxAutoCommitAttempts(1000);
         Flux<ConsumerMessage<Integer, String>> kafkaFlux = createTestFlux(AckMode.AUTO_ACK).kafkaFlux()
-                         .doOnError(e -> e.printStackTrace());
+                         .doOnError(e -> log.error("KafkaFlux exception", e));
 
         CountDownLatch receiveLatch = new CountDownLatch(sendBatchSize * 2);
         subscribe(kafkaFlux, receiveLatch);
@@ -616,21 +626,28 @@ public class KafkaFluxTest extends AbstractKafkaTest {
             final int id = i;
             receiveCount[i] = new AtomicInteger();
             kafkaFlux[i] = createTestFlux(AckMode.AUTO_ACK).kafkaFlux()
+                             .publishOn(consumerScheduler)
                              .doOnNext(record -> {
                                      receiveCount[id].incrementAndGet();
                                      onReceive(record.consumerRecord());
                                      latch.countDown();
                                  })
-                             .doOnError(e -> e.printStackTrace())
-                             .subscribeOn(consumerScheduler);
+                             .doOnError(e -> log.error("KafkaFlux exception", e));
             subscribeCancellations.add(kafkaFlux[i].subscribe());
-            assignSemaphore.acquire();
+            waitFoPartitionAssignment();
         }
         sendMessages(0, count);
         waitForMessages(latch);
         checkConsumedMessages(0, count);
     }
 
+    /**
+     * Tests groupBy(partition) with guaranteed ordering through thread affinity for each partition.
+     * <p/>
+     * When there are as many threads in the scheduler as partitions, groupBy(partition) enables
+     * each partition to be processed on its own thread. All partitions can make progress concurrently
+     * without delays on any partition affecting others.
+     */
     @Test
     public final void groupByPartitionTest() throws Exception {
         int count = 10000;
@@ -648,28 +665,28 @@ public class KafkaFluxTest extends AbstractKafkaTest {
         //Hooks.onOperator(p -> p.ifParallelFlux().log("reactor.", Level.INFO, true,
         //        SignalType.ON_NEXT));
 
-        kafkaFlux.groupBy(m -> m.consumerOffset().topicPartition())
-                 .subscribe(partitionFlux -> partitionFlux.publishOn(scheduler).subscribe(record -> {
-                         int partition = record.consumerRecord().partition();
-                         String current = Thread.currentThread().getName() + ":" + record.consumerOffset();
-                         String inProgress = inProgressMap.putIfAbsent(partition, current);
-                         if (inProgress != null) {
-                             System.err.println("ERROR: Concurrent execution on partition " + partition +
-                                     " current=" + current + ", inProgress=" + inProgress);
-                             concurrentPartitionExecutions.incrementAndGet();
-                         }
-                         if (inProgressMap.size() > 1)
-                             concurrentExecutions.incrementAndGet();
-                         TestUtils.sleep(random.nextInt(maxProcessingMs));
-                         onReceive(record.consumerRecord());
-                         latch.countDown();
-                         record.consumerOffset().acknowledge();
-                         inProgressMap.remove(partition);
-                     }));
+        Cancellation cancellation =
+            kafkaFlux.groupBy(m -> m.consumerOffset().topicPartition())
+                     .subscribe(partitionFlux -> subscribeCancellations.add(partitionFlux.publishOn(scheduler).subscribe(record -> {
+                             int partition = record.consumerRecord().partition();
+                             String current = Thread.currentThread().getName() + ":" + record.consumerOffset();
+                             String inProgress = inProgressMap.putIfAbsent(partition, current);
+                             if (inProgress != null) {
+                                 log.error("Concurrent execution on partition {} current={}, inProgress={}", partition, current, inProgress);
+                                 concurrentPartitionExecutions.incrementAndGet();
+                             }
+                             if (inProgressMap.size() > 1)
+                                 concurrentExecutions.incrementAndGet();
+                             TestUtils.sleep(random.nextInt(maxProcessingMs));
+                             onReceive(record.consumerRecord());
+                             latch.countDown();
+                             record.consumerOffset().acknowledge();
+                             inProgressMap.remove(partition);
+                         })));
+        subscribeCancellations.add(cancellation);
 
         try {
-            assertTrue("Partitions not assigned", assignSemaphore.tryAcquire(sessionTimeoutMillis + 1000, TimeUnit.MILLISECONDS));
-
+            waitFoPartitionAssignment();
             sendMessages(0, count);
             waitForMessages(latch);
             assertEquals("Concurrent executions on partition", 0, concurrentPartitionExecutions.get());
@@ -682,12 +699,161 @@ public class KafkaFluxTest extends AbstractKafkaTest {
         }
     }
 
+    /**
+     * Tests elastic scheduler with groupBy(partition) for a consumer processing large number of partitions.
+     * <p/>
+     * When there are a large number of partitions, groupBy(partition) with an elastic scheduler creates as many
+     * threads as partitions unless the flux itself is bounded (here each partition flux is limited with take()).
+     * In general, it may be better to group the partitions together in groupBy() to limit the number of threads
+     * when using elastic scheduler with a large number of partitions
+     */
+    @Test
+    public final void groupByPartitionElasticSchedulingTest() throws Exception {
+        int countPerPartition = 100;
+        createNewTopic("largetopic", 40);
+        Flux<ConsumerMessage<Integer, String>> kafkaFlux = createTestFlux(AckMode.AUTO_ACK).kafkaFlux();
+        CountDownLatch[] latch = new CountDownLatch[partitions];
+        for (int i = 0; i < partitions; i++)
+            latch[i] = new CountDownLatch(countPerPartition);
+        Scheduler scheduler = Schedulers.newElastic("test-groupBy", 1);
+        Map<String, Set<Integer>> threadMap = new ConcurrentHashMap<>();
+
+        Cancellation cancellation =
+            kafkaFlux.groupBy(m -> m.consumerOffset().topicPartition().partition())
+                     .subscribe(partitionFlux -> partitionFlux.take(countPerPartition).publishOn(scheduler, 1).subscribe(record -> {
+                             String thread = Thread.currentThread().getName();
+                             int partition = record.consumerRecord().partition();
+                             Set<Integer> partitionSet = threadMap.get(thread);
+                             if (partitionSet == null) {
+                                 partitionSet = new HashSet<Integer>();
+                                 threadMap.put(thread, partitionSet);
+                             }
+                             partitionSet.add(partition);
+                             onReceive(record.consumerRecord());
+                             latch[partition].countDown();
+                         }));
+        subscribeCancellations.add(cancellation);
+
+        try {
+            waitFoPartitionAssignment();
+            sendMessagesToPartition(0, 0, countPerPartition);
+            waitForMessages(latch[0]);
+            for (int i = 1; i < 10; i++)
+                sendMessagesToPartition(i, i * countPerPartition, countPerPartition);
+            for (int i = 1; i < 10; i++)
+                waitForMessagesFromPartition(latch[i], i);
+            assertTrue("Threads not allocated elastically " + threadMap, threadMap.size() > 1 && threadMap.size() <= 10);
+            for (int i = 10; i < partitions; i++)
+                sendMessagesToPartition(i, i * countPerPartition, countPerPartition);
+            for (int i = 10; i < partitions; i++)
+                waitForMessagesFromPartition(latch[i], i);
+            assertTrue("Threads not allocated elastically " + threadMap, threadMap.size() > 1 && threadMap.size() < partitions);
+            checkConsumedMessages(0, countPerPartition * partitions);
+        } finally {
+            scheduler.shutdown();
+        }
+    }
+
+    /**
+     * Tests groupBy(partition) with a large number of partitions distributed on a small number of threads.
+     * Ordering is guaranteed for partitions with thread affinity. Delays in processing one partition
+     * affect all partitions on that thread.
+     */
+    @Test
+    public final void groupByPartitionThreadSharingTest() throws Exception {
+        int count = 1000;
+        createNewTopic("largetopic", 20);
+        Flux<ConsumerMessage<Integer, String>> kafkaFlux = createTestFlux(AckMode.AUTO_ACK).kafkaFlux();
+        CountDownLatch latch = new CountDownLatch(count);
+        int parallelism = 4;
+        Scheduler scheduler = Schedulers.newParallel("test-groupBy", parallelism);
+        Map<String, Set<Integer>> threadMap = new ConcurrentHashMap<>();
+        Set<Integer> inProgress = new HashSet<Integer>();
+        AtomicInteger maxInProgress = new AtomicInteger();
+
+        Cancellation cancellation =
+            kafkaFlux.groupBy(m -> m.consumerOffset().topicPartition())
+                     .subscribe(partitionFlux -> subscribeCancellations.add(partitionFlux.publishOn(scheduler, 1).subscribe(record -> {
+                             int partition = record.consumerRecord().partition();
+                             String thread = Thread.currentThread().getName();
+                             Set<Integer> partitionSet = threadMap.get(thread);
+                             if (partitionSet == null) {
+                                 partitionSet = new HashSet<Integer>();
+                                 threadMap.put(thread, partitionSet);
+                             }
+                             partitionSet.add(partition);
+                             onReceive(record.consumerRecord());
+                             latch.countDown();
+                             synchronized (KafkaFluxTest.this) {
+                                 if (receivedMessages.get(partition).size() == count / partitions)
+                                     inProgress.remove(partition);
+                                 else if (inProgress.add(partition))
+                                     maxInProgress.incrementAndGet();
+                             }
+                         })));
+        subscribeCancellations.add(cancellation);
+
+        try {
+            waitFoPartitionAssignment();
+            sendMessages(0, count);
+            waitForMessages(latch);
+            checkConsumedMessages(0, count);
+            assertEquals(parallelism, threadMap.size());
+            // Thread assignment is currently not perfectly balanced, hence the lenient check
+            for (Map.Entry<String, Set<Integer>> entry : threadMap.entrySet())
+                assertTrue("Thread assignment not balanced: " + threadMap, entry.getValue().size() > 1);
+            assertEquals(partitions, maxInProgress.get());
+        } finally {
+            scheduler.shutdown();
+        }
+    }
+
+    /**
+     * Tests parallel processing without grouping by partition. This does not guarantee
+     * partition-based message ordering. Long processing time on one rail enables other
+     * rails to continue (but a whole rail is delayed).
+     */
+    @Test
+    public final void parallelRoundRobinSchedulerTest() throws Exception {
+        createNewTopic("largetopic", 20);
+        int countPerPartition = 50;
+        int count = countPerPartition * partitions;
+        Flux<ConsumerMessage<Integer, String>> kafkaFlux = createTestFlux(AckMode.AUTO_ACK).kafkaFlux();
+        int threads = 4;
+        Scheduler scheduler = Schedulers.newParallel("test-parallel", threads);
+        AtomicBoolean firstMessage = new AtomicBoolean(true);
+        Semaphore blocker = new Semaphore(0);
+
+        kafkaFlux.take(count)
+                 .parallel(4, 1)
+                 .runOn(scheduler)
+                 .subscribe(record -> {
+                         if (firstMessage.compareAndSet(true, false))
+                             blocker.acquireUninterruptibly();
+                         onReceive(record.consumerRecord());
+                     });
+        try {
+            waitFoPartitionAssignment();
+            sendMessages(0, count);
+            Duration waitMs = Duration.ofMillis(receiveTimeoutMillis);
+            // No ordering guarantees, but blocking of one thread should still allow messages to be
+            // processed on other threads
+            TestUtils.waitUntil("Messages not received", list -> count(list) >= count / 2, receivedMessages, waitMs);
+            blocker.release();
+            TestUtils.waitUntil("Messages not received", list -> count(list) == count, receivedMessages, waitMs);
+        } finally {
+            scheduler.shutdown();
+        }
+    }
+
     @Test
     public void backPressureTest() throws Exception {
         int count = 10;
+        fluxConfig.consumerProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "1");
         Semaphore blocker = new Semaphore(0);
         Semaphore receiveSemaphore = new Semaphore(0);
         AtomicInteger receivedCount = new AtomicInteger();
+        testSubscriber = TestSubscriber.create(1);
         Flux<ConsumerMessage<Integer, String>> kafkaFlux = createTestFlux(AckMode.AUTO_ACK).kafkaFlux()
                          .doOnNext(record -> {
                                  receivedCount.incrementAndGet();
@@ -697,10 +863,13 @@ public class KafkaFluxTest extends AbstractKafkaTest {
                                  } catch (InterruptedException e) {
                                      throw new RuntimeException(e);
                                  }
+                                 testSubscriber.request(1);
                              })
-                         .doOnError(e -> e.printStackTrace());
+                         .doOnError(e -> log.error("KafkaFlux exception", e));
 
-        subscribe(kafkaFlux, new CountDownLatch(1));
+        kafkaFlux.subscribe(testSubscriber);
+        testSubscriber.assertSubscribed();
+        waitFoPartitionAssignment();
         sendMessagesSync(0, count);
 
         TestUtils.sleep(2000);
@@ -738,7 +907,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
     public final void messageProcessingRetryTest() throws Exception {
         int count = 300;
         CountDownLatch receiveLatch = new CountDownLatch(count);
-        TestSubscriber<ConsumerMessage<Integer, String>> subscriber = TestSubscriber.create(1);
+        testSubscriber = TestSubscriber.create(1);
         Flux<ConsumerMessage<Integer, String>> kafkaFlux =
                 KafkaFlux.listenOn(fluxConfig, Collections.singletonList(topic))
                          .doOnPartitionsAssigned(this::onPartitionsAssigned)
@@ -748,14 +917,14 @@ public class KafkaFluxTest extends AbstractKafkaTest {
                                  if (receiveLatch.getCount() % 100 == 0)
                                      throw new RuntimeException("Test exception");
                                  record.consumerOffset().acknowledge();
-                                 subscriber.request(1);
+                                 testSubscriber.request(1);
                              })
-                         .doOnError(e -> e.printStackTrace())
+                         .doOnError(e -> log.error("KafkaFlux exception", e))
                          .retry(count / 100 + 1);
 
-        kafkaFlux.subscribe(subscriber);
-        subscriber.assertSubscribed();
-        assertTrue("Partitions not assigned", assignSemaphore.tryAcquire(sessionTimeoutMillis + 1000, TimeUnit.MILLISECONDS));
+        kafkaFlux.subscribe(testSubscriber);
+        testSubscriber.assertSubscribed();
+        waitFoPartitionAssignment();
         sendMessages(0, count);
         waitForMessages(receiveLatch);
     }
@@ -797,17 +966,26 @@ public class KafkaFluxTest extends AbstractKafkaTest {
                                 onReceive(record.consumerRecord());
                                 latch.countDown();
                             })
-                        .doOnError(e -> e.printStackTrace())
-                        .subscribeOn(consumerScheduler)
+                        .doOnError(e -> log.error("KafkaFlux exception", e))
+                        .publishOn(consumerScheduler)
                         .subscribe();
         subscribeCancellations.add(cancellation);
-        assertTrue("Partitions not assigned", assignSemaphore.tryAcquire(sessionTimeoutMillis + 1000, TimeUnit.MILLISECONDS));
+        waitFoPartitionAssignment();
         return cancellation;
+    }
+
+    private void waitFoPartitionAssignment() throws InterruptedException {
+        assertTrue("Partitions not assigned", assignSemaphore.tryAcquire(sessionTimeoutMillis + 1000, TimeUnit.MILLISECONDS));
     }
 
     private void waitForMessages(CountDownLatch latch) throws InterruptedException {
         if (!latch.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS))
             fail(latch.getCount() + " messages not received, received=" + count(receivedMessages) + " : " + receivedMessages);
+    }
+
+    private void waitForMessagesFromPartition(CountDownLatch latch, int partition) throws InterruptedException {
+        if (!latch.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS))
+            fail(latch.getCount() + " messages not received, received=" + receivedMessages.get(partition).size() + " : " + receivedMessages.get(partition));
     }
 
     private void sendReceive(Flux<ConsumerMessage<Integer, String>> kafkaFlux,
@@ -882,6 +1060,17 @@ public class KafkaFluxTest extends AbstractKafkaTest {
                                             .retry(100))
             .subscribe();
         assertTrue("Messages not sent ", latch.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
+    }
+
+    private void sendMessagesToPartition(int partition, int startIndex, int count) throws Exception {
+        Cancellation cancellation = Flux.range(startIndex, count)
+            .map(i -> {
+                    expectedMessages.get(partition).add(i);
+                    return new ProducerRecord<Integer, String>(topic, partition, i, "Message " + i);
+                })
+            .concatMap(record -> kafkaSender.send(record))
+            .subscribe();
+        subscribeCancellations.add(cancellation);
     }
 
     private void onPartitionsAssigned(Collection<SeekablePartition> partitions) {

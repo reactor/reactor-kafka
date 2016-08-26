@@ -40,6 +40,8 @@ import org.apache.kafka.clients.producer.RecordMetadata;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.kafka.test.utils.KafkaTestUtils;
 
 import reactor.core.publisher.Flux;
@@ -50,6 +52,8 @@ import reactor.kafka.internals.ConsumerFactory;
 import reactor.kafka.util.TestUtils;
 
 public class KafkaSenderTest extends AbstractKafkaTest {
+
+    private static final Logger log = LoggerFactory.getLogger(KafkaFluxTest.class.getName());
 
     private KafkaSender<Integer, String> kafkaSender;
     private Consumer<Integer, String> consumer;
@@ -191,7 +195,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
             .subscribe();
         Flux.range(count / 2, count / 2)
             .flatMap(i -> kafkaSender.send(createProducerRecord(i, true))
-                                     .doOnError(e -> e.printStackTrace())
+                                     .doOnError(e -> log.error("KafkaSender exception", e))
                                      .doOnNext(r -> sendLatch.countDown()))
                 .subscribe();
         waitForMessages(consumer, count, false);
@@ -220,9 +224,9 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         CountDownLatch latch = new CountDownLatch(fluxCount + count);
         for (int i = 0; i < fluxCount; i++) {
             Flux.range(0, count)
+                .publishOn(scheduler)
                 .flatMap(index -> kafkaSender.send(new ProducerRecord<>(topic, 0, "Message " + index))
-                                         .doOnNext(metadata -> latch.countDown()))
-                .subscribeOn(scheduler)
+                                             .doOnNext(metadata -> latch.countDown()))
                 .subscribe();
         }
 
@@ -291,7 +295,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                                } else if (i == restartIndex) {
                                    Thread.sleep(requestTimeoutMillis);     // wait for previous request to timeout
                                    embeddedKafka.restart(0);
-                                   embeddedKafka.waitUntilSynced(topic, 0);
+                                   waitForTopic(topic, partitions, false);
                                }
                            } catch (Exception e) {
                                throw new RuntimeException(e);

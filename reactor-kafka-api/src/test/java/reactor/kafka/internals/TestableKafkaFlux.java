@@ -29,6 +29,8 @@ import org.apache.kafka.clients.consumer.RetriableCommitFailedException;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
 import org.powermock.api.support.membermodification.MemberModifier;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Scheduler;
@@ -38,6 +40,8 @@ import reactor.kafka.KafkaFlux;
 import reactor.kafka.util.TestUtils;
 
 public class TestableKafkaFlux {
+
+    private static final Logger log = LoggerFactory.getLogger(TestableKafkaFlux.class.getName());
 
     public static final TopicPartition NON_EXISTENT_PARTITION = new TopicPartition("non-existent", 0);
 
@@ -88,7 +92,7 @@ public class TestableKafkaFlux {
                             fail("Unexpected exception: " + e);
                         }
                     })
-                .doOnError(e -> e.printStackTrace());
+                .doOnError(e -> log.error("KafkaFlux exception", e));
     }
 
     public void clearCommitError() {
