@@ -463,11 +463,10 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                            try {
                                if (i == failureIndex) {
                                    Thread.sleep(requestTimeoutMillis / 2); // give some time for previous messages to be sent
-                                   embeddedKafka.bounce(0);
+                                   shutdownKafkaBroker();
                                } else if (i == restartIndex) {
                                    Thread.sleep(requestTimeoutMillis);     // wait for previous request to timeout
-                                   embeddedKafka.restart(0);
-                                   waitForTopic(topic, partitions, false);
+                                   restartKafkaBroker();
                                }
                            } catch (Exception e) {
                                throw new RuntimeException(e);

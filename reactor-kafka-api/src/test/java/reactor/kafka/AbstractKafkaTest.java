@@ -47,6 +47,7 @@ public class AbstractKafkaTest {
     protected final long requestTimeoutMillis = 2000;
     protected final long sessionTimeoutMillis = 10000;
     protected final long heartbeatIntervalMillis = 2500;
+    protected final int brokerId = 0;
 
     @Rule
     public KafkaEmbedded embeddedKafka = new KafkaEmbedded(1, true, partitions, topic);
@@ -150,7 +151,7 @@ public class AbstractKafkaTest {
     }
 
     protected void waitForTopic(String topic, int partitions, boolean resetMessages) {
-        embeddedKafka.waitUntilSynced(topic, 0);
+        embeddedKafka.waitUntilSynced(topic, brokerId);
         if (resetMessages) {
             expectedMessages.clear();
             receivedMessages.clear();
@@ -159,6 +160,15 @@ public class AbstractKafkaTest {
             for (int i = 0; i < partitions; i++)
                 receivedMessages.add(new ArrayList<>());
         }
+    }
+
+    public void shutdownKafkaBroker() {
+        embeddedKafka.bounce(brokerId);
+    }
+
+    public void restartKafkaBroker() throws Exception {
+        embeddedKafka.restart(brokerId);
+        waitForTopic(topic, partitions, false);
     }
 
     public void clearReceivedMessages() {

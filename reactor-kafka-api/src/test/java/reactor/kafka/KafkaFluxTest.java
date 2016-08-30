@@ -583,9 +583,9 @@ public class KafkaFluxTest extends AbstractKafkaTest {
         CountDownLatch receiveLatch = new CountDownLatch(sendBatchSize * 2);
         subscribe(kafkaFlux, receiveLatch);
         sendMessagesSync(0, sendBatchSize);
-        embeddedKafka.bounce(0);
+        shutdownKafkaBroker();
         TestUtils.sleep(2000);
-        embeddedKafka.restart(0);
+        restartKafkaBroker();
         sendMessagesSync(sendBatchSize, sendBatchSize);
         waitForMessages(receiveLatch);
         checkConsumedMessages();
@@ -710,7 +710,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
     @Test
     public final void groupByPartitionElasticSchedulingTest() throws Exception {
         int countPerPartition = 100;
-        createNewTopic("largetopic", 40);
+        createNewTopic("largetopic", 20);
         Flux<ConsumerMessage<Integer, String>> kafkaFlux = createTestFlux(AckMode.AUTO_ACK).kafkaFlux();
         CountDownLatch[] latch = new CountDownLatch[partitions];
         for (int i = 0; i < partitions; i++)
@@ -888,14 +888,14 @@ public class KafkaFluxTest extends AbstractKafkaTest {
     public final void messageProcessingFailureTest() throws Exception {
         int count = 200;
         int successfulReceives = 100;
-        CountDownLatch receiveLatch = new CountDownLatch(successfulReceives);
+        CountDownLatch receiveLatch = new CountDownLatch(successfulReceives + 1);
         Flux<ConsumerMessage<Integer, String>> kafkaFlux =
                 KafkaFlux.listenOn(fluxConfig, Collections.singletonList(topic))
                          .doOnPartitionsAssigned(this::onPartitionsAssigned)
                          .manualAck()
                          .doOnNext(record -> {
                                  receiveLatch.countDown();
-                                 if (receiveLatch.getCount() < 0)
+                                 if (receiveLatch.getCount() == 0)
                                      throw new RuntimeException("Test exception");
                                  record.consumerOffset().acknowledge();
                              });
