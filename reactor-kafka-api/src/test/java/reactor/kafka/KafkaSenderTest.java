@@ -19,7 +19,9 @@ package reactor.kafka;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -43,6 +45,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.test.utils.KafkaTestUtils;
 
+import reactor.core.publisher.BlockingSink;
+import reactor.core.publisher.EmitterProcessor;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
@@ -393,6 +397,37 @@ public class KafkaSenderTest extends AbstractKafkaTest {
 
         assertTrue("Missing callbacks " + latch.getCount(), latch.await(30, TimeUnit.SECONDS));
         waitForMessages(consumer, count, true);
+    }
+
+    @Test
+    public void emitterTest() throws Exception {
+        int count = 5000;
+        EmitterProcessor<Integer> emitter = EmitterProcessor.create();
+        BlockingSink<Integer> sink = emitter.connectSink();
+        Set<Integer> successfulSends = new HashSet<>();
+        Set<Integer> failedSends = new HashSet<>();
+        Semaphore done = new Semaphore(0);
+        Scheduler scheduler = Schedulers.newSingle("kafka-sender");
+        int maxInflight = 1024;
+        boolean delayError = true;
+        kafkaSender.send(emitter.map(i -> Tuples.of(new ProducerRecord<Integer, String>(topic, i, "Message " + i), i)), scheduler, maxInflight, delayError)
+                   .doOnNext(result -> {
+                           int messageIdentifier = result.getT2();
+                           RecordMetadata metadata = result.getT1();
+                           if (metadata != null)
+                               successfulSends.add(messageIdentifier);
+                           else
+                               failedSends.add(messageIdentifier);
+                       })
+                   .doOnComplete(() -> done.release())
+                   .subscribe();
+        for (int i = 0; i < count; i++) {
+            sink.submit(i);
+        }
+        sink.complete();
+
+        assertTrue("Send not complete", done.tryAcquire(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
+        waitForMessages(consumer, count, false);
     }
 
     private Consumer<Integer, String> createConsumer() throws Exception {
