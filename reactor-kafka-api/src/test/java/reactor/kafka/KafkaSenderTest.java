@@ -21,10 +21,9 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -50,6 +49,8 @@ import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.kafka.internals.ConsumerFactory;
 import reactor.kafka.util.TestUtils;
+import reactor.util.function.Tuple2;
+import reactor.util.function.Tuples;
 
 public class KafkaSenderTest extends AbstractKafkaTest {
 
@@ -57,20 +58,16 @@ public class KafkaSenderTest extends AbstractKafkaTest {
 
     private KafkaSender<Integer, String> kafkaSender;
     private Consumer<Integer, String> consumer;
-    private ExecutorService callbackExecutor;
 
     @Before
     public void setUp() throws Exception {
         super.setUp();
         kafkaSender = new KafkaSender<Integer, String>(senderConfig);
         consumer = createConsumer();
-        callbackExecutor = Executors.newSingleThreadExecutor();
     }
 
     @After
     public void tearDown() {
-        if (callbackExecutor != null)
-            callbackExecutor.shutdownNow();
         if (consumer != null)
             consumer.close();
         if (kafkaSender != null)
@@ -102,17 +99,15 @@ public class KafkaSenderTest extends AbstractKafkaTest {
 
     @Test
     public void publishCallbackTest() throws Exception {
-        int count = 10;
-        CountDownLatch latch = new CountDownLatch(count);
-        Flux.range(0, count)
-            .flatMap(i -> kafkaSender.send(createProducerRecord(i, true))
-                                     .doOnNext(metadata -> {
-                                             latch.countDown();
-                                         }))
+        Semaphore semaphore = new Semaphore(0);
+        kafkaSender.send(createProducerRecord(0, true))
+                   .doOnNext(metadata -> {
+                           semaphore.release();
+                       })
             .subscribe();
 
-        assertTrue("Missing callbacks " + latch.getCount(), latch.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
-        waitForMessages(consumer, count, true);
+        assertTrue("Missing callback", semaphore.tryAcquire(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
+        waitForMessages(consumer, 1, true);
     }
 
     @Test
@@ -186,11 +181,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                                      .doOnNext(r -> {
                                              assertFalse("Running onNext on producer network thread", Thread.currentThread().getName().contains("network"));
                                              sendLatch.countDown();
-                                             try {
-                                                 blocker.acquire();
-                                             } catch (Exception e) {
-                                                 throw new RuntimeException(e);
-                                             }
+                                             TestUtils.acquireSemaphore(blocker);
                                          }))
             .subscribe();
         Flux.range(count / 2, count / 2)
@@ -214,7 +205,6 @@ public class KafkaSenderTest extends AbstractKafkaTest {
             .subscribe();
         waitForMessages(consumer, 4, true);
     }
-
 
     @Test
     public void concurrentSendTest() throws Exception {
@@ -253,6 +243,153 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                                          }),
                      maxConcurrency)
             .subscribe();
+
+        assertTrue("Missing callbacks " + latch.getCount(), latch.await(30, TimeUnit.SECONDS));
+        waitForMessages(consumer, count, true);
+    }
+
+    @Test
+    public void fluxFireAndForgetTest() throws Exception {
+        int count = 1000;
+        Flux<Integer> source = Flux.range(0, count);
+        kafkaSender.send(source.map(i -> Tuples.of(createProducerRecord(i, true), null)))
+                   .subscribe();
+
+        waitForMessages(consumer, count, true);
+    }
+
+    @Test
+    public void fluxPublishCallbackTest() throws Exception {
+        int count = 10;
+        CountDownLatch latch = new CountDownLatch(count);
+        Flux<Integer> source = Flux.range(0, count);
+        kafkaSender.send(source.map(i -> Tuples.of(createProducerRecord(i, true), latch)))
+            .doOnNext(result -> result.getT2().countDown())
+            .subscribe();
+
+        assertTrue("Missing callbacks " + latch.getCount(), latch.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
+        waitForMessages(consumer, count, true);
+    }
+
+    @Test
+    public void fluxPublishCallbackWithRequestMappingTest() throws Exception {
+        int count = 10;
+        Map<Integer, RecordMetadata> resultMap = new HashMap<>();
+        Flux<Integer> source = Flux.range(0, count);
+        kafkaSender.send(source.map(i -> Tuples.of(createProducerRecord(i, true), i)))
+            .doOnNext(result -> resultMap.put(result.getT2(), result.getT1()))
+            .subscribe();
+
+        waitForMessages(consumer, count, true);
+        assertEquals(count, resultMap.size());
+        for (int i = 0; i < count; i++) {
+            RecordMetadata metadata = resultMap.get(i);
+            assertNotNull("Callback not invoked for " + i, metadata);
+            assertEquals(i % partitions, metadata.partition());
+            assertEquals(i / partitions, metadata.offset());
+        }
+    }
+
+    @Test
+    public void fluxFireAndForgetFailureTest() throws Exception {
+        int count = 4;
+        Scheduler scheduler = kafkaSender.scheduler();
+        kafkaSender.send(createOutboundErrorFlux(count, false, false).map(r -> Tuples.of(r, null)), scheduler, 1, true)
+                   .subscribe();
+        waitForMessages(consumer, 2, true);
+    }
+
+    @Test
+    public void fluxFailOnErrorTest() throws Exception {
+        int count = 4;
+        Semaphore errorSemaphore = new Semaphore(0);
+        try {
+            kafkaSender.send(createOutboundErrorFlux(count, true, false).map(r -> Tuples.of(r, null)))
+                       .doOnError(t -> errorSemaphore.release())
+                .subscribe();
+        } catch (Exception e) {
+            // ignore
+            assertTrue("Invalid exception " + e, e.getClass().getName().contains("CancelException"));
+        }
+        waitForMessages(consumer, 1, true);
+    }
+
+    @Test
+    public void fluxSendCallbackBlockTest() throws Exception {
+        int count = 20;
+        Semaphore blocker = new Semaphore(0);
+        CountDownLatch sendLatch = new CountDownLatch(count);
+        kafkaSender.send(Flux.range(0, count / 2).map(i -> Tuples.of(createProducerRecord(i, true), null)))
+                   .doOnNext(r -> {
+                           assertFalse("Running onNext on producer network thread", Thread.currentThread().getName().contains("network"));
+                           sendLatch.countDown();
+                           TestUtils.acquireSemaphore(blocker);
+                       })
+                   .subscribe();
+        kafkaSender.send(Flux.range(count / 2, count / 2).map(i -> Tuples.of(createProducerRecord(i, true), null)))
+                   .doOnError(e -> log.error("KafkaSender exception", e))
+                   .doOnNext(r -> sendLatch.countDown())
+                   .subscribe();
+        waitForMessages(consumer, count, false);
+        for (int i = 0; i < count / 2; i++)
+            blocker.release();
+        if (!sendLatch.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS))
+            fail(sendLatch.getCount() + " send callbacks not received");
+    }
+
+    @Test
+    public void fluxRetryTest() throws Exception {
+        int count = 4;
+        AtomicInteger messageIndex = new AtomicInteger();
+        AtomicInteger lastSuccessful = new AtomicInteger();
+        kafkaSender.send(createOutboundErrorFlux(count, false, true).map(r -> Tuples.of(r, messageIndex.getAndIncrement())))
+                   .doOnNext(r -> lastSuccessful.set(r.getT2()))
+                   .onErrorResumeWith(e -> {
+                           waitForTopic(topic, partitions, false);
+                           TestUtils.sleep(2000);
+                           int next = lastSuccessful.get() + 1;
+                           return outboundFlux(next, count - next);
+                       })
+                   .subscribe();
+
+        waitForMessages(consumer, count, false);
+    }
+
+    @Test
+    public void concurrentFluxSendTest() throws Exception {
+        int count = 1000;
+        int fluxCount = 5;
+        Scheduler scheduler = Schedulers.newParallel("send-test");
+        CountDownLatch latch = new CountDownLatch(fluxCount + count);
+        for (int i = 0; i < fluxCount; i++) {
+            kafkaSender.send(Flux.range(0, count)
+                                 .map(index -> Tuples.of(new ProducerRecord<>(topic, 0, "Message " + index), null))
+                       .publishOn(scheduler)
+                       .doOnNext(r -> latch.countDown()))
+                       .subscribe();
+        }
+
+        assertTrue("Missing callbacks " + latch.getCount(), latch.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
+        waitForMessages(consumer, count * fluxCount, false);
+        scheduler.shutdown();
+    }
+
+    @Test
+    public void fluxBackPressureTest() throws Exception {
+        kafkaSender.close();
+        senderConfig = senderConfig.producerProperty(ProducerConfig.MAX_REQUEST_SIZE_CONFIG, "100")
+                                   .producerProperty(ProducerConfig.MAX_BLOCK_MS_CONFIG, "1000");
+        kafkaSender = new KafkaSender<Integer, String>(senderConfig);
+
+        int count = 100;
+        CountDownLatch latch = new CountDownLatch(count);
+        Flux<Integer> source = Flux.range(0, count);
+        kafkaSender.send(source.map(i -> Tuples.of(createProducerRecord(i, true), null)))
+                   .doOnNext(metadata -> {
+                           TestUtils.sleep(100);
+                           latch.countDown();
+                       })
+                   .subscribe();
 
         assertTrue("Missing callbacks " + latch.getCount(), latch.await(30, TimeUnit.SECONDS));
         waitForMessages(consumer, count, true);
@@ -304,6 +441,10 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                            boolean expectSuccess = hasRetry || i < failureIndex || (!failOnError && i >= restartIndex);
                            return createProducerRecord(i, expectSuccess);
                        });
+    }
+
+    private Flux<Tuple2<RecordMetadata, Integer>> outboundFlux(int startIndex, int count) {
+        return kafkaSender.send(Flux.range(startIndex, count).map(i -> Tuples.of(createProducerRecord(i, true), i)));
     }
 
 }

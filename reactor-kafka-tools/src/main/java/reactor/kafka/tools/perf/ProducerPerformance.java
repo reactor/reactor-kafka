@@ -37,8 +37,10 @@ import reactor.core.Cancellation;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.TopicProcessor;
+import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.concurrent.WaitStrategy;
+import reactor.util.function.Tuples;
 import reactor.kafka.SenderConfig;
 import reactor.kafka.KafkaSender;
 
@@ -46,10 +48,11 @@ public class ProducerPerformance {
 
     enum ReactiveMode {
         FLAT_MAP,
+        FLUX,
         TOPIC_PROCESSOR
     };
 
-    public static ReactiveMode reactiveMode = ReactiveMode.TOPIC_PROCESSOR;
+    public static ReactiveMode reactiveMode = ReactiveMode.FLUX;
 
     private static final long DEFAULT_PRODUCER_BUFFER_SIZE = 32 * 1024 * 1024;
 
@@ -98,18 +101,26 @@ public class ProducerPerformance {
                 String sendBufSizeOverride = (String) producerProps.get(ProducerConfig.SEND_BUFFER_CONFIG);
                 long sendBufSize = sendBufSizeOverride != null ? Long.parseLong(sendBufSizeOverride) : DEFAULT_PRODUCER_BUFFER_SIZE;
                 int payloadSizeLowerPowerOf2 = 1 << (payload.length < 2 ? 0 : 31 - Integer.numberOfLeadingZeros(payload.length - 1));
-                int callbackBufferSize = (int) (sendBufSize / payloadSizeLowerPowerOf2);
-                //  Large buffers impact performance with small messages, need to figure out best way to set callback buffer size
-                if (callbackBufferSize > 64 * 1024) callbackBufferSize = 64 * 1024;
-                System.out.println("Running in reactor mode " + reactiveMode + " with callback buffer size " + callbackBufferSize);
+                int bufferSize = (int) (sendBufSize / payloadSizeLowerPowerOf2);
+                if (bufferSize > 64 * 1024) bufferSize = 64 * 1024;
+                System.out.println("Running in reactor mode " + reactiveMode + " with buffer size " + bufferSize);
 
                 CountDownLatch latch = new CountDownLatch((int) numRecords);
                 Flux<?> flux;
-                if (reactiveMode == ReactiveMode.FLAT_MAP)
-                    flux = createReactiveFlatMapFlux(numRecords, payload, record, sender, stats, throttler, latch);
-                else
-                    flux = createReactiveFlux(numRecords, payload, record, sender, stats, throttler, latch, callbackBufferSize);
-                System.out.println("Running test using reactive API");
+                switch (reactiveMode) {
+                    case FLUX:
+                        flux = createReactiveFlux(numRecords, payload, record, sender, stats, throttler, latch, bufferSize);
+                        break;
+                    case FLAT_MAP:
+                        flux = createReactiveFlatMapFlux(numRecords, payload, record, sender, stats, throttler, latch);
+                        break;
+                    case TOPIC_PROCESSOR:
+                        flux = createReactiveTopicProcessor(numRecords, payload, record, sender, stats, throttler, latch, bufferSize);
+                        break;
+                    default:
+                        throw new IllegalArgumentException("Invalid reactive mode " + reactiveMode);
+                }
+                System.out.println("Running test using reactive API, mode=" + reactiveMode);
                 Cancellation cancellation = flux.subscribe();
                 latch.await();
                 cancellation.dispose();
@@ -129,11 +140,36 @@ public class ProducerPerformance {
         }
     }
 
+    private static Flux<RecordMetadata> createReactiveFlux(long numRecords,
+            byte[] payload, ProducerRecord<byte[], byte[]> record,
+            KafkaSender<byte[], byte[]> sender, Stats stats,
+            ThroughputThrottler throttler, CountDownLatch latch, int maxInflight) {
+
+        Scheduler scheduler = Schedulers.newSingle("perf-send", true);
+        Flux<RecordMetadata> flux =
+            sender.send(Flux.range(1, (int) numRecords)
+                            .map(i -> {
+                                    long sendStartMs = System.currentTimeMillis();
+                                    if (throttler.shouldThrottle(i, sendStartMs))
+                                        throttler.throttle();
+                                    Callback cb = stats.nextCompletion(sendStartMs, payload.length, stats);
+                                    return Tuples.of(record, cb);
+                                }), scheduler, maxInflight, false)
+                  .map(result -> {
+                          RecordMetadata metadata = result.getT1();
+                          Callback cb = result.getT2();
+                          cb.onCompletion(metadata, null);
+                          latch.countDown();
+                          return metadata;
+                      });
+        return flux;
+    }
+
     private static Flux<RecordMetadata> createReactiveFlatMapFlux(long numRecords, byte[] payload, ProducerRecord<byte[], byte[]> record,
             KafkaSender<byte[], byte[]> sender, Stats stats,
             ThroughputThrottler throttler, CountDownLatch latch) {
 
-        sender.callbackScheduler(Schedulers.newParallel("send-callback", 2));
+        sender.scheduler(Schedulers.newSingle("perf-send"));
         Flux<RecordMetadata> flux = Flux.range(1, (int) numRecords)
                            .flatMap(i -> {
                                    long sendStartMs = System.currentTimeMillis();
@@ -153,18 +189,18 @@ public class ProducerPerformance {
         return flux;
     }
 
-    private static Flux<?> createReactiveFlux(long numRecords, byte[] payload, ProducerRecord<byte[], byte[]> record,
+    private static Flux<?> createReactiveTopicProcessor(long numRecords, byte[] payload, ProducerRecord<byte[], byte[]> record,
             KafkaSender<byte[], byte[]> sender, Stats stats,
-            ThroughputThrottler throttler, CountDownLatch latch, int callbackBufferSize) {
+            ThroughputThrottler throttler, CountDownLatch latch, int bufferSize) {
 
         // Since Kafka send callback simply schedules a callback on a topic processor
         // the mono can be subscribed on the Kafka network thread. The network thread
         // would be blocked only for executing callbacks, making it consistent with
         // non-reactive mode.
-        sender.callbackScheduler(null);
+        sender.scheduler(null);
 
         final TopicProcessor<Runnable> topicProcessor =
-                TopicProcessor.<Runnable>create("callback-topic-processor", callbackBufferSize, WaitStrategy.parking(), true);
+                TopicProcessor.<Runnable>create("perf-topic-processor", bufferSize, WaitStrategy.parking(), true);
         topicProcessor.subscribe(new Subscriber<Runnable>() {
             @Override
             public void onSubscribe(Subscription s) {

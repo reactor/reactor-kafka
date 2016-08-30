@@ -17,6 +17,7 @@
 package reactor.kafka.util;
 
 import java.time.Duration;
+import java.util.concurrent.Semaphore;
 import java.util.function.Predicate;
 
 import static org.junit.Assert.fail;
@@ -28,6 +29,14 @@ public class TestUtils {
     public static void sleep(long millis) {
         try {
             Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static void acquireSemaphore(Semaphore semaphore) {
+        try {
+            semaphore.acquire();
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }

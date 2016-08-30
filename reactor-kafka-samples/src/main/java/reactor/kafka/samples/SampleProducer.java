@@ -30,8 +30,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 import reactor.kafka.KafkaSender;
 import reactor.kafka.SenderConfig;
+import reactor.util.function.Tuples;
 
 /**
  * Sample producer application using Reactive API for Java.
@@ -69,17 +72,20 @@ public class SampleProducer {
     }
 
     public void sendMessages(String topic, int count, CountDownLatch latch) throws InterruptedException, ExecutionException {
-        Flux<RecordMetadata> sendFlux = Flux.range(1,  count)
-            .flatMap(i -> sender.send(new ProducerRecord<>(topic, i, "Message_" + i)))
-            .doOnError(e-> log.error("Send failed", e));
-        sendFlux.subscribe(metadata -> {
-                System.out.printf("Message sent successfully, topic-partition=%s-%d offset=%d timestamp=%s\n",
-                        metadata.topic(),
-                        metadata.partition(),
-                        metadata.offset(),
-                        dateFormat.format(new Date(metadata.timestamp())));
-                latch.countDown();
-            });
+        Scheduler scheduler = Schedulers.newSingle("sample");
+        sender.send(Flux.range(1, count)
+                        .map(i -> Tuples.of(new ProducerRecord<>(topic, i, "Message_" + i), i)), scheduler, 1024, true)
+              .doOnError(e-> log.error("Send failed", e))
+              .subscribe(r -> {
+                      RecordMetadata metadata = r.getT1();
+                      System.out.printf("Message %d sent successfully, topic-partition=%s-%d offset=%d timestamp=%s\n",
+                          r.getT2(),
+                          metadata.topic(),
+                          metadata.partition(),
+                          metadata.offset(),
+                          dateFormat.format(new Date(metadata.timestamp())));
+                      latch.countDown();
+                  });
     }
 
     public void close() {
