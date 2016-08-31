@@ -37,7 +37,10 @@ import org.springframework.kafka.test.rule.KafkaEmbedded;
 import org.springframework.kafka.test.utils.KafkaTestUtils;
 
 import kafka.admin.AdminUtils;
+import kafka.cluster.Partition;
 import kafka.utils.ZkUtils;
+import reactor.kafka.util.TestUtils;
+import scala.Option;
 
 public class AbstractKafkaTest {
 
@@ -169,6 +172,19 @@ public class AbstractKafkaTest {
     public void restartKafkaBroker() throws Exception {
         embeddedKafka.restart(brokerId);
         waitForTopic(topic, partitions, false);
+        for (int i = 0; i < partitions; i++)
+            TestUtils.waitUntil("Leader not elected", this::hasLeader, i, Duration.ofSeconds(5));
+    }
+
+    private boolean hasLeader(int partition) {
+        try {
+            Option<Partition> partitionOpt = embeddedKafka.getKafkaServer(brokerId).replicaManager().getPartition(topic, partition);
+            if (!partitionOpt.isDefined())
+                return false;
+            return partitionOpt.get().leaderReplicaIfLocal().isDefined();
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     public void clearReceivedMessages() {
