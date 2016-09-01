@@ -94,21 +94,37 @@ public class KafkaSender<K, V> {
     }
 
     /**
-     * Sends the sequence of records provided to Kafka and returns an unordered flux of response record
-     * metadata of each send request. Since the ordering of records and responses may not be the same,
-     * additional data may be passed through that is not sent to Kafka, but is included in the response flux.
+     * Sends a sequence of records to Kafka.
+     * @return Mono that completes when all records are delivered to Kafka. The mono fails if any
+     *         record could not be successfully delivered to Kafka.
+     */
+    public Mono<Void> sendAll(Publisher<ProducerRecord<K, V>> records) {
+        return new Mono<Void>() {
+            @Override
+            public void subscribe(Subscriber<? super Void> s) {
+                records.subscribe(new SendSubscriberMono(s));
+            }
+
+        };
+    }
+
+    /**
+     * Sends a sequence of records to Kafka and returns a flux of response record metadata including
+     * partition and offset of each send request. Ordering of responses is guaranteed for partitions,
+     * but responses from different partitions may be interleaved in a different order from the requests.
+     * Additional correlation data may be passed through that is not sent to Kafka, but is included
+     * in the response flux to enable matching responses to requests.
      * Example usage:
      * <pre>
      * {@code
      *     sender.send(Flux.range(1, count)
      *                     .map(i -> Tuples.of(new ProducerRecord<>(topic, key(i), message(i)), i)))
      *           .doOnNext(r -> System.out.println("Message #" + r.getT2() + " metadata=" + r.getT1()));
-     *
      * }
      * </pre>
      *
      * @param records Records to send to Kafka with additional data of type <T> included in the returned flux
-     * @return Unordered flux of Kafka response record metadata along with the corresponding pass through data
+     * @return Flux of Kafka response record metadata along with the corresponding request correlation data
      */
     public <T> Flux<Tuple2<RecordMetadata, T>> send(Publisher<Tuple2<ProducerRecord<K, V>, T>> records) {
         Flux<Tuple2<RecordMetadata, T>> flux = outboundFlux(records, false);
@@ -118,25 +134,26 @@ public class KafkaSender<K, V> {
     }
 
     /**
-     * Sends the sequence of records provided to Kafka and returns an unordered flux of response record
-     * metadata of each send request. Since the ordering of records and responses may not be the same,
-     * additional data may be passed through that is not sent to Kafka, but is included in the response flux.
+     * Sends a sequence of records to Kafka and returns a flux of response record metadata including
+     * partition and offset of each send request. Ordering of responses is guaranteed for partitions,
+     * but responses from different partitions may be interleaved in a different order from the requests.
+     * Additional correlation data may be passed through that is not sent to Kafka, but is included
+     * in the response flux to enable matching responses to requests.
      * Example usage:
      * <pre>
      * {@code
      *     source = Flux.range(1, count)
      *                  .map(i -> Tuples.of(new ProducerRecord<>(topic, key(i), message(i)), i));
-     *     sender.send(source, Schedulers.newSingle("send"), 1024)
+     *     sender.send(source, Schedulers.newSingle("send"), 1024, false)
      *           .doOnNext(r -> System.out.println("Message #" + r.getT2() + " metadata=" + r.getT1()));
-     *
      * }
      * </pre>
      *
      * @param records Sequence of publisher records along with additional data to be included in response
      * @param scheduler Scheduler to publish on
      * @param maxInflight Maximum number of records in flight
-     * @param delayError If true, delay error until all records have been published
-     * @return
+     * @param delayError If false, send terminates when a response indicates failure, otherwise send is attempted for all records
+     * @return Flux of Kafka response record metadata along with the corresponding request correlation data
      */
     public <T> Flux<Tuple2<RecordMetadata, T>> send(Publisher<Tuple2<ProducerRecord<K, V>, T>> records,
             Scheduler scheduler, int maxInflight, boolean delayError) {
@@ -216,15 +233,15 @@ public class KafkaSender<K, V> {
         FAILED
     }
 
-    private class SendSubscriber<T> implements Subscriber<Tuple2<ProducerRecord<K, V>, T>> {
-        private final Subscriber<? super Tuple2<RecordMetadata, T>> actual;
+    private abstract class AbstractSendSubscriber<Q, S, C> implements Subscriber<Q> {
+        protected final Subscriber<? super S> actual;
         private final boolean delayError;
         private KafkaProducer<K, V> producer;
         private AtomicInteger inflight = new AtomicInteger();
         private SubscriberState state;
         private AtomicReference<Throwable> firstException = new AtomicReference<>();
 
-        SendSubscriber(Subscriber<? super Tuple2<RecordMetadata, T>> actual, boolean delayError) {
+        AbstractSendSubscriber(Subscriber<? super S> actual, boolean delayError) {
             this.actual = actual;
             this.delayError = delayError;
             this.state = SubscriberState.INIT;
@@ -238,7 +255,7 @@ public class KafkaSender<K, V> {
         }
 
         @Override
-        public void onNext(Tuple2<ProducerRecord<K, V>, T> m) {
+        public void onNext(Q m) {
             if (state == SubscriberState.FAILED)
                 return;
             else if (state == SubscriberState.COMPLETE) {
@@ -246,24 +263,24 @@ public class KafkaSender<K, V> {
                 return;
             }
             inflight.incrementAndGet();
-            T sourceRef = m.getT2();
+            C correlator = correlator(m);
             try {
-                producer.send(m.getT1(), (metadata, exception) -> {
+                producer.send(producerRecord(m), (metadata, exception) -> {
+                        boolean complete = inflight.decrementAndGet() == 0 && state == SubscriberState.OUTBOUND_DONE;
                         try {
-                            boolean complete = inflight.decrementAndGet() == 0 && state == SubscriberState.OUTBOUND_DONE;
                             if (exception == null) {
-                                actual.onNext(Tuples.of(metadata, sourceRef));
+                                handleResponse(metadata, correlator);
                                 if (complete)
                                     complete();
                             } else
-                                error(exception, sourceRef);
+                                error(metadata, exception, correlator, complete);
                         } catch (Exception e) {
-                            error(e, sourceRef);
+                            error(metadata, e, correlator, complete);
                         }
                     });
             } catch (Exception e) {
                 inflight.decrementAndGet();
-                error(e, sourceRef);
+                error(null, e, correlator, true);
             }
         }
 
@@ -299,16 +316,61 @@ public class KafkaSender<K, V> {
             }
         }
 
-        public void error(Throwable t, T failed) {
+        public void error(RecordMetadata metadata, Throwable t, C correlator, boolean complete) {
             log.error("error {}", t);
-            if (delayError) {
-                if (state == SubscriberState.ACTIVE || (state == SubscriberState.OUTBOUND_DONE && inflight.get() > 0))
-                    actual.onNext(Tuples.of(null, failed));
-                else
-                    onError(t);
-            } else {
+            firstException.compareAndSet(null, t);
+            if (delayError)
+                handleResponse(metadata, correlator);
+            if (!delayError || complete)
                 onError(t);
-            }
+        }
+
+        protected abstract void handleResponse(RecordMetadata metadata, C correlator);
+        protected abstract ProducerRecord<K, V> producerRecord(Q request);
+        protected abstract C correlator(Q request);
+    }
+
+    private class SendSubscriber<T> extends AbstractSendSubscriber<Tuple2<ProducerRecord<K, V>, T>, Tuple2<RecordMetadata, T>, T> {
+
+        SendSubscriber(Subscriber<? super Tuple2<RecordMetadata, T>> actual, boolean delayError) {
+           super(actual, delayError);
+        }
+
+        @Override
+        protected void handleResponse(RecordMetadata metadata, T correlator) {
+            actual.onNext(Tuples.of(metadata, correlator));
+        }
+
+        @Override
+        protected T correlator(Tuple2<ProducerRecord<K, V>, T> request) {
+            return request.getT2();
+        }
+
+        @Override
+        protected ProducerRecord<K, V> producerRecord(Tuple2<ProducerRecord<K, V>, T> request) {
+            return request.getT1();
+        }
+
+    }
+
+    private class SendSubscriberMono extends AbstractSendSubscriber<ProducerRecord<K, V>, Void, Void> {
+
+        SendSubscriberMono(Subscriber<? super Void> actual) {
+           super(actual, false);
+        }
+
+        @Override
+        protected void handleResponse(RecordMetadata metadata, Void correlator) {
+        }
+
+        @Override
+        protected Void correlator(ProducerRecord<K, V> request) {
+            return null;
+        }
+
+        @Override
+        protected ProducerRecord<K, V> producerRecord(ProducerRecord<K, V> request) {
+            return request;
         }
     }
 }

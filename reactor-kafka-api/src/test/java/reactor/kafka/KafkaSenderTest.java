@@ -17,9 +17,11 @@
 package reactor.kafka;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -238,17 +240,36 @@ public class KafkaSenderTest extends AbstractKafkaTest {
 
         int maxConcurrency = 4;
         int count = 100;
+        AtomicInteger inflight = new AtomicInteger();
+        AtomicInteger maxInflight = new AtomicInteger();
         CountDownLatch latch = new CountDownLatch(count);
         Flux.range(0, count)
-            .flatMap(i -> kafkaSender.send(createProducerRecord(i, true))
-                                     .doOnNext(metadata -> {
-                                             TestUtils.sleep(100);
-                                             latch.countDown();
-                                         }),
-                     maxConcurrency)
+            .flatMap(i -> {
+                    int current = inflight.incrementAndGet();
+                    if (current > maxInflight.get())
+                        maxInflight.set(current);
+                    return kafkaSender.send(createProducerRecord(i, true))
+                                      .doOnNext(metadata -> {
+                                              TestUtils.sleep(100);
+                                              latch.countDown();
+                                              inflight.decrementAndGet();
+                                          });
+                }, maxConcurrency, maxConcurrency)
             .subscribe();
 
-        assertTrue("Missing callbacks " + latch.getCount(), latch.await(30, TimeUnit.SECONDS));
+        assertTrue("Missing callbacks " + latch.getCount(), latch.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
+        assertTrue("Too many messages in flight " + maxInflight, maxInflight.get() <= maxConcurrency);
+        waitForMessages(consumer, count, true);
+    }
+
+    @Test
+    public void sendAll() throws Exception {
+        int count = 1000;
+        Flux<Integer> source = Flux.range(0, count);
+        kafkaSender.sendAll(source.map(i -> createProducerRecord(i, true)))
+                   .subscribe()
+                   .block();
+
         waitForMessages(consumer, count, true);
     }
 
@@ -256,7 +277,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
     public void fluxFireAndForgetTest() throws Exception {
         int count = 1000;
         Flux<Integer> source = Flux.range(0, count);
-        kafkaSender.send(source.map(i -> Tuples.of(createProducerRecord(i, true), null)))
+        kafkaSender.send(source.map(i -> Tuples.of(createProducerRecord(i, true), null)), kafkaSender.scheduler(), 256, true)
                    .subscribe();
 
         waitForMessages(consumer, count, true);
@@ -266,12 +287,15 @@ public class KafkaSenderTest extends AbstractKafkaTest {
     public void fluxPublishCallbackTest() throws Exception {
         int count = 10;
         CountDownLatch latch = new CountDownLatch(count);
+        Semaphore completeSemaphore = new Semaphore(0);
         Flux<Integer> source = Flux.range(0, count);
         kafkaSender.send(source.map(i -> Tuples.of(createProducerRecord(i, true), latch)))
             .doOnNext(result -> result.getT2().countDown())
+            .doOnComplete(() -> completeSemaphore.release())
             .subscribe();
 
         assertTrue("Missing callbacks " + latch.getCount(), latch.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
+        assertTrue("Completion callback not invoked", completeSemaphore.tryAcquire(requestTimeoutMillis, TimeUnit.MILLISECONDS));
         waitForMessages(consumer, count, true);
     }
 
@@ -297,10 +321,13 @@ public class KafkaSenderTest extends AbstractKafkaTest {
     @Test
     public void fluxFireAndForgetFailureTest() throws Exception {
         int count = 4;
+        Semaphore errorSemaphore = new Semaphore(0);
         Scheduler scheduler = kafkaSender.scheduler();
         kafkaSender.send(createOutboundErrorFlux(count, false, false).map(r -> Tuples.of(r, null)), scheduler, 1, true)
+                   .doOnError(t -> errorSemaphore.release())
                    .subscribe();
         waitForMessages(consumer, 2, true);
+        assertTrue("Error callback not invoked", errorSemaphore.tryAcquire(requestTimeoutMillis, TimeUnit.MILLISECONDS));
     }
 
     @Test
@@ -308,7 +335,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         int count = 4;
         Semaphore errorSemaphore = new Semaphore(0);
         try {
-            kafkaSender.send(createOutboundErrorFlux(count, true, false).map(r -> Tuples.of(r, null)))
+            kafkaSender.sendAll(createOutboundErrorFlux(count, true, false))
                        .doOnError(t -> errorSemaphore.release())
                 .subscribe();
         } catch (Exception e) {
@@ -316,6 +343,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
             assertTrue("Invalid exception " + e, e.getClass().getName().contains("CancelException"));
         }
         waitForMessages(consumer, 1, true);
+        assertTrue("Error callback not invoked", errorSemaphore.tryAcquire(requestTimeoutMillis, TimeUnit.MILLISECONDS));
     }
 
     @Test
@@ -344,6 +372,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
     @Test
     public void fluxRetryTest() throws Exception {
         int count = 4;
+        Semaphore completeSemaphore = new Semaphore(0);
         AtomicInteger messageIndex = new AtomicInteger();
         AtomicInteger lastSuccessful = new AtomicInteger();
         kafkaSender.send(createOutboundErrorFlux(count, false, true).map(r -> Tuples.of(r, messageIndex.getAndIncrement())))
@@ -354,9 +383,11 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                            int next = lastSuccessful.get() + 1;
                            return outboundFlux(next, count - next);
                        })
+                   .doOnComplete(() -> completeSemaphore.release())
                    .subscribe();
 
         waitForMessages(consumer, count, false);
+        assertTrue("Completion callback not invoked", completeSemaphore.tryAcquire(requestTimeoutMillis, TimeUnit.MILLISECONDS));
     }
 
     @Test
@@ -386,16 +417,28 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         kafkaSender = new KafkaSender<Integer, String>(senderConfig);
 
         int count = 100;
+        int maxConcurrency = 4;
+        AtomicInteger inflight = new AtomicInteger();
+        AtomicInteger maxInflight = new AtomicInteger();
         CountDownLatch latch = new CountDownLatch(count);
-        Flux<Integer> source = Flux.range(0, count);
-        kafkaSender.send(source.map(i -> Tuples.of(createProducerRecord(i, true), null)))
+        Flux<Tuple2<ProducerRecord<Integer, String>, Integer>> source =
+                Flux.range(0, count)
+                    .map(i -> {
+                            int current = inflight.incrementAndGet();
+                            if (current > maxInflight.get())
+                                maxInflight.set(current);
+                            return Tuples.of(createProducerRecord(i, true), null);
+                        });
+        kafkaSender.send(source, kafkaSender.scheduler(), maxConcurrency, false)
                    .doOnNext(metadata -> {
                            TestUtils.sleep(100);
                            latch.countDown();
+                           inflight.decrementAndGet();
                        })
                    .subscribe();
 
-        assertTrue("Missing callbacks " + latch.getCount(), latch.await(30, TimeUnit.SECONDS));
+        assertTrue("Missing callbacks " + latch.getCount(), latch.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
+        assertTrue("Too many messages in flight " + maxInflight, maxInflight.get() <= maxConcurrency);
         waitForMessages(consumer, count, true);
     }
 
@@ -404,18 +447,20 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         int count = 5000;
         EmitterProcessor<Integer> emitter = EmitterProcessor.create();
         BlockingSink<Integer> sink = emitter.connectSink();
-        Set<Integer> successfulSends = new HashSet<>();
+        List<List<Integer>> successfulSends = new ArrayList<>();
         Set<Integer> failedSends = new HashSet<>();
         Semaphore done = new Semaphore(0);
         Scheduler scheduler = Schedulers.newSingle("kafka-sender");
         int maxInflight = 1024;
         boolean delayError = true;
-        kafkaSender.send(emitter.map(i -> Tuples.of(new ProducerRecord<Integer, String>(topic, i, "Message " + i), i)), scheduler, maxInflight, delayError)
+        for (int i = 0; i < partitions; i++)
+            successfulSends.add(new ArrayList<>());
+        kafkaSender.send(emitter.map(i -> Tuples.of(new ProducerRecord<Integer, String>(topic, i % partitions, i, "Message " + i), i)), scheduler, maxInflight, delayError)
                    .doOnNext(result -> {
                            int messageIdentifier = result.getT2();
                            RecordMetadata metadata = result.getT1();
                            if (metadata != null)
-                               successfulSends.add(messageIdentifier);
+                               successfulSends.get(metadata.partition()).add(messageIdentifier);
                            else
                                failedSends.add(messageIdentifier);
                        })
@@ -428,6 +473,14 @@ public class KafkaSenderTest extends AbstractKafkaTest {
 
         assertTrue("Send not complete", done.tryAcquire(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
         waitForMessages(consumer, count, false);
+        assertEquals(0, failedSends.size());
+        // Check that responses corresponding to each partition are ordered
+        for (List<Integer> list : successfulSends) {
+            assertEquals(count / partitions, list.size());
+            for (int i = 1; i < list.size(); i++) {
+                assertEquals(list.get(i - 1) + partitions, (int) list.get(i));
+            }
+        }
     }
 
     private Consumer<Integer, String> createConsumer() throws Exception {

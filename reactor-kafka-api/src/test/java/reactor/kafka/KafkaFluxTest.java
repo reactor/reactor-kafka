@@ -471,7 +471,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
         for (int i = 0; i < count; i++) {
             sendMessages(i, 1);
             if (!failed.get()) {
-                onNextSemaphore.tryAcquire(1000, TimeUnit.MILLISECONDS);
+                onNextSemaphore.tryAcquire(requestTimeoutMillis, TimeUnit.MILLISECONDS);
                 TestUtils.sleep(fluxConfig.pollTimeout().toMillis());
             }
         }
@@ -568,7 +568,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
         assertTrue("Partitions not assigned", assignSemaphore.tryAcquire(sessionTimeoutMillis + 1000, TimeUnit.MILLISECONDS));
         sendMessages(0, count);
         waitForMessages(latch);
-        assertTrue("Commits did not succeed", commitSemaphore.tryAcquire(count, 5000, TimeUnit.MILLISECONDS));
+        assertTrue("Commits did not succeed", commitSemaphore.tryAcquire(count, requestTimeoutMillis * count, TimeUnit.MILLISECONDS));
         assertEquals(0, commitFailures.get());
         assertEquals(0, revoked.get());
     }
@@ -872,7 +872,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
         waitFoPartitionAssignment();
         sendMessagesSync(0, count);
 
-        TestUtils.sleep(2000);
+        TestUtils.sleep(2000); //
         assertTrue("Message not received", receiveSemaphore.tryAcquire(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
         assertEquals(1, receivedCount.get());
         TestUtils.sleep(2000);

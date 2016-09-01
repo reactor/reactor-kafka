@@ -101,26 +101,25 @@ public class ProducerPerformance {
                 String sendBufSizeOverride = (String) producerProps.get(ProducerConfig.SEND_BUFFER_CONFIG);
                 long sendBufSize = sendBufSizeOverride != null ? Long.parseLong(sendBufSizeOverride) : DEFAULT_PRODUCER_BUFFER_SIZE;
                 int payloadSizeLowerPowerOf2 = 1 << (payload.length < 2 ? 0 : 31 - Integer.numberOfLeadingZeros(payload.length - 1));
-                int bufferSize = (int) (sendBufSize / payloadSizeLowerPowerOf2);
-                if (bufferSize > 64 * 1024) bufferSize = 64 * 1024;
-                System.out.println("Running in reactor mode " + reactiveMode + " with buffer size " + bufferSize);
+                int maxInflight = (int) (sendBufSize / payloadSizeLowerPowerOf2);
+                if (maxInflight > 64 * 1024) maxInflight = 64 * 1024;
 
                 CountDownLatch latch = new CountDownLatch((int) numRecords);
                 Flux<?> flux;
                 switch (reactiveMode) {
                     case FLUX:
-                        flux = createReactiveFlux(numRecords, payload, record, sender, stats, throttler, latch, bufferSize);
+                        flux = createReactiveFlux(numRecords, payload, record, sender, stats, throttler, latch, maxInflight);
                         break;
                     case FLAT_MAP:
-                        flux = createReactiveFlatMapFlux(numRecords, payload, record, sender, stats, throttler, latch);
+                        flux = createReactiveFlatMapFlux(numRecords, payload, record, sender, stats, throttler, latch, maxInflight);
                         break;
                     case TOPIC_PROCESSOR:
-                        flux = createReactiveTopicProcessor(numRecords, payload, record, sender, stats, throttler, latch, bufferSize);
+                        flux = createReactiveTopicProcessor(numRecords, payload, record, sender, stats, throttler, latch, maxInflight);
                         break;
                     default:
                         throw new IllegalArgumentException("Invalid reactive mode " + reactiveMode);
                 }
-                System.out.println("Running test using reactive API, mode=" + reactiveMode);
+                System.out.println("Running test using reactive API, mode=" + reactiveMode  + " messageSize=" + recordSize + ", maxInflight=" + maxInflight);
                 Cancellation cancellation = flux.subscribe();
                 latch.await();
                 cancellation.dispose();
@@ -167,9 +166,9 @@ public class ProducerPerformance {
 
     private static Flux<RecordMetadata> createReactiveFlatMapFlux(long numRecords, byte[] payload, ProducerRecord<byte[], byte[]> record,
             KafkaSender<byte[], byte[]> sender, Stats stats,
-            ThroughputThrottler throttler, CountDownLatch latch) {
+            ThroughputThrottler throttler, CountDownLatch latch, int maxInflight) {
 
-        sender.scheduler(Schedulers.newSingle("perf-send"));
+        sender.scheduler(Schedulers.newSingle("perf-send", true));
         Flux<RecordMetadata> flux = Flux.range(1, (int) numRecords)
                            .flatMap(i -> {
                                    long sendStartMs = System.currentTimeMillis();
@@ -184,7 +183,7 @@ public class ProducerPerformance {
                                    if (throttler.shouldThrottle(i, sendStartMs))
                                        throttler.throttle();
                                    return result;
-                               })
+                               }, maxInflight)
                           .doOnError(e -> e.printStackTrace());
         return flux;
     }
