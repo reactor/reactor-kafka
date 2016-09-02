@@ -44,13 +44,14 @@ public class PerfTestUtils {
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, embeddedKafka.getBrokersAsString());
         props.put(ProducerConfig.CLIENT_ID_CONFIG, "prod-perf");
         props.put(ProducerConfig.ACKS_CONFIG, "all");
+        props.put(ProducerConfig.SEND_BUFFER_CONFIG, String.valueOf(1024 * 1024));
         return props;
     }
 
     public static Map<String, Object> consumerProps(KafkaEmbedded embeddedKafka) {
         Map<String, Object> props = new HashMap<>();
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, embeddedKafka.getBrokersAsString());
-        props.put(ConsumerConfig.CLIENT_ID_CONFIG, "prod-perf");
+        props.put(ConsumerConfig.CLIENT_ID_CONFIG, "cons-perf");
         return props;
     }
 }

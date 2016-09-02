@@ -715,7 +715,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
         CountDownLatch[] latch = new CountDownLatch[partitions];
         for (int i = 0; i < partitions; i++)
             latch[i] = new CountDownLatch(countPerPartition);
-        Scheduler scheduler = Schedulers.newElastic("test-groupBy", 1);
+        Scheduler scheduler = Schedulers.newElastic("test-groupBy", 10);
         Map<String, Set<Integer>> threadMap = new ConcurrentHashMap<>();
 
         Cancellation cancellation =

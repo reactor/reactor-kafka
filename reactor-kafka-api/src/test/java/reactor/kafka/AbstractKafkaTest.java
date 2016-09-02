@@ -138,7 +138,6 @@ public class AbstractKafkaTest {
     }
 
     public String createNewTopic(String newTopic, int partitions) {
-        deleteTopic(this.topic);
         this.topic = newTopic;
         this.partitions = partitions;
         ZkUtils zkUtils = new ZkUtils(embeddedKafka.getZkClient(), null, false);

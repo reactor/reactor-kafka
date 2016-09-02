@@ -74,7 +74,7 @@ public class MirrorMakerReactive extends MirrorMaker {
         SenderConfig<byte[], byte[]> config = new SenderConfig<>(toConfig(producerProps));
         sender = new MirrorMakerProducer(config, sync);
         mirrorMakerStreams = createConsumerStreams(numStreams, consumerProps, customRebalanceListener, whitelist);
-        shutdownSemaphore = new Semaphore(0 - numStreams);
+        shutdownSemaphore = new Semaphore(1 - numStreams);
 
     }
 
@@ -171,7 +171,7 @@ public class MirrorMakerReactive extends MirrorMaker {
         }
 
         public void start() {
-            kafkaFlux.subscribe();
+            cancellation = kafkaFlux.subscribe();
         }
 
         public void shutdown() {
