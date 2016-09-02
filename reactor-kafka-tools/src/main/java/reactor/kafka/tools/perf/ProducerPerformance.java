@@ -26,8 +26,6 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
-import org.reactivestreams.Subscriber;
-import org.reactivestreams.Subscription;
 
 import net.sourceforge.argparse4j.ArgumentParsers;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
@@ -35,24 +33,13 @@ import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
 import reactor.core.Cancellation;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-import reactor.core.publisher.TopicProcessor;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
-import reactor.util.concurrent.WaitStrategy;
 import reactor.util.function.Tuples;
 import reactor.kafka.SenderConfig;
 import reactor.kafka.KafkaSender;
 
 public class ProducerPerformance {
-
-    enum ReactiveMode {
-        FLAT_MAP,
-        FLUX,
-        TOPIC_PROCESSOR
-    };
-
-    public static ReactiveMode reactiveMode = ReactiveMode.FLUX;
 
     private static final long DEFAULT_PRODUCER_BUFFER_SIZE = 32 * 1024 * 1024;
 
@@ -64,67 +51,20 @@ public class ProducerPerformance {
 
             /* parse args */
             String topicName = res.getString("topic");
-            long numRecords = res.getLong("numRecords");
+            int numRecords = res.getInt("numRecords");
             int recordSize = res.getInt("recordSize");
             int throughput = res.getInt("throughput");
             boolean useReactive = res.getBoolean("reactive");
 
             Map<String, Object> producerProps = getProperties(res.getList("producerConfig"));
-            producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArraySerializer");
-            producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArraySerializer");
 
-            /* setup perf test */
-            byte[] payload = new byte[recordSize];
-            Random random = new Random(0);
-            for (int i = 0; i < payload.length; ++i)
-                payload[i] = (byte) (random.nextInt(26) + 65);
-            ProducerRecord<byte[], byte[]> record = new ProducerRecord<>(topicName, payload);
-            Stats stats = new Stats(numRecords, 5000);
-            long startMs = System.currentTimeMillis();
-            ThroughputThrottler throttler = new ThroughputThrottler(throughput, startMs);
-            if (numRecords > Integer.MAX_VALUE)
-                throw new IllegalArgumentException("Maximum number of records is " + Integer.MAX_VALUE);
-
-            if (!useReactive) {
-                KafkaProducer<byte[], byte[]> producer = new KafkaProducer<byte[], byte[]>(producerProps);
-                for (int i = 0; i < numRecords; i++) {
-                    long sendStartMs = System.currentTimeMillis();
-                    Callback cb = stats.nextCompletion(sendStartMs, payload.length, stats);
-                    producer.send(record, cb);
-                    if (throttler.shouldThrottle(i, sendStartMs))
-                        throttler.throttle();
-                }
-                producer.close();
-            } else {
-                KafkaSender<byte[], byte[]> sender = new KafkaSender<>(new SenderConfig<byte[], byte[]>(producerProps));
-
-                String sendBufSizeOverride = (String) producerProps.get(ProducerConfig.SEND_BUFFER_CONFIG);
-                long sendBufSize = sendBufSizeOverride != null ? Long.parseLong(sendBufSizeOverride) : DEFAULT_PRODUCER_BUFFER_SIZE;
-                int payloadSizeLowerPowerOf2 = 1 << (payload.length < 2 ? 0 : 31 - Integer.numberOfLeadingZeros(payload.length - 1));
-                int maxInflight = (int) (sendBufSize / payloadSizeLowerPowerOf2);
-                if (maxInflight > 64 * 1024) maxInflight = 64 * 1024;
-
-                CountDownLatch latch = new CountDownLatch((int) numRecords);
-                Flux<?> flux;
-                switch (reactiveMode) {
-                    case FLUX:
-                        flux = createReactiveFlux(numRecords, payload, record, sender, stats, throttler, latch, maxInflight);
-                        break;
-                    case FLAT_MAP:
-                        flux = createReactiveFlatMapFlux(numRecords, payload, record, sender, stats, throttler, latch, maxInflight);
-                        break;
-                    case TOPIC_PROCESSOR:
-                        flux = createReactiveTopicProcessor(numRecords, payload, record, sender, stats, throttler, latch, maxInflight);
-                        break;
-                    default:
-                        throw new IllegalArgumentException("Invalid reactive mode " + reactiveMode);
-                }
-                System.out.println("Running test using reactive API, mode=" + reactiveMode  + " messageSize=" + recordSize + ", maxInflight=" + maxInflight);
-                Cancellation cancellation = flux.subscribe();
-                latch.await();
-                cancellation.dispose();
-                sender.close();
-            }
+            /* setup and run perf test */
+            AbstractProducerPerformance perfTest;
+            if (!useReactive)
+                perfTest = new NonReactiveProducerPerformance(producerProps, topicName, numRecords, recordSize, throughput);
+            else
+                perfTest = new ReactiveProducerPerformance(producerProps, topicName, numRecords, recordSize, throughput);
+            Stats stats = perfTest.runTest();
 
             /* print final results */
             stats.printTotal();
@@ -137,108 +77,6 @@ public class ProducerPerformance {
                 System.exit(1);
             }
         }
-    }
-
-    private static Flux<RecordMetadata> createReactiveFlux(long numRecords,
-            byte[] payload, ProducerRecord<byte[], byte[]> record,
-            KafkaSender<byte[], byte[]> sender, Stats stats,
-            ThroughputThrottler throttler, CountDownLatch latch, int maxInflight) {
-
-        Scheduler scheduler = Schedulers.newSingle("perf-send", true);
-        Flux<RecordMetadata> flux =
-            sender.send(Flux.range(1, (int) numRecords)
-                            .map(i -> {
-                                    long sendStartMs = System.currentTimeMillis();
-                                    if (throttler.shouldThrottle(i, sendStartMs))
-                                        throttler.throttle();
-                                    Callback cb = stats.nextCompletion(sendStartMs, payload.length, stats);
-                                    return Tuples.of(record, cb);
-                                }), scheduler, maxInflight, false)
-                  .map(result -> {
-                          RecordMetadata metadata = result.getT1();
-                          Callback cb = result.getT2();
-                          cb.onCompletion(metadata, null);
-                          latch.countDown();
-                          return metadata;
-                      });
-        return flux;
-    }
-
-    private static Flux<RecordMetadata> createReactiveFlatMapFlux(long numRecords, byte[] payload, ProducerRecord<byte[], byte[]> record,
-            KafkaSender<byte[], byte[]> sender, Stats stats,
-            ThroughputThrottler throttler, CountDownLatch latch, int maxInflight) {
-
-        sender.scheduler(Schedulers.newSingle("perf-send", true));
-        Flux<RecordMetadata> flux = Flux.range(1, (int) numRecords)
-                           .flatMap(i -> {
-                                   long sendStartMs = System.currentTimeMillis();
-                                   Callback cb = stats.nextCompletion(sendStartMs, payload.length, stats);
-                                   Mono<RecordMetadata> result =  sender.send(record)
-                                           .doOnError(exception -> cb.onCompletion(null, (Exception) exception))
-                                           .doOnSuccess(metadata -> {
-                                                   cb.onCompletion(metadata, null);
-                                                   latch.countDown();
-                                               });
-
-                                   if (throttler.shouldThrottle(i, sendStartMs))
-                                       throttler.throttle();
-                                   return result;
-                               }, maxInflight)
-                          .doOnError(e -> e.printStackTrace());
-        return flux;
-    }
-
-    private static Flux<?> createReactiveTopicProcessor(long numRecords, byte[] payload, ProducerRecord<byte[], byte[]> record,
-            KafkaSender<byte[], byte[]> sender, Stats stats,
-            ThroughputThrottler throttler, CountDownLatch latch, int bufferSize) {
-
-        // Since Kafka send callback simply schedules a callback on a topic processor
-        // the mono can be subscribed on the Kafka network thread. The network thread
-        // would be blocked only for executing callbacks, making it consistent with
-        // non-reactive mode.
-        sender.scheduler(null);
-
-        final TopicProcessor<Runnable> topicProcessor =
-                TopicProcessor.<Runnable>create("perf-topic-processor", bufferSize, WaitStrategy.parking(), true);
-        topicProcessor.subscribe(new Subscriber<Runnable>() {
-            @Override
-            public void onSubscribe(Subscription s) {
-                s.request(Long.MAX_VALUE);
-            }
-
-            @Override
-            public void onNext(Runnable runnable) {
-                runnable.run();
-            }
-
-            @Override
-            public void onError(Throwable t) {
-                t.printStackTrace();
-            }
-
-            @Override
-            public void onComplete() {
-            }
-        });
-        Flux<?> flux = Flux.range(1, (int) numRecords)
-                           .doOnSubscribe(s -> topicProcessor.subscribe())
-                           .map(i -> {
-                                   long sendStartMs = System.currentTimeMillis();
-                                   Callback cb = stats.nextCompletion(sendStartMs, payload.length, stats);
-                                   Mono<RecordMetadata> mono =  sender.send(record)
-                                           .doOnError(exception -> cb.onCompletion(null, (Exception) exception));
-                                   mono.subscribe(metadata -> {
-                                           topicProcessor.onNext(() -> {
-                                                   cb.onCompletion(metadata, null);
-                                                   latch.countDown();
-                                               });
-                                       });
-                                   if (throttler.shouldThrottle(i, sendStartMs))
-                                       throttler.throttle();
-                                   return i;
-                               })
-                          .doOnError(e -> e.printStackTrace());
-        return flux;
     }
 
     /** Get the command-line argument parser. */
@@ -258,7 +96,7 @@ public class ProducerPerformance {
         parser.addArgument("--num-records")
                 .action(store())
                 .required(true)
-                .type(Long.class)
+                .type(Integer.class)
                 .metavar("NUM-RECORDS")
                 .dest("numRecords")
                 .help("number of messages to produce");
@@ -310,7 +148,7 @@ public class ProducerPerformance {
         return props;
     }
 
-    private static class Stats {
+    static class Stats {
         private long start;
         private long windowStart;
         private int[] latencies;
@@ -326,6 +164,7 @@ public class ProducerPerformance {
         private long windowTotalLatency;
         private long windowBytes;
         private long reportingInterval;
+        private long completionTime;
 
         public Stats(long numRecords, int reportingInterval) {
             this.start = System.currentTimeMillis();
@@ -372,9 +211,9 @@ public class ProducerPerformance {
         }
 
         public void printWindow() {
-            long ellapsed = System.currentTimeMillis() - windowStart;
-            double recsPerSec = 1000.0 * windowCount / (double) ellapsed;
-            double mbPerSec = 1000.0 * this.windowBytes / (double) ellapsed / (1024.0 * 1024.0);
+            long elapsed = System.currentTimeMillis() - windowStart;
+            double recsPerSec = 1000.0 * windowCount / (double) elapsed;
+            double mbPerSec = 1000.0 * this.windowBytes / (double) elapsed / (1024.0 * 1024.0);
             System.out.printf("%d records sent, %.1f records/sec (%.2f MB/sec), %.1f ms avg latency, %.1f max latency.\n",
                               windowCount,
                               recsPerSec,
@@ -391,12 +230,18 @@ public class ProducerPerformance {
             this.windowBytes = 0;
         }
 
+        public void complete() {
+            if (completionTime == 0)
+                completionTime = System.currentTimeMillis();
+        }
+
         public void printTotal() {
-            long elapsed = System.currentTimeMillis() - start;
+            complete();
+            long elapsed = completionTime - start;
             double recsPerSec = 1000.0 * count / (double) elapsed;
             double mbPerSec = 1000.0 * this.bytes / (double) elapsed / (1024.0 * 1024.0);
-            int[] percs = percentiles(this.latencies, index, 0.5, 0.95, 0.99, 0.999);
-            System.out.printf("%d records sent, %f records/sec (%.2f MB/sec), %.2f ms avg latency, %.2f ms max latency, %d ms 50th, %d ms 95th, %d ms 99th, %d ms 99.9th.\n",
+            int[] percs = percentiles(0.5, 0.75, 0.95, 0.99, 0.999);
+            System.out.printf("%d records sent, %f records/sec (%.2f MB/sec), %.2f ms avg latency, %.2f ms max latency, %d ms 50th, %d ms 75th %d ms 95th, %d ms 99th, %d ms 99.9th.\n",
                               count,
                               recsPerSec,
                               mbPerSec,
@@ -405,11 +250,12 @@ public class ProducerPerformance {
                               percs[0],
                               percs[1],
                               percs[2],
-                              percs[3]);
+                              percs[3],
+                              percs[4]);
         }
 
-        private static int[] percentiles(int[] latencies, int count, double... percentiles) {
-            int size = Math.min(count, latencies.length);
+        int[] percentiles(double... percentiles) {
+            int size = Math.min((int) count, latencies.length);
             Arrays.sort(latencies, 0, size);
             int[] values = new int[percentiles.length];
             for (int i = 0; i < percentiles.length; i++) {
@@ -417,6 +263,15 @@ public class ProducerPerformance {
                 values[i] = latencies[index];
             }
             return values;
+        }
+
+        double recordsPerSec() {
+            long elapsed = completionTime - start;
+            return 1000.0 * count / (double) elapsed;
+        }
+
+        long count() {
+            return count;
         }
     }
 
@@ -439,6 +294,114 @@ public class ProducerPerformance {
             this.stats.record(iteration, latency, bytes, now);
             if (exception != null)
                 exception.printStackTrace();
+        }
+    }
+
+    static abstract class AbstractProducerPerformance {
+        final int numRecords;
+        final int recordSize;
+        final ProducerRecord<byte[], byte[]> record;
+        final Map<String, Object> producerProps;
+        final ThroughputThrottler throttler;
+        final Stats stats;
+
+        AbstractProducerPerformance(Map<String, Object> producerPropsOverride, String topic, int numRecords, int recordSize, long throughput) {
+            this.numRecords = numRecords;
+            this.recordSize = recordSize;
+
+            byte[] payload = new byte[recordSize];
+            Random random = new Random(0);
+            for (int i = 0; i < payload.length; ++i)
+                payload[i] = (byte) (random.nextInt(26) + 65);
+            record = new ProducerRecord<>(topic, payload);
+
+            producerProps = new HashMap<>(producerPropsOverride);
+            producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArraySerializer");
+            producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArraySerializer");
+
+            stats = new Stats(numRecords, 5000);
+            long startMs = System.currentTimeMillis();
+            throttler = new ThroughputThrottler(throughput, startMs);
+        }
+
+        public abstract Stats runTest() throws InterruptedException;
+    }
+
+    static class NonReactiveProducerPerformance extends AbstractProducerPerformance {
+
+        NonReactiveProducerPerformance(Map<String, Object> producerPropsOverride, String topic, int numRecords, int recordSize, long throughput) {
+            super(producerPropsOverride, topic, numRecords, recordSize, throughput);
+        }
+
+        public Stats runTest() {
+            System.out.println("Running producer performance test using non-reactive API, class=" + this.getClass().getSimpleName()  + " messageSize=" + recordSize);
+            KafkaProducer<byte[], byte[]> producer = new KafkaProducer<byte[], byte[]>(producerProps);
+            for (int i = 0; i < numRecords; i++) {
+                long sendStartMs = System.currentTimeMillis();
+                Callback cb = stats.nextCompletion(sendStartMs, recordSize, stats);
+                producer.send(record, cb);
+                if (throttler.shouldThrottle(i, sendStartMs))
+                    throttler.throttle();
+            }
+            stats.complete();
+            producer.close();
+            return stats;
+        }
+    }
+
+    static class ReactiveProducerPerformance extends AbstractProducerPerformance {
+
+        final KafkaSender<byte[], byte[]> sender;
+
+        ReactiveProducerPerformance(Map<String, Object> producerPropsOverride, String topic, int numRecords, int recordSize, long throughput) {
+            super(producerPropsOverride, topic, numRecords, recordSize, throughput);
+            sender = new KafkaSender<>(new SenderConfig<byte[], byte[]>(producerProps));
+        }
+
+        public Stats runTest() throws InterruptedException {
+            int maxInflight = maxInflight();
+            System.out.println("Running producer performance test using reactive API, class=" + this.getClass().getSimpleName()  + " messageSize=" + recordSize + ", maxInflight=" + maxInflight);
+
+            Scheduler scheduler = Schedulers.newSingle("prod-perf", true);
+            CountDownLatch latch = new CountDownLatch(numRecords);
+            Flux<?> flux = senderFlux(latch, maxInflight, scheduler);
+            Cancellation cancellation = flux.subscribe();
+            latch.await();
+            stats.complete();
+            cancellation.dispose();
+            sender.close();
+            scheduler.shutdown();
+
+            return stats;
+        }
+
+        Flux<?> senderFlux(CountDownLatch latch, int maxInflight, Scheduler scheduler) {
+            Flux<RecordMetadata> flux =
+                sender.send(Flux.range(1, numRecords)
+                                .map(i -> {
+                                        long sendStartMs = System.currentTimeMillis();
+                                        if (throttler.shouldThrottle(i, sendStartMs))
+                                            throttler.throttle();
+                                        Callback cb = stats.nextCompletion(sendStartMs, recordSize, stats);
+                                        return Tuples.of(record, cb);
+                                    }), scheduler, maxInflight, false)
+                      .map(result -> {
+                              RecordMetadata metadata = result.getT1();
+                              Callback cb = result.getT2();
+                              cb.onCompletion(metadata, null);
+                              latch.countDown();
+                              return metadata;
+                          });
+            return flux;
+        }
+
+        int maxInflight() {
+            String sendBufSizeOverride = (String) producerProps.get(ProducerConfig.SEND_BUFFER_CONFIG);
+            long sendBufSize = sendBufSizeOverride != null ? Long.parseLong(sendBufSizeOverride) : DEFAULT_PRODUCER_BUFFER_SIZE;
+            int payloadSizeLowerPowerOf2 = 1 << (recordSize < 2 ? 0 : 31 - Integer.numberOfLeadingZeros(recordSize - 1));
+            int maxInflight = (int) (sendBufSize / payloadSizeLowerPowerOf2);
+            if (maxInflight > 64 * 1024) maxInflight = 64 * 1024;
+            return maxInflight;
         }
     }
 

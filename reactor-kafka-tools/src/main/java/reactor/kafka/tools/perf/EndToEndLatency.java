@@ -65,88 +65,18 @@ public class EndToEndLatency {
             boolean useReactive = res.getBoolean("reactive");
             long timeout = 60000;
 
-            Map<String, Object> consumerProps = new HashMap<String, Object>();
-            consumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-            consumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, "test-group-" + System.currentTimeMillis());
-            consumerProps.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
-            consumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
-            consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
-            consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
-            consumerProps.put(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG, "0"); //ensure we have no temporal batching
-            consumerProps.putAll(getProperties(res.getList("consumerConfig")));
+            Map<String, Object> consumerProps = getProperties(res.getList("consumerConfig"));
 
-            Map<String, Object> producerProps = new HashMap<String, Object>();
-            producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-            producerProps.put(ProducerConfig.LINGER_MS_CONFIG, "0");
-            producerProps.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, String.valueOf(Long.MAX_VALUE));
-            producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArraySerializer");
-            producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArraySerializer");
-            producerProps.putAll(getProperties(res.getList("producerConfig")));
+            Map<String, Object> producerProps = getProperties(res.getList("producerConfig"));
 
-            Client client;
+            AbstractEndToEndLatency test;
             if (useReactive) {
-                System.out.println("Running latency test using Reactive API");
-                client = new ReactiveClient(consumerProps, producerProps, topic);
+                test = new ReactiveEndToEndLatency(consumerProps, producerProps, bootstrapServers, topic);
             } else {
-                System.out.println("Running latency test using non-reactive API");
-                client = new NonReactiveClient(consumerProps, producerProps, topic);
+                test = new NonReactiveEndToEndLatency(consumerProps, producerProps, bootstrapServers, topic);
             }
 
-            client.initialize();
-
-            double totalTime = 0.0;
-            double[] latencies = new double[numMessages];
-            Random random = new Random(0);
-
-            for (int i = 0; i < numMessages; i++) {
-                byte[] message = randomBytesOfLen(random, messageSize);
-                long begin = System.nanoTime();
-
-                //Send message (of random bytes) synchronously then immediately poll for it
-                Iterator<ConsumerRecord<byte[], byte[]>> recordIter = client.sendAndReceive(topic, message, timeout);
-                long elapsed = System.nanoTime() - begin;
-
-                //Check we got results
-                if (!recordIter.hasNext()) {
-                    client.finalize();
-                    throw new RuntimeException("poll() timed out before finding a result : timeout=" + timeout);
-                }
-
-                //Check result matches the original record
-                String sent = new String(message);
-                String read = new String(recordIter.next().value());
-                if (!read.equals(sent)) {
-                    client.finalize();
-                    throw new RuntimeException("The message read " + read + " did not match the message sent " + sent);
-                }
-
-                //Check we only got the one message
-                long count = 0;
-                while (recordIter.hasNext()) {
-                    recordIter.next();
-                    count++;
-                }
-                if (count > 0)
-                    throw new RuntimeException("Only one result was expected during this test. We found " + count);
-
-                //Report progress
-                if (i % 1000 == 0)
-                    System.out.println(i + "\t" + elapsed / 1000.0 / 1000.0);
-                totalTime += elapsed;
-                latencies[i] = (double) elapsed / 1000 / 1000;
-            }
-
-            //Results
-            System.out.printf("Avg latency: %.4f ms\n\n", totalTime / numMessages / 1000.0 / 1000.0);
-            Arrays.sort(latencies);
-            double p50 = latencies[(int) (latencies.length * 0.5)];
-            double p75 = latencies[(int) (latencies.length * 0.75)];
-            double p90 = latencies[(int) (latencies.length * 0.90)];
-            double p99 = latencies[(int) (latencies.length * 0.99)];
-            double p999 = latencies[(int) (latencies.length * 0.999)];
-            System.out.printf("Percentiles: 50th = %.4f, 75th = %.4f, 90th = %.4f, 99th = %.4f, 99.9th = %.4f\n", p50, p75, p90, p99, p999);
-
-            client.finalize();
+            test.runTest(numMessages, messageSize, timeout);
 
             System.exit(0);
         } catch (ArgumentParserException e) {
@@ -239,18 +169,103 @@ public class EndToEndLatency {
         return props;
     }
 
-    private interface Client {
-        void initialize();
-        Iterator<ConsumerRecord<byte[], byte[]>> sendAndReceive(String topic, byte[] message, long timeout) throws Exception;
-        void finalize();
+    static abstract class AbstractEndToEndLatency {
+
+        final String topic;
+        final Map<String, Object> consumerProps;
+        final Map<String, Object> producerProps;
+        AbstractEndToEndLatency(Map<String, Object> consumerPropsOverride, Map<String, Object> producerPropsOverride, String bootstrapServers, String topic) {
+            this.topic = topic;
+
+            consumerProps = new HashMap<String, Object>();
+            consumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+            consumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, "test-group-" + System.currentTimeMillis());
+            consumerProps.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
+            consumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
+            consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
+            consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
+            consumerProps.put(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG, "0"); //ensure we have no temporal batching
+            consumerProps.putAll(consumerPropsOverride);
+
+            producerProps = new HashMap<String, Object>();
+            producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+            producerProps.put(ProducerConfig.LINGER_MS_CONFIG, "0");
+            producerProps.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, String.valueOf(Long.MAX_VALUE));
+            producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArraySerializer");
+            producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArraySerializer");
+            producerProps.putAll(producerPropsOverride);
+        }
+
+        public double[] runTest(int numMessages, int messageSize, Long timeout) throws Exception {
+            double totalTime = 0.0;
+            double[] latencies = new double[numMessages];
+            Random random = new Random(0);
+
+            initialize();
+            for (int i = 0; i < numMessages; i++) {
+                byte[] message = randomBytesOfLen(random, messageSize);
+                long begin = System.nanoTime();
+
+                //Send message (of random bytes) synchronously then immediately poll for it
+                Iterator<ConsumerRecord<byte[], byte[]>> recordIter = sendAndReceive(topic, message, timeout);
+                long elapsed = System.nanoTime() - begin;
+
+                //Check we got results
+                if (!recordIter.hasNext()) {
+                    close();
+                    throw new RuntimeException("poll() timed out before finding a result : timeout=" + timeout);
+                }
+
+                //Check result matches the original record
+                String sent = new String(message);
+                String read = new String(recordIter.next().value());
+                if (!read.equals(sent)) {
+                    close();
+                    throw new RuntimeException("The message read " + read + " did not match the message sent " + sent);
+                }
+
+                //Check we only got the one message
+                long count = 0;
+                while (recordIter.hasNext()) {
+                    recordIter.next();
+                    count++;
+                }
+                if (count > 0)
+                    throw new RuntimeException("Only one result was expected during this test. We found " + count);
+
+                //Report progress
+                if (i % 1000 == 0)
+                    System.out.println(i + "\t" + elapsed / 1000.0 / 1000.0);
+                totalTime += elapsed;
+                latencies[i] = (double) elapsed / 1000 / 1000;
+            }
+
+            //Results
+            System.out.printf("Avg latency: %.4f ms\n\n", totalTime / numMessages / 1000.0 / 1000.0);
+            Arrays.sort(latencies);
+            double p50 = latencies[(int) (latencies.length * 0.5)];
+            double p75 = latencies[(int) (latencies.length * 0.75)];
+            double p90 = latencies[(int) (latencies.length * 0.90)];
+            double p99 = latencies[(int) (latencies.length * 0.99)];
+            double p999 = latencies[(int) (latencies.length * 0.999)];
+            System.out.printf("Percentiles: 50th = %.4f, 75th = %.4f, 90th = %.4f, 99th = %.4f, 99.9th = %.4f\n", p50, p75, p90, p99, p999);
+
+            close();
+            return latencies;
+        }
+
+        abstract void initialize();
+        abstract Iterator<ConsumerRecord<byte[], byte[]>> sendAndReceive(String topic, byte[] message, long timeout) throws Exception;
+        abstract void close();
     }
 
-    private static class NonReactiveClient implements Client {
+    static class NonReactiveEndToEndLatency extends AbstractEndToEndLatency {
         private final KafkaConsumer<byte[], byte[]> consumer;
         private final KafkaProducer<byte[], byte[]> producer;
         private final AtomicBoolean isAssigned = new AtomicBoolean();
 
-        NonReactiveClient(Map<String, Object> consumerProps, Map<String, Object> producerProps, String topic) {
+        NonReactiveEndToEndLatency(Map<String, Object> consumerPropsOverride, Map<String, Object> producerPropsOverride, String bootstrapServers, String topic) {
+            super(consumerPropsOverride, producerPropsOverride, bootstrapServers, topic);
             consumer = new KafkaConsumer<>(consumerProps);
             consumer.subscribe(Collections.singletonList(topic), new ConsumerRebalanceListener() {
 
@@ -279,25 +294,30 @@ public class EndToEndLatency {
             Iterator<ConsumerRecord<byte[], byte[]>> recordIter = consumer.poll(timeout).iterator();
             return recordIter;
         }
-        public void finalize() {
-            consumer.commitSync();
-            producer.close();
-            consumer.close();
+        public void close() {
+            if (consumer != null) {
+                consumer.commitSync();
+                consumer.close();
+            }
+            if (producer != null)
+                producer.close();
         }
     }
 
-    private static class ReactiveClient implements Client {
+    static class ReactiveEndToEndLatency extends AbstractEndToEndLatency {
         final KafkaSender<byte[], byte[]> sender;
         final KafkaFlux<byte[], byte[]> flux;
         final LinkedBlockingQueue<ConsumerRecord<byte[], byte[]>> receiveQueue;
         final Semaphore sendSemaphore = new Semaphore(0);
         Cancellation consumerCancel;
 
-        ReactiveClient(Map<String, Object> consumerProps, Map<String, Object> producerProps, String topic) {
+        ReactiveEndToEndLatency(Map<String, Object> consumerPropsOverride, Map<String, Object> producerPropsOverride, String bootstrapServers, String topic) {
+            super(consumerPropsOverride, producerPropsOverride, bootstrapServers, topic);
             sender = new KafkaSender<>(new SenderConfig<>(producerProps));
             flux = KafkaFlux.listenOn(new FluxConfig<>(consumerProps),
                     Collections.singleton(topic));
             receiveQueue = new LinkedBlockingQueue<>();
+            System.out.println("Running latency test using Reactive API, class=" + this.getClass().getName());
         }
         public void initialize() {
             Semaphore assignSemaphore = new Semaphore(0);
@@ -326,9 +346,11 @@ public class EndToEndLatency {
             receiveQueue.drainTo(recordList);
             return recordList.iterator();
         }
-        public void finalize() {
-            sender.close();
-            consumerCancel.dispose();
+        public void close() {
+            if (sender != null)
+                sender.close();
+            if (consumerCancel != null)
+                consumerCancel.dispose();
         }
     }
 

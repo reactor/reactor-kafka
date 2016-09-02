@@ -43,7 +43,7 @@ import reactor.kafka.SeekablePartition;
 
 public class ConsumerPerformance {
 
-    private static class ConsumerPerfConfig {
+    static class ConsumerPerfConfig {
         boolean showDetailedStats = false;
         long reportingInterval = 5000;
         SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss:SSS");
@@ -58,75 +58,18 @@ public class ConsumerPerformance {
             /* parse args */
             String topic = res.getString("topic");
             String groupId = res.getString("group");
-            long numMessages = res.getLong("messages");
+            int numMessages = res.getInt("messages");
             ConsumerPerfConfig config = new ConsumerPerfConfig();
             boolean useReactive = res.getBoolean("reactive");
 
-            Map<String, Object> props = new HashMap<String, Object>();
-            props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
-            props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-            props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
-            props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
-            props.put(ConsumerConfig.CHECK_CRCS_CONFIG, "false");
-            props.putAll(getProperties(res.getList("consumerConfig")));
+            Map<String, Object> consumerProps = getProperties(res.getList("consumerConfig"));
+            AbstractConsumerPerformance perfTest;
+            if (useReactive)
+                perfTest = new ReactiveConsumerPerformance(consumerProps, topic, groupId, config);
+            else
+                perfTest = new NonReactiveConsumerPerformance(consumerProps, topic, groupId, config);
 
-            long startMs = System.currentTimeMillis();
-            long endMs = 0;
-            AtomicLong totalMessagesRead = new AtomicLong();
-            AtomicLong totalBytesRead = new AtomicLong();
-
-            if (!useReactive) {
-                System.out.println("Running consumer using non-reactive subscribe");
-                KafkaConsumer<byte[], byte[]> consumer = new KafkaConsumer<>(props);
-                consume(consumer, Collections.singletonList(topic), numMessages, 1000, config, totalMessagesRead, totalBytesRead);
-                endMs = System.currentTimeMillis();
-                consumer.close();
-            } else {
-                System.out.println("Running consumer using reactive KafkaFlux");
-                CountDownLatch receiveLatch = new CountDownLatch((int) numMessages);
-                AtomicLong lastBytesRead  = new AtomicLong();
-                AtomicLong lastMessagesRead  = new AtomicLong();
-                AtomicLong lastConsumedTime = new AtomicLong();
-                AtomicLong lastReportTime  = new AtomicLong();
-
-                FluxConfig<byte[], byte[]> fluxConfig = new FluxConfig<>(props);
-                Cancellation cancellation =
-                        KafkaFlux.listenOn(fluxConfig, Collections.singletonList(topic))
-                         .doOnPartitionsAssigned(partitions -> {
-                                 for (SeekablePartition p : partitions) {
-                                     p.seekToBeginning();
-                                 }
-                             })
-                         .subscribe(cr -> {
-                                 ConsumerRecord<byte[], byte[]> record = cr.consumerRecord();
-                                 lastConsumedTime.set(System.currentTimeMillis());
-                                 totalMessagesRead.incrementAndGet();
-                                 if (record.key() != null)
-                                     totalBytesRead.addAndGet(record.key().length);
-                                 if (record.value() != null)
-                                     totalBytesRead.addAndGet(record.value().length);
-
-                                 if (totalMessagesRead.get() % config.reportingInterval == 0) {
-                                     if (config.showDetailedStats)
-                                         printProgressMessage(0, totalBytesRead.get(), lastBytesRead.get(), totalMessagesRead.get(), lastMessagesRead.get(),
-                                             lastReportTime.get(), System.currentTimeMillis(), config.dateFormat);
-                                     lastReportTime.set(System.currentTimeMillis());
-                                     lastMessagesRead.set(totalMessagesRead.get());
-                                     lastBytesRead.set(totalBytesRead.get());
-                                 }
-                                 receiveLatch.countDown();
-                             }, (int) numMessages);
-                receiveLatch.await();
-                endMs = System.currentTimeMillis();
-                cancellation.dispose();
-            }
-            double elapsedSecs = (endMs - startMs) / 1000.0;
-            if (!config.showDetailedStats) {
-                double totalMBRead = (totalBytesRead.get() * 1.0) / (1024 * 1024);
-                System.out.println("Start-time               End-time               Total-MB  MB/sec Total-messages Messages/sec");
-                System.out.printf("%s, %s, %.4f, %.4f, %d, %.4f\n", config.dateFormat.format(startMs), config.dateFormat.format(endMs),
-                        totalMBRead, totalMBRead / elapsedSecs, totalMessagesRead.get(), totalMessagesRead.get() / elapsedSecs);
-            }
+            perfTest.runTest(numMessages);
             System.exit(0);
         } catch (ArgumentParserException e) {
             if (args.length == 0) {
@@ -137,78 +80,6 @@ public class ConsumerPerformance {
                 System.exit(1);
             }
         }
-
-    }
-
-    private static void consume(KafkaConsumer<byte[], byte[]> consumer, List<String> topics, long count, long timeout, ConsumerPerfConfig config,
-            AtomicLong totalMessagesRead, AtomicLong totalBytesRead) {
-        long bytesRead = 0L;
-        long messagesRead = 0L;
-        long lastBytesRead = 0L;
-        long lastMessagesRead = 0L;
-
-        // Wait for group join, metadata fetch, etc
-        long joinTimeout = 10000;
-        AtomicBoolean isAssigned = new AtomicBoolean(false);
-        consumer.subscribe(topics, new ConsumerRebalanceListener() {
-
-            @Override
-            public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
-                isAssigned.set(false);
-            }
-
-            @Override
-            public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
-                isAssigned.set(true);
-            }
-        });
-        long joinStart = System.currentTimeMillis();
-        while (!isAssigned.get()) {
-            if (System.currentTimeMillis() - joinStart >= joinTimeout) {
-                throw new RuntimeException("Timed out waiting for initial group join.");
-            }
-            consumer.poll(100);
-        }
-        consumer.seekToBeginning(Collections.emptyList());
-
-        // Now start the benchmark
-        long startMs = System.currentTimeMillis();
-        long lastReportTime = startMs;
-        long lastConsumedTime = System.currentTimeMillis();
-
-        while (messagesRead < count && System.currentTimeMillis() - lastConsumedTime <= timeout) {
-            ConsumerRecords<byte[], byte[]> records = consumer.poll(100);
-            if (records.count() > 0)
-                lastConsumedTime = System.currentTimeMillis();
-            for (ConsumerRecord<byte[], byte[]> record : records) {
-                messagesRead++;
-                if (record.key() != null)
-                    bytesRead += record.key().length;
-                if (record.value() != null)
-                    bytesRead += record.value().length;
-
-                if (messagesRead % config.reportingInterval == 0) {
-                    if (config.showDetailedStats)
-                        printProgressMessage(0, bytesRead, lastBytesRead, messagesRead, lastMessagesRead, lastReportTime, System.currentTimeMillis(),
-                                config.dateFormat);
-                    lastReportTime = System.currentTimeMillis();
-                    lastMessagesRead = messagesRead;
-                    lastBytesRead = bytesRead;
-                }
-            }
-        }
-
-        totalMessagesRead.set(messagesRead);
-        totalBytesRead.set(bytesRead);
-    }
-
-    private static void printProgressMessage(int id, long bytesRead, long lastBytesRead, long messagesRead, long lastMessagesRead, long startMs, long endMs,
-            SimpleDateFormat dateFormat) {
-        double elapsedMs = endMs - startMs;
-        double totalMBRead = (bytesRead * 1.0) / (1024 * 1024);
-        double mbRead = ((bytesRead - lastBytesRead) * 1.0) / (1024 * 1024);
-        System.out.printf("%s, %d, %.4f, %.4f, %d, %.4f\n", dateFormat.format(endMs), id, totalMBRead, 1000.0 * (mbRead / elapsedMs), messagesRead,
-                ((messagesRead - lastMessagesRead) / elapsedMs) * 1000.0);
     }
 
     /** Get the command-line argument parser. */
@@ -233,7 +104,7 @@ public class ConsumerPerformance {
         parser.addArgument("--messages")
               .action(store())
               .required(true)
-              .type(Long.class)
+              .type(Integer.class)
               .metavar("MESSAGES")
               .help("number of messages to consume");
 
@@ -266,5 +137,190 @@ public class ConsumerPerformance {
             }
         }
         return props;
+    }
+
+    static abstract class AbstractConsumerPerformance {
+        final String topic;
+        final Map<String, Object> consumerProps;
+        final ConsumerPerfConfig config;
+        final AtomicLong totalMessagesRead = new AtomicLong();
+        final AtomicLong totalBytesRead = new AtomicLong();
+        private long startMs;
+        private long endMs = 0;
+
+        AbstractConsumerPerformance(Map<String, Object> consumerPropsOverride, String topic, String groupId, ConsumerPerfConfig config) {
+            this.topic = topic;
+            this.config = config;
+            consumerProps = consumerProps(groupId, consumerPropsOverride);
+        }
+
+        public void runTest(int numMessages) throws InterruptedException {
+            startMs = System.currentTimeMillis();
+            consumeMessages(numMessages, config.showDetailedStats);
+            endMs = System.currentTimeMillis();
+            if (!config.showDetailedStats)
+                printFinalStats();
+        }
+
+        public abstract void consumeMessages(int numMessages, boolean showDetailedStats) throws InterruptedException;
+
+        public double recordsPerSec() {
+            return totalMessagesRead.get() * 1000.0 / (endMs - startMs);
+        }
+
+        private void printFinalStats() {
+            double elapsedSecs = (endMs - startMs) / 1000.0;
+            if (!config.showDetailedStats) {
+                double totalMBRead = (totalBytesRead.get() * 1.0) / (1024 * 1024);
+                System.out.println("Start-time               End-time               Total-MB  MB/sec Total-messages Messages/sec");
+                System.out.printf("%s, %s, %.4f, %.4f, %d, %.4f\n", config.dateFormat.format(startMs), config.dateFormat.format(endMs),
+                        totalMBRead, totalMBRead / elapsedSecs, totalMessagesRead.get(), totalMessagesRead.get() / elapsedSecs);
+            }
+        }
+
+        void printProgressMessage(int id, long bytesRead, long lastBytesRead, long messagesRead, long lastMessagesRead, long startMs, long endMs,
+                SimpleDateFormat dateFormat) {
+            double elapsedMs = endMs - startMs;
+            double totalMBRead = (bytesRead * 1.0) / (1024 * 1024);
+            double mbRead = ((bytesRead - lastBytesRead) * 1.0) / (1024 * 1024);
+            System.out.printf("%s, %d, %.4f, %.4f, %d, %.4f\n", dateFormat.format(endMs), id, totalMBRead, 1000.0 * (mbRead / elapsedMs), messagesRead,
+                    ((messagesRead - lastMessagesRead) / elapsedMs) * 1000.0);
+        }
+
+        private Map<String, Object> consumerProps(String groupId, Map<String, Object> propsOverride) {
+            Map<String, Object> props = new HashMap<String, Object>();
+            props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
+            props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+            props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
+            props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
+            props.put(ConsumerConfig.CHECK_CRCS_CONFIG, "false");
+            props.putAll(propsOverride);
+            return props;
+        }
+    }
+
+    static class NonReactiveConsumerPerformance extends AbstractConsumerPerformance {
+
+        NonReactiveConsumerPerformance(Map<String, Object> consumerPropsOverride, String topic, String groupId,  ConsumerPerfConfig config) {
+            super(consumerPropsOverride, topic, groupId, config);
+        }
+
+        @Override
+        public void consumeMessages(int numMessages, boolean showDetailedStats) throws InterruptedException {
+            System.out.println("Running consumer performance test using non-reactive API, class=" + this.getClass().getSimpleName());
+            KafkaConsumer<byte[], byte[]> consumer = new KafkaConsumer<>(consumerProps);
+            consume(consumer, numMessages, showDetailedStats);
+            consumer.close();
+        }
+
+        private void consume(KafkaConsumer<byte[], byte[]> consumer, int numMessages, boolean showDetailedStats) throws InterruptedException {
+
+            long bytesRead = 0L;
+            long messagesRead = 0L;
+            long lastBytesRead = 0L;
+            long lastMessagesRead = 0L;
+            long timeout = 1000;
+
+            // Wait for group join, metadata fetch, etc
+            long joinTimeout = 10000;
+            AtomicBoolean isAssigned = new AtomicBoolean(false);
+            consumer.subscribe(Collections.singleton(topic), new ConsumerRebalanceListener() {
+
+                @Override
+                public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
+                    isAssigned.set(false);
+                }
+
+                @Override
+                public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
+                    isAssigned.set(true);
+                }
+            });
+            long joinStart = System.currentTimeMillis();
+            while (!isAssigned.get()) {
+                if (System.currentTimeMillis() - joinStart >= joinTimeout) {
+                    throw new RuntimeException("Timed out waiting for initial group join.");
+                }
+                consumer.poll(100);
+            }
+            consumer.seekToBeginning(Collections.emptyList());
+
+            // Now start the benchmark
+            long startMs = System.currentTimeMillis();
+            long lastReportTime = startMs;
+            long lastConsumedTime = System.currentTimeMillis();
+
+            while (messagesRead < numMessages && System.currentTimeMillis() - lastConsumedTime <= timeout) {
+                ConsumerRecords<byte[], byte[]> records = consumer.poll(100);
+                if (records.count() > 0)
+                    lastConsumedTime = System.currentTimeMillis();
+                for (ConsumerRecord<byte[], byte[]> record : records) {
+                    messagesRead++;
+                    if (record.key() != null)
+                        bytesRead += record.key().length;
+                    if (record.value() != null)
+                        bytesRead += record.value().length;
+
+                    if (messagesRead % config.reportingInterval == 0) {
+                        if (showDetailedStats)
+                            printProgressMessage(0, bytesRead, lastBytesRead, messagesRead, lastMessagesRead, lastReportTime, System.currentTimeMillis(),
+                                    config.dateFormat);
+                        lastReportTime = System.currentTimeMillis();
+                        lastMessagesRead = messagesRead;
+                        lastBytesRead = bytesRead;
+                    }
+                }
+            }
+
+            totalMessagesRead.set(messagesRead);
+            totalBytesRead.set(bytesRead);
+        }
+
+    }
+    static class ReactiveConsumerPerformance extends AbstractConsumerPerformance {
+
+        ReactiveConsumerPerformance(Map<String, Object> consumerPropsOverride, String topic, String groupId, ConsumerPerfConfig config) {
+            super(consumerPropsOverride, topic, groupId, config);
+        }
+
+        @Override
+        public void consumeMessages(int numMessages, boolean showDetailedStats) throws InterruptedException {
+            CountDownLatch receiveLatch = new CountDownLatch(numMessages);
+            AtomicLong lastBytesRead  = new AtomicLong();
+            AtomicLong lastMessagesRead  = new AtomicLong();
+            AtomicLong lastConsumedTime = new AtomicLong();
+            AtomicLong lastReportTime  = new AtomicLong();
+            System.out.println("Running consumer performance test using reactive API, class=" + this.getClass().getSimpleName());
+
+            FluxConfig<byte[], byte[]> fluxConfig = new FluxConfig<>(consumerProps);
+            Cancellation cancellation =
+                    KafkaFlux.listenOn(fluxConfig, Collections.singletonList(topic))
+                     .doOnPartitionsAssigned(partitions -> {
+                             for (SeekablePartition p : partitions) {
+                                 p.seekToBeginning();
+                             }
+                         })
+                     .subscribe(cr -> {
+                             ConsumerRecord<byte[], byte[]> record = cr.consumerRecord();
+                             lastConsumedTime.set(System.currentTimeMillis());
+                             totalMessagesRead.incrementAndGet();
+                             if (record.key() != null)
+                                 totalBytesRead.addAndGet(record.key().length);
+                             if (record.value() != null)
+                                 totalBytesRead.addAndGet(record.value().length);
+
+                             if (totalMessagesRead.get() % config.reportingInterval == 0) {
+                                 if (showDetailedStats)
+                                     printProgressMessage(0, totalBytesRead.get(), lastBytesRead.get(), totalMessagesRead.get(), lastMessagesRead.get(),
+                                         lastReportTime.get(), System.currentTimeMillis(), config.dateFormat);
+                                 lastReportTime.set(System.currentTimeMillis());
+                                 lastMessagesRead.set(totalMessagesRead.get());
+                                 lastBytesRead.set(totalBytesRead.get());
+                             }
+                             receiveLatch.countDown();
+                         }, numMessages);
+            receiveLatch.await();
+            cancellation.dispose();
+        }
     }
 }

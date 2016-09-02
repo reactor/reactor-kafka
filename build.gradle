@@ -106,14 +106,14 @@ project(':reactor-kafka-tools') {
 
         testCompile "junit:junit:$junitVersion"
         testCompile project(':reactor-kafka-api').sourceSets.test.output
+        testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion"
+        testCompile "org.apache.kafka:kafka-clients:$kafkaVersion:test"
+        testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion:test"
         testCompile files("../libs/spring-kafka-test-010.jar")
         testCompile "com.goldmansachs:gs-collections:$gsCollectionsVersion"
         testCompile "org.springframework:spring-test:$springVersion"
         testCompile "org.springframework.retry:spring-retry:$springRetryVersion"
         testCompile "org.assertj:assertj-core:$assertjVersion"
-        testCompile "org.powermock:powermock-module-junit4:$powermockVersion"
-        testCompile "org.powermock:powermock-core:$powermockVersion"
-        testCompile "org.powermock:powermock-api-mockito:$powermockVersion"
         testCompile "org.slf4j:slf4j-api:$slf4jVersion"
         testCompile "org.slf4j:slf4j-log4j12:$slf4jVersion"
     }
