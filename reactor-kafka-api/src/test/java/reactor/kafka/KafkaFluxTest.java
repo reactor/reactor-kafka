@@ -715,7 +715,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
         CountDownLatch[] latch = new CountDownLatch[partitions];
         for (int i = 0; i < partitions; i++)
             latch[i] = new CountDownLatch(countPerPartition);
-        Scheduler scheduler = Schedulers.newElastic("test-groupBy", 10);
+        Scheduler scheduler = Schedulers.newElastic("test-groupBy", 10, true);
         Map<String, Set<Integer>> threadMap = new ConcurrentHashMap<>();
 
         Cancellation cancellation =
@@ -838,9 +838,9 @@ public class KafkaFluxTest extends AbstractKafkaTest {
             Duration waitMs = Duration.ofMillis(receiveTimeoutMillis);
             // No ordering guarantees, but blocking of one thread should still allow messages to be
             // processed on other threads
-            TestUtils.waitUntil("Messages not received", list -> count(list) >= count / 2, receivedMessages, waitMs);
+            TestUtils.waitUntil("Messages not received", null, list -> count(list) >= count / 2, receivedMessages, waitMs);
             blocker.release();
-            TestUtils.waitUntil("Messages not received", list -> count(list) == count, receivedMessages, waitMs);
+            TestUtils.waitUntil("Messages not received", null, list -> count(list) == count, receivedMessages, waitMs);
         } finally {
             scheduler.shutdown();
         }
@@ -1022,7 +1022,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
 
         // Countdown the latch manually for messages that may or may not be redelivered on each partition
         for (int i = 0; i < partitions; i++) {
-            TestUtils.waitUntil("Messages not received on partition " + i, list -> list.size() > 0, receivedMessages.get(i), Duration.ofMillis(receiveTimeoutMillis));
+            TestUtils.waitUntil("Messages not received on partition " + i, null, list -> list.size() > 0, receivedMessages.get(i), Duration.ofMillis(receiveTimeoutMillis));
         }
         int minReceiveIndex = sendStartIndex - minRedelivered;
         for (int i = minReceiveIndex - maybeRedelivered; i < minReceiveIndex; i++) {
@@ -1092,7 +1092,7 @@ public class KafkaFluxTest extends AbstractKafkaTest {
 
     private void onCommit(List<ConsumerOffset> offsets, CountDownLatch commitLatch, long[] committedOffsets) {
         for (ConsumerOffset offset : offsets) {
-            committedOffsets[offset.topicPartition().partition()] = offset.offset();
+            committedOffsets[offset.topicPartition().partition()] = offset.offset() + 1;
             commitLatch.countDown();
         }
         offsets.clear();

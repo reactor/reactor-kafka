@@ -33,13 +33,13 @@ import reactor.kafka.FluxConfig;
 import reactor.kafka.KafkaFlux;
 
 /**
- * Sample consumer application using Reactive API for Java.
+ * Sample consumer application using Reactive API for Kafka.
  * To run sample consumer
  * <ol>
  *   <li> Start Zookeeper and Kafka server
  *   <li> Create Kafka topic {@link #TOPIC}
  *   <li> Update {@link #BOOTSTRAP_SERVERS} and {@link #TOPIC} if required
- *   <li> Run {@link SampleConsumer} as Java application will all dependent jars in the CLASSPATH (eg. from IDE).
+ *   <li> Run {@link SampleConsumer} as Java application with all dependent jars in the CLASSPATH (eg. from IDE).
  *   <li> Shutdown Kafka server and Zookeeper when no longer required
  * </ol>
  */

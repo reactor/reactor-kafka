@@ -35,8 +35,7 @@ public interface ConsumerOffset {
     TopicPartition topicPartition();
 
     /**
-     * Returns the commit offset which is the offset of the next message
-     * to be consumed from the topic partition.
+     * Returns the offset corresponding to the message to which this offset is associated.
      */
     long offset();
 
@@ -46,6 +45,8 @@ public interface ConsumerOffset {
      * {@link FluxConfig#commitInterval()} and {@link FluxConfig#commitBatchSize()}. If
      * ack mode is {@link AckMode#MANUAL_COMMIT} it is the responsibility of the consuming application
      * to invoke {@link #commit()} to commit acknowledged records individually or in batches.
+     * When an offset is acknowledged, it is assumed that all messages in this partition up to and
+     * including this offset have been processed.
      */
     void acknowledge();
 

@@ -61,7 +61,7 @@ public class TestableKafkaFlux {
     }
 
     public Map<TopicPartition, Long> fluxOffsetMap() {
-        Map<TopicPartition, Long> commitOffsets = TestUtils.getField(kafkaFlux, "fluxManager.commitEvent.commitBatch.commitOffsets");
+        Map<TopicPartition, Long> commitOffsets = TestUtils.getField(kafkaFlux, "fluxManager.commitEvent.commitBatch.consumedOffsets");
         return commitOffsets;
     }
 
@@ -117,7 +117,7 @@ public class TestableKafkaFlux {
 
     public void waitForClose() throws Exception {
         AtomicBoolean fluxClosed = TestUtils.getField(kafkaFlux, "fluxManager.isClosed");
-        TestUtils.waitUntil("Flux not closed", closed -> closed.get(), fluxClosed, Duration.ofMillis(10000));
+        TestUtils.waitUntil("Flux not closed", null, closed -> closed.get(), fluxClosed, Duration.ofMillis(10000));
     }
 
     public static void setNonExistentPartition(ConsumerOffset offset) {

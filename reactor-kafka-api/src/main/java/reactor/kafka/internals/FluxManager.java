@@ -120,9 +120,8 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
 
     public void onSubscribe(Subscriber<? super ConsumerMessage<K, V>> subscriber) {
         log.debug("subscribe");
-        if (consumerFlux != null) {
-            cancel();
-        }
+        if (consumerFlux != null)
+            throw new IllegalStateException("Multiple subscribers are not supported for KafkaFlux");
 
         eventEmitter = EmitterProcessor.create();
         eventSubmission = eventEmitter.connectSink();
@@ -215,14 +214,16 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
     private void cancel() {
         log.debug("cancel {}", isActive);
         if (isActive.compareAndSet(true, false)) {
-            boolean isConsumerClosed = false;
+            boolean isConsumerClosed = consumer == null;
             try {
-                consumer.wakeup();
-                long closeStartNanos = System.nanoTime();
-                long closeEndNanos = closeStartNanos + config.closeTimeout().toNanos();
-                CloseEvent closeEvent = new CloseEvent(closeEndNanos);
-                emit(closeEvent);
-                isConsumerClosed = closeEvent.await();
+                if (!isConsumerClosed) {
+                    consumer.wakeup();
+                    long closeStartNanos = System.nanoTime();
+                    long closeEndNanos = closeStartNanos + config.closeTimeout().toNanos();
+                    CloseEvent closeEvent = new CloseEvent(closeEndNanos);
+                    emit(closeEvent);
+                    isConsumerClosed = closeEvent.await();
+                }
             } catch (Exception e) {
                 log.warn("Cancel exception: " + e);
             } finally {
@@ -238,13 +239,15 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
                     int maxRetries = 10;
                     for (int i = 0; i < maxRetries && !isConsumerClosed; i++) {
                         try {
-                            consumer.close();
+                            if (consumer != null)
+                                consumer.close();
                             isConsumerClosed = true;
                         } catch (Exception e) {
                             if (i == maxRetries - 1)
                                 log.warn("Consumer could not be closed", e);
                         }
                     }
+                    consumerFlux = null;
                     isClosed.set(true);
                 }
             }
@@ -253,7 +256,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
 
     private KafkaConsumerMessage<K, V> newConsumerMessage(ConsumerRecord<K, V> consumerRecord) {
         TopicPartition topicPartition = new TopicPartition(consumerRecord.topic(), consumerRecord.partition());
-        CommittableOffset committableOffset = new CommittableOffset(topicPartition, consumerRecord.offset() + 1);
+        CommittableOffset committableOffset = new CommittableOffset(topicPartition, consumerRecord.offset());
         KafkaConsumerMessage<K, V> message = new KafkaConsumerMessage<K, V>(consumerRecord, committableOffset);
         switch (ackMode) {
             case AUTO_ACK:

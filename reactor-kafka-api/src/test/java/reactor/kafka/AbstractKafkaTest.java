@@ -88,7 +88,6 @@ public class AbstractKafkaTest {
         props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
         props.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, String.valueOf(sessionTimeoutMillis));
         props.put(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, String.valueOf(heartbeatIntervalMillis));
-        props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
         props.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "2");
         if (propsOverride != null)
@@ -172,7 +171,7 @@ public class AbstractKafkaTest {
         embeddedKafka.restart(brokerId);
         waitForTopic(topic, partitions, false);
         for (int i = 0; i < partitions; i++)
-            TestUtils.waitUntil("Leader not elected", this::hasLeader, i, Duration.ofSeconds(5));
+            TestUtils.waitUntil("Leader not elected", null, this::hasLeader, i, Duration.ofSeconds(5));
     }
 
     private boolean hasLeader(int partition) {

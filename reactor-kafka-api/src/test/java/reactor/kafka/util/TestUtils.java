@@ -19,6 +19,7 @@ package reactor.kafka.util;
 import java.time.Duration;
 import java.util.concurrent.Semaphore;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 import static org.junit.Assert.fail;
 
@@ -42,14 +43,15 @@ public class TestUtils {
         }
     }
 
-    public static <T> void waitUntil(String errorMessage, Predicate<T> predicate, T arg, Duration duration) throws Exception {
+    public static <T> void waitUntil(String errorMessage, Supplier<Object> errorMessageArg, Predicate<T> predicate, T arg, Duration duration) throws Exception {
         long endTimeMillis = System.currentTimeMillis() + duration.toMillis();
         while (System.currentTimeMillis() < endTimeMillis) {
             if (predicate.test(arg))
                 return;
             Thread.sleep(10);
         }
-        fail(errorMessage);
+        String message = errorMessageArg == null ? errorMessage : errorMessage + errorMessageArg.get();
+        fail(message);
     }
 
     @SuppressWarnings("unchecked")

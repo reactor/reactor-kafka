@@ -17,10 +17,8 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
@@ -37,13 +35,13 @@ import reactor.kafka.SenderConfig;
 import reactor.util.function.Tuples;
 
 /**
- * Sample producer application using Reactive API for Java.
+ * Sample producer application using Reactive API for Kafka.
  * To run sample producer
  * <ol>
  *   <li> Start Zookeeper and Kafka server
  *   <li> Create Kafka topic {@link #TOPIC}
  *   <li> Update {@link #BOOTSTRAP_SERVERS} and {@link #TOPIC} if required
- *   <li> Run {@link SampleProducer} as Java application will all dependent jars in the CLASSPATH (eg. from IDE).
+ *   <li> Run {@link SampleProducer} as Java application with all dependent jars in the CLASSPATH (eg. from IDE).
  *   <li> Shutdown Kafka server and Zookeeper when no longer required
  * </ol>
  */
@@ -61,7 +59,7 @@ public class SampleProducer {
 
         Map<String, Object> props = new HashMap<>();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        props.put(ConsumerConfig.CLIENT_ID_CONFIG, "sample-producer");
+        props.put(ProducerConfig.CLIENT_ID_CONFIG, "sample-producer");
         props.put(ProducerConfig.ACKS_CONFIG, "all");
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class);
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
@@ -71,7 +69,7 @@ public class SampleProducer {
         dateFormat = new SimpleDateFormat("HH:mm:ss:SSS z dd MMM yyyy");
     }
 
-    public void sendMessages(String topic, int count, CountDownLatch latch) throws InterruptedException, ExecutionException {
+    public void sendMessages(String topic, int count, CountDownLatch latch) throws InterruptedException {
         Scheduler scheduler = Schedulers.newSingle("sample");
         sender.send(Flux.range(1, count)
                         .map(i -> Tuples.of(new ProducerRecord<>(topic, i, "Message_" + i), i)), scheduler, 1024, true)

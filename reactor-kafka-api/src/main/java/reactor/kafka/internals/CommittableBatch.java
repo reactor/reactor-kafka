@@ -29,12 +29,12 @@ import reactor.core.publisher.MonoSink;
 
 public class CommittableBatch {
 
-    private final Map<TopicPartition, Long> commitOffsets = new HashMap<>();
+    private final Map<TopicPartition, Long> consumedOffsets = new HashMap<>();
     private int batchSize;
     private List<MonoSink<Void>> callbackEmitters = new ArrayList<>();
 
     public synchronized int updateOffset(TopicPartition topicPartition, long offset) {
-        if (commitOffsets.put(topicPartition, offset) != (Long) offset)
+        if (consumedOffsets.put(topicPartition, offset) != (Long) offset)
             batchSize++;
         return batchSize;
     }
@@ -53,10 +53,10 @@ public class CommittableBatch {
 
     public synchronized CommitArgs getAndClearOffsets() {
         Map<TopicPartition, OffsetAndMetadata> offsetMap = new HashMap<>();
-        Iterator<Map.Entry<TopicPartition, Long>> iterator = commitOffsets.entrySet().iterator();
+        Iterator<Map.Entry<TopicPartition, Long>> iterator = consumedOffsets.entrySet().iterator();
         while (iterator.hasNext()) {
             Map.Entry<TopicPartition, Long> entry = iterator.next();
-            offsetMap.put(entry.getKey(), new OffsetAndMetadata(entry.getValue()));
+            offsetMap.put(entry.getKey(), new OffsetAndMetadata(entry.getValue() + 1));
             iterator.remove();
         }
         batchSize = 0;
@@ -75,12 +75,12 @@ public class CommittableBatch {
         // Restore offsets that haven't been updated. Mono emitters don't need to be restored for
         // retry since since new callbacks are registered.
         for (Map.Entry<TopicPartition, OffsetAndMetadata> entry : commitArgs.offsets.entrySet())
-            commitOffsets.putIfAbsent(entry.getKey(), entry.getValue().offset());
+            consumedOffsets.putIfAbsent(entry.getKey(), entry.getValue().offset() - 1);
     }
 
     @Override
     public synchronized String toString() {
-        return String.valueOf(commitOffsets);
+        return String.valueOf(consumedOffsets);
     }
 
     static class CommitArgs {

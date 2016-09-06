@@ -21,6 +21,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+
 import reactor.kafka.internals.ConsumerFactory;
 
 /**
@@ -37,13 +39,16 @@ public class FluxConfig<K, V> {
     private int maxAutoCommitAttempts = Integer.MAX_VALUE;
 
     public FluxConfig() {
+        setDefaultProperties();
     }
 
     public FluxConfig(Map<String, Object> configProperties) {
+        setDefaultProperties();
         this.properties.putAll(configProperties);
     }
 
     public FluxConfig(Properties configProperties) {
+        setDefaultProperties();
         configProperties.forEach((name, value) -> this.properties.put((String) name, value));
     }
 
@@ -107,5 +112,9 @@ public class FluxConfig<K, V> {
     public FluxConfig<K, V> maxAutoCommitAttempts(int maxRetries) {
         this.maxAutoCommitAttempts = maxRetries;
         return this;
+    }
+
+    private void setDefaultProperties() {
+        properties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
     }
 }
