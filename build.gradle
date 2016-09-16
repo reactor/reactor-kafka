@@ -27,6 +27,7 @@ ext {
     assertjVersion = '3.3.0'
     gsCollectionsVersion = '5.0.0'
     springRetryVersion = '1.1.2.RELEASE'
+    springKafkaVersion = '1.1.0.M2'
     springVersion = '4.2.5.RELEASE'
 
     powermockVersion = '1.6.4'
@@ -81,9 +82,9 @@ project(':reactor-kafka-api') {
         testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion:test"
         testCompile "junit:junit:$junitVersion"
 
-        testCompile files("../libs/spring-kafka-test-010.jar")
         testCompile "com.goldmansachs:gs-collections:$gsCollectionsVersion"
         testCompile "org.springframework:spring-test:$springVersion"
+        testCompile "org.springframework.kafka:spring-kafka-test:$springKafkaVersion"
         testCompile "org.springframework.retry:spring-retry:$springRetryVersion"
         testCompile "org.assertj:assertj-core:$assertjVersion"
         testCompile "org.powermock:powermock-module-junit4:$powermockVersion"
@@ -109,9 +110,9 @@ project(':reactor-kafka-tools') {
         testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion"
         testCompile "org.apache.kafka:kafka-clients:$kafkaVersion:test"
         testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion:test"
-        testCompile files("../libs/spring-kafka-test-010.jar")
         testCompile "com.goldmansachs:gs-collections:$gsCollectionsVersion"
         testCompile "org.springframework:spring-test:$springVersion"
+        testCompile "org.springframework.kafka:spring-kafka-test:$springKafkaVersion"
         testCompile "org.springframework.retry:spring-retry:$springRetryVersion"
         testCompile "org.assertj:assertj-core:$assertjVersion"
         testCompile "org.slf4j:slf4j-api:$slf4jVersion"
@@ -132,9 +133,9 @@ project(':reactor-kafka-samples') {
         testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion"
         testCompile "org.apache.kafka:kafka-clients:$kafkaVersion:test"
         testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion:test"
-        testCompile files("../libs/spring-kafka-test-010.jar")
         testCompile "com.goldmansachs:gs-collections:$gsCollectionsVersion"
         testCompile "org.springframework:spring-test:$springVersion"
+        testCompile "org.springframework.kafka:spring-kafka-test:$springKafkaVersion"
         testCompile "org.springframework.retry:spring-retry:$springRetryVersion"
         testCompile "org.assertj:assertj-core:$assertjVersion"
         testCompile "org.slf4j:slf4j-api:$slf4jVersion"
