@@ -27,7 +27,7 @@ ext {
     assertjVersion = '3.3.0'
     gsCollectionsVersion = '5.0.0'
     springRetryVersion = '1.1.2.RELEASE'
-    springKafkaVersion = '1.1.0.M2'
+    springKafkaVersion = '1.1.0.RELEASE'
     springVersion = '4.2.5.RELEASE'
 
     powermockVersion = '1.6.4'
