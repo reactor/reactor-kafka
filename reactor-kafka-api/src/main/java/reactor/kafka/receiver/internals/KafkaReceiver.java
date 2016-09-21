@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  **/
-package reactor.kafka.internals;
+package reactor.kafka.receiver.internals;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -30,12 +30,10 @@ import java.util.function.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.consumer.RetriableCommitFailedException;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.WakeupException;
-import org.reactivestreams.Subscriber;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,52 +46,61 @@ import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoSink;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
-import reactor.kafka.ConsumerMessage;
-import reactor.kafka.ConsumerOffset;
-import reactor.kafka.KafkaFlux;
-import reactor.kafka.FluxConfig;
-import reactor.kafka.SeekablePartition;
-import reactor.kafka.internals.CommittableBatch.CommitArgs;
-import reactor.kafka.KafkaFlux.AckMode;
+import reactor.kafka.receiver.AckMode;
+import reactor.kafka.receiver.ReceiverOptions;
+import reactor.kafka.receiver.ReceiverRecord;
+import reactor.kafka.receiver.Receiver;
+import reactor.kafka.receiver.ReceiverOffset;
+import reactor.kafka.receiver.ReceiverPartition;
+import reactor.kafka.receiver.internals.CommittableBatch.CommitArgs;
 
-public class FluxManager<K, V> implements ConsumerRebalanceListener {
+public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceListener {
 
-    private static final Logger log = LoggerFactory.getLogger(FluxManager.class.getName());
+    private static final Logger log = LoggerFactory.getLogger(KafkaReceiver.class.getName());
 
-    private final KafkaFlux<K, V> kafkaFlux;
-    private final FluxConfig<K, V> config;
-    private final Consumer<KafkaFlux<K, V>> kafkaSubscribeOrAssign;
-    private final List<Flux<? extends Event<?>>> fluxList = new ArrayList<>();
-    private final List<Cancellation> cancellations = new ArrayList<>();
-    private final List<Consumer<Collection<SeekablePartition>>> assignListeners = new ArrayList<>();
-    private final List<Consumer<Collection<SeekablePartition>>> revokeListeners = new ArrayList<>();
-    private final AtomicLong requestsPending = new AtomicLong();
-    private final AtomicBoolean needsHeartbeat = new AtomicBoolean();
-    private final AtomicInteger consecutiveCommitFailures = new AtomicInteger();
+    private final ConsumerFactory consumerFactory;
+    private final ReceiverOptions<K, V> receiverOptions;
+    private final List<Flux<? extends Event<?>>> fluxList;
+    private final List<Cancellation> cancellations;
+    private final AtomicLong requestsPending;
+    private final AtomicBoolean needsHeartbeat;
+    private final AtomicInteger consecutiveCommitFailures;
     private final Scheduler eventScheduler;
-    private final AtomicBoolean isActive = new AtomicBoolean();
-    private final AtomicBoolean isClosed = new AtomicBoolean();
-    private AckMode ackMode = AckMode.AUTO_ACK;
+    private final AtomicBoolean isActive;
+    private final AtomicBoolean isClosed;
     private EmitterProcessor<Event<?>> eventEmitter;
     private BlockingSink<Event<?>> eventSubmission;
     private EmitterProcessor<ConsumerRecords<K, V>> recordEmitter;
     private BlockingSink<ConsumerRecords<K, V>> recordSubmission;
+    private InitEvent initEvent;
     private PollEvent pollEvent;
     private HeartbeatEvent heartbeatEvent;
     private CommitEvent commitEvent;
     private Flux<Event<?>> eventFlux;
-    private Flux<ConsumerMessage<K, V>> consumerFlux;
-    private KafkaConsumer<K, V> consumer;
+    private Flux<ReceiverRecord<K, V>> consumerFlux;
+    private org.apache.kafka.clients.consumer.Consumer<K, V> consumer;
 
     public enum EventType {
         INIT, POLL, HEARTBEAT, COMMIT, CLOSE
     }
 
-    public FluxManager(KafkaFlux<K, V> kafkaFlux, FluxConfig<K, V> config, Consumer<KafkaFlux<K, V>> kafkaSubscribeOrAssign) {
-        this.kafkaFlux = kafkaFlux;
-        this.config = config;
-        this.kafkaSubscribeOrAssign = kafkaSubscribeOrAssign;
-        this.eventScheduler = Schedulers.newSingle("reactive-kafka-" + config.groupId());
+    public KafkaReceiver(ConsumerFactory consumerFactory, ReceiverOptions<K, V> receiverOptions) {
+        fluxList = new ArrayList<>();
+        cancellations = new ArrayList<>();
+        requestsPending = new AtomicLong();
+        needsHeartbeat = new AtomicBoolean();
+        consecutiveCommitFailures = new AtomicInteger();
+        isActive = new AtomicBoolean();
+        isClosed = new AtomicBoolean();
+
+        this.consumerFactory = consumerFactory;
+        this.receiverOptions = receiverOptions.toImmutable();
+        this.eventScheduler = Schedulers.newSingle("reactive-kafka-" + receiverOptions.groupId());
+    }
+
+    @Override
+    public Flux<ReceiverRecord<K, V>> receive() {
+        return createConsumerFlux((flux) -> receiverOptions.subscriber(this).accept(consumer));
     }
 
     @Override
@@ -101,7 +108,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
         log.debug("onPartitionsAssigned {}", partitions);
         // onAssign methods may perform seek. It is safe to use the consumer here since we are in a poll()
         if (partitions.size() > 0) {
-            for (Consumer<Collection<SeekablePartition>> onAssign : assignListeners)
+            for (Consumer<Collection<ReceiverPartition>> onAssign : receiverOptions.assignListeners())
                 onAssign.accept(toSeekable(partitions));
         }
     }
@@ -112,52 +119,29 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
         if (partitions.size() > 0) {
             // It is safe to use the consumer here since we are in a poll()
             commitEvent.runIfRequired(true);
-            for (Consumer<Collection<SeekablePartition>> onRevoke : revokeListeners) {
+            for (Consumer<Collection<ReceiverPartition>> onRevoke : receiverOptions.revokeListeners()) {
                 onRevoke.accept(toSeekable(partitions));
             }
         }
     }
 
-    public void onSubscribe(Subscriber<? super ConsumerMessage<K, V>> subscriber) {
-        log.debug("subscribe");
+    private Flux<ReceiverRecord<K, V>> createConsumerFlux(Consumer<Flux<ReceiverRecord<K, V>>> kafkaSubscribeOrAssign) {
         if (consumerFlux != null)
             throw new IllegalStateException("Multiple subscribers are not supported for KafkaFlux");
 
-        eventEmitter = EmitterProcessor.create();
-        eventSubmission = eventEmitter.connectSink();
-        recordEmitter = EmitterProcessor.create();
-        recordSubmission = recordEmitter.connectSink();
-        eventScheduler.start();
-
+        initEvent = new InitEvent(kafkaSubscribeOrAssign);
         pollEvent = new PollEvent();
         heartbeatEvent = new HeartbeatEvent();
         commitEvent = new CommitEvent();
 
-        InitEvent initEvent = new InitEvent(config, kafkaSubscribeOrAssign);
-        Flux<InitEvent> initFlux = Flux.just(initEvent);
-        Flux<HeartbeatEvent> heartbeatFlux =
-                Flux.interval(config.heartbeatInterval())
-                     .doOnSubscribe(i -> needsHeartbeat.set(true))
-                     .map(i -> heartbeatEvent);
-
-        fluxList.add(eventEmitter);
-        fluxList.add(initFlux);
-        fluxList.add(heartbeatFlux);
-        if ((ackMode == AckMode.AUTO_ACK || ackMode == AckMode.MANUAL_ACK) && config.commitInterval() != null) {
-            Flux<CommitEvent> periodicCommitFlux = Flux.interval(config.commitInterval())
-                             .map(i -> commitEvent);
-            fluxList.add(periodicCommitFlux);
-        }
-
-        eventFlux = Flux.merge(fluxList)
-                        .publishOn(eventScheduler);
+        recordEmitter = EmitterProcessor.create();
+        recordSubmission = recordEmitter.connectSink();
 
         consumerFlux = recordEmitter
                 .publishOn(Schedulers.parallel())
                 .doOnSubscribe(s -> {
                         try {
-                            isActive.set(true);
-                            cancellations.add(eventFlux.subscribe(event -> doEvent(event)));
+                            start();
                         } catch (Exception e) {
                             log.error("Subscription to event flux failed", e);
                             throw e;
@@ -166,23 +150,16 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
                 .doOnCancel(() -> cancel())
                 .concatMap(consumerRecords -> Flux.fromIterable(consumerRecords)
                                                   .map(record -> newConsumerMessage(record)));
-        consumerFlux
+        consumerFlux = consumerFlux
                 .doOnRequest(r -> {
                         if (requestsPending.addAndGet(r) > 0)
                              pollEvent.scheduleIfRequired();
-                    })
-                .subscribe(subscriber);
+                    });
+
+        return consumerFlux;
     }
 
-    public void ackMode(AckMode ackMode) {
-        this.ackMode = ackMode;
-    }
-
-    public AckMode ackMode() {
-        return this.ackMode;
-    }
-
-    public KafkaConsumer<K, V> kafkaConsumer() {
+    public org.apache.kafka.clients.consumer.Consumer<K, V> kafkaConsumer() {
         return consumer;
     }
 
@@ -190,22 +167,53 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
         return commitEvent.commitBatch;
     }
 
-    public void addAssignListener(Consumer<Collection<SeekablePartition>> onAssign) {
-        assignListeners.add(onAssign);
+    public void close() {
+        cancel();
     }
 
-    public void addRevokeListener(Consumer<Collection<SeekablePartition>> onRevoke) {
-        revokeListeners.add(onRevoke);
-    }
-
-    private Collection<SeekablePartition> toSeekable(Collection<TopicPartition> partitions) {
-        List<SeekablePartition> seekableList = new ArrayList<>(partitions.size());
+    private Collection<ReceiverPartition> toSeekable(Collection<TopicPartition> partitions) {
+        List<ReceiverPartition> seekableList = new ArrayList<>(partitions.size());
         for (TopicPartition partition : partitions)
-            seekableList.add(new SeekableKafkaPartition(consumer, partition));
+            seekableList.add(new SeekablePartition(consumer, partition));
         return seekableList;
     }
 
-    private void onException(Throwable e) {
+    private void start() {
+        log.debug("start");
+        if (!isActive.compareAndSet(false, true))
+            throw new IllegalStateException("Multiple subscribers are not supported for KafkaFlux");
+
+        fluxList.clear();
+        requestsPending.set(0);
+        consecutiveCommitFailures.set(0);
+
+        eventEmitter = EmitterProcessor.create();
+        eventSubmission = eventEmitter.connectSink();
+        eventScheduler.start();
+
+        Flux<InitEvent> initFlux = Flux.just(initEvent);
+        Flux<HeartbeatEvent> heartbeatFlux =
+                Flux.interval(receiverOptions.heartbeatInterval())
+                     .doOnSubscribe(i -> needsHeartbeat.set(true))
+                     .map(i -> heartbeatEvent);
+
+        fluxList.add(eventEmitter);
+        fluxList.add(initFlux);
+        fluxList.add(heartbeatFlux);
+        AckMode ackMode = receiverOptions.ackMode();
+        if ((ackMode == AckMode.AUTO_ACK || ackMode == AckMode.MANUAL_ACK) && receiverOptions.commitInterval() != null) {
+            Flux<CommitEvent> periodicCommitFlux = Flux.interval(receiverOptions.commitInterval())
+                             .map(i -> commitEvent);
+            fluxList.add(periodicCommitFlux);
+        }
+
+        eventFlux = Flux.merge(fluxList)
+                        .publishOn(eventScheduler);
+
+        cancellations.add(eventFlux.subscribe(event -> doEvent(event)));
+    }
+
+    private void fail(Throwable e) {
         log.error("Consumer flux exception", e);
         recordSubmission.error(e);
         cancel();
@@ -219,7 +227,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
                 if (!isConsumerClosed) {
                     consumer.wakeup();
                     long closeStartNanos = System.nanoTime();
-                    long closeEndNanos = closeStartNanos + config.closeTimeout().toNanos();
+                    long closeEndNanos = closeStartNanos + receiverOptions.closeTimeout().toNanos();
                     CloseEvent closeEvent = new CloseEvent(closeEndNanos);
                     emit(closeEvent);
                     isConsumerClosed = closeEvent.await();
@@ -254,24 +262,24 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
         }
     }
 
-    private KafkaConsumerMessage<K, V> newConsumerMessage(ConsumerRecord<K, V> consumerRecord) {
+    private CommittableRecord<K, V> newConsumerMessage(ConsumerRecord<K, V> consumerRecord) {
         TopicPartition topicPartition = new TopicPartition(consumerRecord.topic(), consumerRecord.partition());
         CommittableOffset committableOffset = new CommittableOffset(topicPartition, consumerRecord.offset());
-        KafkaConsumerMessage<K, V> message = new KafkaConsumerMessage<K, V>(consumerRecord, committableOffset);
-        switch (ackMode) {
+        CommittableRecord<K, V> message = new CommittableRecord<K, V>(consumerRecord, committableOffset);
+        switch (receiverOptions.ackMode()) {
             case AUTO_ACK:
                 committableOffset.acknowledge();
                 break;
             case ATMOST_ONCE:
                 committableOffset.commit()
-                                 .doOnError(e -> onException(e))
+                                 .doOnError(e -> fail(e))
                                  .block();
                 break;
             case MANUAL_ACK:
             case MANUAL_COMMIT:
                 break;
             default:
-                throw new IllegalStateException("Unknown commit mode " + ackMode);
+                throw new IllegalStateException("Unknown ack mode " + receiverOptions.ackMode());
         }
         return message;
     }
@@ -281,7 +289,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
         try {
             event.run();
         } catch (Exception e) {
-            onException(e);
+            fail(e);
         }
     }
 
@@ -303,11 +311,9 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
 
     private class InitEvent extends Event<ConsumerRecords<K, V>> {
 
-        private final FluxConfig<K, V> config;
-        private final Consumer<KafkaFlux<K, V>> kafkaSubscribeOrAssign;
-        InitEvent(FluxConfig<K, V> config, Consumer<KafkaFlux<K, V>> kafkaSubscribeOrAssign) {
+        private final Consumer<Flux<ReceiverRecord<K, V>>> kafkaSubscribeOrAssign;
+        InitEvent(Consumer<Flux<ReceiverRecord<K, V>>> kafkaSubscribeOrAssign) {
             super(EventType.INIT);
-            this.config = config;
             this.kafkaSubscribeOrAssign = kafkaSubscribeOrAssign;
         }
         @Override
@@ -315,13 +321,13 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
             try {
                 isActive.set(true);
                 isClosed.set(false);
-                consumer = ConsumerFactory.INSTANCE.createConsumer(config);
-                kafkaSubscribeOrAssign.accept(kafkaFlux);
+                consumer = consumerFactory.createConsumer(receiverOptions);
+                kafkaSubscribeOrAssign.accept(consumerFlux);
                 consumer.poll(0); // wait for assignment
             } catch (Exception e) {
                 if (isActive.get()) {
                     log.error("Unexpected exception", e);
-                    onException(e);
+                    fail(e);
                 }
             }
         }
@@ -333,7 +339,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
         private final long pollTimeoutMs;
         PollEvent() {
             super(EventType.POLL);
-            pollTimeoutMs = config.pollTimeout().toMillis();
+            pollTimeoutMs = receiverOptions.pollTimeout().toMillis();
         }
         @Override
         public void run() {
@@ -344,8 +350,11 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
                     // chosen by reactor.
                     commitEvent.runIfRequired(false);
                     ConsumerRecords<K, V> records = consumer.poll(pollTimeoutMs);
-                    if (records.count() > 0)
-                        recordSubmission.emit(records);
+                    if (records.count() > 0) {
+                        Emission emission = recordSubmission.emit(records);
+                        if (emission != Emission.OK)
+                            log.error("Emission of consumer records failed with error " + emission);
+                    }
                     isPending.compareAndSet(true, false);
                     if (requestsPending.addAndGet(0 - records.count()) > 0 && isActive.get())
                         scheduleIfRequired();
@@ -353,7 +362,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
             } catch (Exception e) {
                 if (isActive.get()) {
                     log.error("Unexpected exception", e);
-                    onException(e);
+                    fail(e);
                 }
             }
         }
@@ -399,7 +408,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
         }
 
         void runIfRequired(boolean force) {
-            if (isPending.compareAndSet(true, false) || (force && ackMode != AckMode.MANUAL_COMMIT)) {
+            if (isPending.compareAndSet(true, false) || (force && receiverOptions.ackMode() != AckMode.MANUAL_COMMIT)) {
                 run();
             }
         }
@@ -416,9 +425,10 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
 
         private void handleFailure(CommitArgs commitArgs, Exception exception) {
             log.warn("Commit failed", exception);
+            AckMode ackMode = receiverOptions.ackMode();
             boolean mayRetry = isRetriableException(exception) &&
-                    isActive.get() &&
-                    consecutiveCommitFailures.incrementAndGet() < config.maxAutoCommitAttempts() &&
+                    !isClosed.get() &&
+                    consecutiveCommitFailures.incrementAndGet() < receiverOptions.maxAutoCommitAttempts() &&
                     ackMode != AckMode.MANUAL_COMMIT && ackMode != AckMode.ATMOST_ONCE;
             if (ackMode == AckMode.MANUAL_COMMIT) {
                 commitBatch.restoreOffsets(commitArgs);
@@ -426,10 +436,10 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
                     emitter.error(exception);
                 }
             } else if (!mayRetry) {
-                onException(exception);
+                fail(exception);
             } else {
                 commitBatch.restoreOffsets(commitArgs);
-                log.error("Commit failed with exception" + exception + ", retries remaining " + (config.maxAutoCommitAttempts() - consecutiveCommitFailures.get()));
+                log.error("Commit failed with exception" + exception + ", retries remaining " + (receiverOptions.maxAutoCommitAttempts() - consecutiveCommitFailures.get()));
             }
         }
 
@@ -486,7 +496,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
                 semaphore.release();
             } catch (Exception e) {
                 log.error("Unexpected exception", e);
-                onException(e);
+                fail(e);
             }
         }
         boolean await(long timeoutNanos) throws InterruptedException {
@@ -506,7 +516,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
         }
     }
 
-    protected class CommittableOffset implements ConsumerOffset {
+    protected class CommittableOffset implements ReceiverOffset {
 
         private final TopicPartition topicPartition;
         private final long commitOffset;
@@ -528,12 +538,12 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
 
         @Override
         public void acknowledge() {
-            switch (ackMode) {
+            switch (receiverOptions.ackMode()) {
                 case ATMOST_ONCE:
                     break;
                 case AUTO_ACK:
                 case MANUAL_ACK:
-                    int commitBatchSize = config.commitBatchSize();
+                    int commitBatchSize = receiverOptions.commitBatchSize();
                     if (commitBatchSize > 0 && maybeUpdateOffset() >= commitBatchSize)
                         commitEvent.scheduleIfRequired();
                     break;
@@ -541,7 +551,7 @@ public class FluxManager<K, V> implements ConsumerRebalanceListener {
                     maybeUpdateOffset();
                     break;
                 default:
-                    throw new IllegalStateException("Unknown commit mode " + ackMode);
+                    throw new IllegalStateException("Unknown commit mode " + receiverOptions.ackMode());
             }
         }
 

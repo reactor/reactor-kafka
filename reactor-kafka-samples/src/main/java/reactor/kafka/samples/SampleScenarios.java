@@ -16,6 +16,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -25,7 +26,6 @@ import java.util.Map;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
@@ -41,14 +41,15 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
-import reactor.kafka.ConsumerMessage;
-import reactor.kafka.ConsumerOffset;
-import reactor.kafka.FluxConfig;
-import reactor.kafka.KafkaFlux;
-import reactor.kafka.KafkaSender;
-import reactor.kafka.SenderConfig;
-import reactor.util.function.Tuple2;
-import reactor.util.function.Tuples;
+import reactor.kafka.receiver.AckMode;
+import reactor.kafka.receiver.ReceiverOptions;
+import reactor.kafka.receiver.ReceiverRecord;
+import reactor.kafka.receiver.Receiver;
+import reactor.kafka.receiver.ReceiverOffset;
+import reactor.kafka.sender.Sender;
+import reactor.kafka.sender.SenderOptions;
+import reactor.kafka.sender.SenderRecord;
+import reactor.kafka.sender.SenderResponse;
 
 /**
  * Sample flows using Reactive API for Kafka.
@@ -96,16 +97,16 @@ public class SampleScenarios {
             this.topic = topic;
         }
         public Flux<?> flux() {
-            SenderConfig<Integer, Person> config = senderConfig()
+            SenderOptions<Integer, Person> senderOptions = senderOptions()
                     .producerProperty(ProducerConfig.ACKS_CONFIG, "all")
                     .producerProperty(ProducerConfig.MAX_BLOCK_MS_CONFIG, Long.MAX_VALUE)
                     .producerProperty(ProducerConfig.RETRIES_CONFIG, Integer.MAX_VALUE);
             Flux<Person> srcFlux = source().flux();
-            return sender(config)
-                    .send(srcFlux.map(p -> Tuples.of(new ProducerRecord<>(topic, p.id(), p), p.id())))
+            return sender(senderOptions)
+                    .send(srcFlux.map(p -> SenderRecord.create(new ProducerRecord<>(topic, p.id(), p), p.id())), false)
                     .doOnError(e-> log.error("Send failed, terminating.", e))
                     .doOnNext(r -> {
-                            int id = r.getT2();
+                            int id = r.correlationMetadata();
                             log.info("Successfully stored person with id {} in Kafka", id);
                             source.commit(id);
                         });
@@ -126,13 +127,12 @@ public class SampleScenarios {
             this.topic = topic;
         }
         public Flux<?> flux() {
-            return KafkaFlux.listenOn(fluxConfig(), Collections.singleton(topic))
-                            .doOnPartitionsAssigned(p -> log.info("Partitions assigned {}", p))
-                            .manualCommit()
-                            .publishOn(Schedulers.newSingle("sample", true))
-                            .flatMap(m -> storeInDB(m.consumerRecord().value())
-                                          .doOnSuccess(r -> m.consumerOffset().commit().block()))
-                            .retry();
+            return Receiver.create(receiverOptions(AckMode.MANUAL_COMMIT, Collections.singletonList(topic)))
+                           .receive()
+                           .publishOn(Schedulers.newSingle("sample", true))
+                           .flatMap(m -> storeInDB(m.record().value())
+                                          .doOnSuccess(r -> m.offset().commit().block()))
+                           .retry();
         }
         public Mono<Void> storeInDB(Person person) {
             log.info("Successfully processed person with id {} from Kafka", person.id());
@@ -156,11 +156,11 @@ public class SampleScenarios {
             this.destTopic = destTopic;
         }
         public Flux<?> flux() {
-            KafkaSender<Integer, Person> sender = sender(senderConfig());
-            return sender.send(KafkaFlux.listenOn(fluxConfig(), Collections.singleton(sourceTopic))
-                                        .manualAck()
-                                        .map(m -> Tuples.of(transform(m.consumerRecord().value()), m.consumerOffset())))
-                         .doOnNext(m -> m.getT2().acknowledge());
+            Sender<Integer, Person> sender = sender(senderOptions());
+            return sender.send(Receiver.create(receiverOptions(AckMode.MANUAL_ACK, Collections.singleton(sourceTopic)))
+                                       .receive()
+                                       .map(m -> SenderRecord.create(transform(m.record().value()), m.offset())), false)
+                         .doOnNext(m -> m.correlationMetadata().acknowledge());
         }
         public ProducerRecord<Integer, Person> transform(Person p) {
             Person transformed = new Person(p.id(), p.firstName(), p.lastName());
@@ -186,14 +186,14 @@ public class SampleScenarios {
             this.destTopic = destTopic;
         }
         public Flux<?> flux() {
-            SenderConfig<Integer, Person> senderConfig = senderConfig()
+            SenderOptions<Integer, Person> senderOptions = senderOptions()
                     .producerProperty(ProducerConfig.ACKS_CONFIG, "0")
                     .producerProperty(ProducerConfig.RETRIES_CONFIG, "0");
-            KafkaSender<Integer, Person> sender = sender(senderConfig);
-            return KafkaFlux.listenOn(fluxConfig(), Collections.singleton(sourceTopic))
-                            .atmostOnce()
-                            .flatMap(m -> sender.send(transform(m.consumerRecord().value()))
-                                                .otherwiseReturn(null));
+            return sender(senderOptions)
+                .send(Receiver.create(receiverOptions(AckMode.ATMOST_ONCE, Collections.singleton(sourceTopic)))
+                              .receive()
+                              .map(cr -> SenderRecord.create(transform(cr.record().value()), cr.offset())),
+                      true);
         }
         public ProducerRecord<Integer, Person> transform(Person p) {
             Person transformed = new Person(p.id(), p.firstName(), p.lastName());
@@ -221,13 +221,14 @@ public class SampleScenarios {
         public Flux<?> flux() {
             Scheduler scheduler1 = Schedulers.newSingle("sample1", true);
             Scheduler scheduler2 = Schedulers.newSingle("sample2", true);
-            sender = sender(senderConfig());
+            sender = sender(senderOptions());
             EmitterProcessor<Person> processor = EmitterProcessor.create();
             BlockingSink<Person> incoming = processor.connectSink();
-            Flux<?> inFlux = KafkaFlux.listenOn(fluxConfig(), Collections.singleton(sourceTopic))
-                                      .doOnNext(m -> incoming.emit(m.consumerRecord().value()));
-            Flux<Tuple2<RecordMetadata, Integer>> stream1 = sender.send(processor.publishOn(scheduler1).map(p -> Tuples.of(process1(p), p.id())));
-            Flux<Tuple2<RecordMetadata, Integer>> stream2 = sender.send(processor.publishOn(scheduler2).map(p -> Tuples.of(process2(p), p.id())));
+            Flux<?> inFlux = Receiver.create(receiverOptions(AckMode.AUTO_ACK, Collections.singleton(sourceTopic)))
+                                     .receive()
+                                     .doOnNext(m -> incoming.emit(m.record().value()));
+            Flux<SenderResponse<Integer>> stream1 = sender.send(processor.publishOn(scheduler1).map(p -> SenderRecord.create(process1(p), p.id())), false);
+            Flux<SenderResponse<Integer>> stream2 = sender.send(processor.publishOn(scheduler2).map(p -> SenderRecord.create(process2(p), p.id())), false);
             return Flux.merge(stream1, stream2)
                        .doOnSubscribe(s -> inFlux.subscribe());
         }
@@ -260,18 +261,18 @@ public class SampleScenarios {
         }
         public Flux<?> flux() {
             Scheduler scheduler = Schedulers.newElastic("sample", 60, true);
-            return KafkaFlux.listenOn(fluxConfig(), Collections.singleton(topic))
-                            .manualCommit()
-                            .groupBy(m -> m.consumerOffset().topicPartition())
+            return Receiver.create(receiverOptions(AckMode.MANUAL_COMMIT, Collections.singleton(topic)))
+                            .receive()
+                            .groupBy(m -> m.offset().topicPartition())
                             .flatMap(partitionFlux -> partitionFlux.publishOn(scheduler)
                                                                    .map(r -> processRecord(partitionFlux.key(), r))
                                                                    .sample(Duration.ofMillis(5000))
                                                                    .concatMap(offset -> offset.commit()));
         }
-        public ConsumerOffset processRecord(TopicPartition topicPartition, ConsumerMessage<Integer, Person> message) {
+        public ReceiverOffset processRecord(TopicPartition topicPartition, ReceiverRecord<Integer, Person> message) {
             log.info("Processing record {} from partition {} in thread{}",
-                    message.consumerRecord().value().id(), topicPartition, Thread.currentThread().getName());
-            return message.consumerOffset();
+                    message.record().value().id(), topicPartition, Thread.currentThread().getName());
+            return message.offset();
         }
     }
 
@@ -400,7 +401,7 @@ public class SampleScenarios {
     static abstract class AbstractScenario {
         String bootstrapServers = BOOTSTRAP_SERVERS;
         CommittableSource source;
-        KafkaSender<Integer, Person> sender;
+        Sender<Integer, Person> sender;
         List<Cancellation> cancellations = new ArrayList<>();
 
         AbstractScenario(String bootstrapServers) {
@@ -420,28 +421,35 @@ public class SampleScenarios {
                 cancellation.dispose();
         }
 
-        public SenderConfig<Integer, Person> senderConfig() {
+        public SenderOptions<Integer, Person> senderOptions() {
             Map<String, Object> props = new HashMap<>();
             props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
             props.put(ProducerConfig.CLIENT_ID_CONFIG, "sample-producer");
             props.put(ProducerConfig.ACKS_CONFIG, "all");
             props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class);
             props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, PersonSerDes.class);
-            return new SenderConfig<>(props);
+            return SenderOptions.create(props);
         }
 
-        public KafkaSender<Integer, Person> sender(SenderConfig<Integer, Person> senderConfig) {
-            return new KafkaSender<>(senderConfig);
+        public Sender<Integer, Person> sender(SenderOptions<Integer, Person> senderOptions) {
+            return Sender.create(senderOptions);
         }
 
-        public FluxConfig<Integer, Person> fluxConfig() {
+        public ReceiverOptions<Integer, Person> receiverOptions() {
             Map<String, Object> props = new HashMap<>();
             props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
             props.put(ConsumerConfig.GROUP_ID_CONFIG, "sample-group");
             props.put(ConsumerConfig.CLIENT_ID_CONFIG, "sample-consumer");
             props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, IntegerDeserializer.class);
             props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, PersonSerDes.class);
-            return new FluxConfig<>(props);
+            return ReceiverOptions.<Integer, Person>create(props);
+        }
+
+        public ReceiverOptions<Integer, Person> receiverOptions(AckMode ackMode, Collection<String> topics) {
+            return receiverOptions()
+                    .addAssignListener(p -> log.info("Partitions assigned {}", p))
+                    .ackMode(ackMode)
+                    .subscription(topics);
         }
 
         public void source(CommittableSource source) {

@@ -18,7 +18,7 @@ ext {
     scalaVersion = '2.11'
     junitVersion = '4.12'
     log4jVersion = '1.2.17'
-    reactorVersion = '3.0.2.BUILD-SNAPSHOT'
+    reactorVersion = '3.0.4.BUILD-SNAPSHOT'
     argparseVersion = '0.5.0'
     metricsVersion = '2.2.0'
     joptVersion = '4.9'
@@ -82,6 +82,7 @@ project(':reactor-kafka-api') {
         testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion:test"
         testCompile "junit:junit:$junitVersion"
 
+        testCompile "io.projectreactor.addons:reactor-test:$reactorVersion"
         testCompile "com.goldmansachs:gs-collections:$gsCollectionsVersion"
         testCompile "org.springframework:spring-test:$springVersion"
         testCompile "org.springframework.kafka:spring-kafka-test:$springKafkaVersion"
@@ -110,6 +111,7 @@ project(':reactor-kafka-tools') {
         testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion"
         testCompile "org.apache.kafka:kafka-clients:$kafkaVersion:test"
         testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion:test"
+        testCompile "io.projectreactor.addons:reactor-test:$reactorVersion"
         testCompile "com.goldmansachs:gs-collections:$gsCollectionsVersion"
         testCompile "org.springframework:spring-test:$springVersion"
         testCompile "org.springframework.kafka:spring-kafka-test:$springKafkaVersion"
@@ -133,6 +135,7 @@ project(':reactor-kafka-samples') {
         testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion"
         testCompile "org.apache.kafka:kafka-clients:$kafkaVersion:test"
         testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion:test"
+        testCompile "io.projectreactor.addons:reactor-test:$reactorVersion"
         testCompile "com.goldmansachs:gs-collections:$gsCollectionsVersion"
         testCompile "org.springframework:spring-test:$springVersion"
         testCompile "org.springframework.kafka:spring-kafka-test:$springKafkaVersion"
@@ -142,3 +145,4 @@ project(':reactor-kafka-samples') {
         testCompile "org.slf4j:slf4j-log4j12:$slf4jVersion"
     }
 }
+

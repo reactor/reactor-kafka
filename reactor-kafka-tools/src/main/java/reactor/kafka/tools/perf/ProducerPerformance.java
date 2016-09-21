@@ -33,11 +33,10 @@ import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
 import reactor.core.Cancellation;
 import reactor.core.publisher.Flux;
-import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
-import reactor.util.function.Tuples;
-import reactor.kafka.SenderConfig;
-import reactor.kafka.KafkaSender;
+import reactor.kafka.sender.Sender;
+import reactor.kafka.sender.SenderOptions;
+import reactor.kafka.sender.SenderRecord;
 
 public class ProducerPerformance {
 
@@ -351,31 +350,31 @@ public class ProducerPerformance {
 
     static class ReactiveProducerPerformance extends AbstractProducerPerformance {
 
-        final KafkaSender<byte[], byte[]> sender;
+        final Sender<byte[], byte[]> sender;
 
         ReactiveProducerPerformance(Map<String, Object> producerPropsOverride, String topic, int numRecords, int recordSize, long throughput) {
             super(producerPropsOverride, topic, numRecords, recordSize, throughput);
-            sender = new KafkaSender<>(new SenderConfig<byte[], byte[]>(producerProps));
+            SenderOptions<byte[], byte[]> options = SenderOptions.<byte[], byte[]>create(producerProps)
+                    .scheduler(Schedulers.newSingle("prod-perf", true))
+                    .maxInFlight(maxInflight());
+            sender = Sender.create(options);
         }
 
         public Stats runTest() throws InterruptedException {
-            int maxInflight = maxInflight();
-            System.out.println("Running producer performance test using reactive API, class=" + this.getClass().getSimpleName()  + " messageSize=" + recordSize + ", maxInflight=" + maxInflight);
+            System.out.println("Running producer performance test using reactive API, class=" + this.getClass().getSimpleName()  + " messageSize=" + recordSize + ", maxInflight=" + maxInflight());
 
-            Scheduler scheduler = Schedulers.newSingle("prod-perf", true);
             CountDownLatch latch = new CountDownLatch(numRecords);
-            Flux<?> flux = senderFlux(latch, maxInflight, scheduler);
+            Flux<?> flux = senderFlux(latch);
             Cancellation cancellation = flux.subscribe();
             latch.await();
             stats.complete();
             cancellation.dispose();
             sender.close();
-            scheduler.shutdown();
 
             return stats;
         }
 
-        Flux<?> senderFlux(CountDownLatch latch, int maxInflight, Scheduler scheduler) {
+        Flux<?> senderFlux(CountDownLatch latch) {
             Flux<RecordMetadata> flux =
                 sender.send(Flux.range(1, numRecords)
                                 .map(i -> {
@@ -383,11 +382,11 @@ public class ProducerPerformance {
                                         if (throttler.shouldThrottle(i, sendStartMs))
                                             throttler.throttle();
                                         Callback cb = stats.nextCompletion(sendStartMs, recordSize, stats);
-                                        return Tuples.of(record, cb);
-                                    }), scheduler, maxInflight, false)
+                                        return SenderRecord.create(record, cb);
+                                    }), false)
                       .map(result -> {
-                              RecordMetadata metadata = result.getT1();
-                              Callback cb = result.getT2();
+                              RecordMetadata metadata = result.recordMetadata();
+                              Callback cb = result.correlationMetadata();
                               cb.onCompletion(metadata, null);
                               latch.countDown();
                               return metadata;

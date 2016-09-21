@@ -39,6 +39,8 @@ import org.springframework.kafka.test.utils.KafkaTestUtils;
 import kafka.admin.AdminUtils;
 import kafka.cluster.Partition;
 import kafka.utils.ZkUtils;
+import reactor.kafka.receiver.ReceiverOptions;
+import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.util.TestUtils;
 import scala.Option;
 
@@ -57,8 +59,8 @@ public class AbstractKafkaTest {
     @Rule
     public TestName testName = new TestName();
 
-    protected FluxConfig<Integer, String> fluxConfig;
-    protected SenderConfig<Integer, String> senderConfig;
+    protected ReceiverOptions<Integer, String> receiverOptions;
+    protected SenderOptions<Integer, String> senderOptions;
 
     protected final List<List<Integer>> expectedMessages = new ArrayList<List<Integer>>(partitions);
     protected final List<List<Integer>> receivedMessages = new ArrayList<List<Integer>>(partitions);
@@ -66,24 +68,24 @@ public class AbstractKafkaTest {
     public void setUp() throws Exception {
         System.out.println("********** RUNNING " + getClass().getName() + "." + testName.getMethodName());
 
-        senderConfig = createKafkaProducerConfig();
-        fluxConfig = createKafkaConsumerConfig();
+        senderOptions = createSenderOptions();
+        receiverOptions = createReceiveOptions();
         waitForTopic(topic, partitions, true);
     }
 
-    public FluxConfig<Integer, String> createKafkaConsumerConfig() {
-        fluxConfig = createKafkaFluxConfig(null, testName.getMethodName());
-        return fluxConfig;
+    public ReceiverOptions<Integer, String> createReceiveOptions() {
+        receiverOptions = createReceiverOptions(null, testName.getMethodName());
+        return receiverOptions;
     }
 
-    public SenderConfig<Integer, String> createKafkaProducerConfig() {
+    public SenderOptions<Integer, String> createSenderOptions() {
         Map<String, Object> props = KafkaTestUtils.producerProps(embeddedKafka);
         props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, String.valueOf(requestTimeoutMillis));
-        senderConfig = new SenderConfig<>(props);
-        return senderConfig;
+        senderOptions = SenderOptions.create(props);
+        return senderOptions;
     }
 
-    public FluxConfig<Integer, String> createKafkaFluxConfig(Map<String, Object> propsOverride, String groupId) {
+    public ReceiverOptions<Integer, String> createReceiverOptions(Map<String, Object> propsOverride, String groupId) {
         Map<String, Object> props = KafkaTestUtils.consumerProps("", "false", embeddedKafka);
         props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
         props.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, String.valueOf(sessionTimeoutMillis));
@@ -92,10 +94,10 @@ public class AbstractKafkaTest {
         props.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "2");
         if (propsOverride != null)
             props.putAll(propsOverride);
-        fluxConfig = new FluxConfig<>(props);
-        fluxConfig.commitInterval(Duration.ofMillis(50));
-        fluxConfig.maxAutoCommitAttempts(1);
-        return fluxConfig;
+        receiverOptions = ReceiverOptions.create(props);
+        receiverOptions.commitInterval(Duration.ofMillis(50));
+        receiverOptions.maxAutoCommitAttempts(1);
+        return receiverOptions;
     }
 
     public ProducerRecord<Integer, String> createProducerRecord(int index, boolean expectSuccess) {

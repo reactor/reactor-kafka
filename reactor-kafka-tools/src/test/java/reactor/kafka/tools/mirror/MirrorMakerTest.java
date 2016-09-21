@@ -40,12 +40,12 @@ import org.junit.Test;
 import reactor.core.Cancellation;
 import reactor.core.publisher.Flux;
 import reactor.kafka.AbstractKafkaTest;
-import reactor.kafka.FluxConfig;
-import reactor.kafka.KafkaFlux;
-import reactor.kafka.KafkaSender;
-import reactor.kafka.SenderConfig;
+import reactor.kafka.receiver.ReceiverOptions;
+import reactor.kafka.receiver.Receiver;
+import reactor.kafka.sender.Sender;
+import reactor.kafka.sender.SenderOptions;
+import reactor.kafka.sender.SenderRecord;
 import reactor.kafka.tools.mirror.MirrorMaker.TestMirrorMakerMessageHandler;
-import reactor.util.function.Tuples;
 
 public class MirrorMakerTest extends AbstractKafkaTest {
 
@@ -60,7 +60,7 @@ public class MirrorMakerTest extends AbstractKafkaTest {
     }
 
     @Test
-    public void reactiveMirrorMakerTest() throws Exception {
+    public void reactiveMirrorMaker() throws Exception {
         Properties producerProps = new Properties();
         producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, embeddedKafka.getBrokersAsString());
         producerProps.put(ProducerConfig.CLIENT_ID_CONFIG, "mirror-producer");
@@ -97,20 +97,21 @@ public class MirrorMakerTest extends AbstractKafkaTest {
         int count = 0;
         CountDownLatch mirrorLatch = new CountDownLatch(count);
 
-        FluxConfig<byte[], byte[]> testFluxConfig = new FluxConfig<>(consumerProps);
-        testFluxConfig = testFluxConfig.consumerProperty(ConsumerConfig.GROUP_ID_CONFIG, "test");
-        KafkaFlux<byte[], byte[]> testFlux = KafkaFlux.listenOn(testFluxConfig, Collections.singleton(destTopic));
+        ReceiverOptions<byte[], byte[]> receiverOptions = ReceiverOptions.create(consumerProps);
         Semaphore assigned = new Semaphore(0);
-        Cancellation testCancel = testFlux
-                .doOnPartitionsAssigned(p -> assigned.release())
+        receiverOptions = receiverOptions.consumerProperty(ConsumerConfig.GROUP_ID_CONFIG, "test")
+                .addAssignListener(p -> assigned.release())
+                .subscription(Collections.singleton(destTopic));
+        Cancellation testCancel = Receiver.create(receiverOptions)
+                .receive()
                 .subscribe(m -> mirrorLatch.countDown());
         assertTrue("Partitions not assigned", assigned.tryAcquire(10,  TimeUnit.SECONDS));
         rebalanceListener.waitForAssignment();
 
-        SenderConfig<byte[], byte[]> testSenderConfig = new SenderConfig<>(producerProps);
-        KafkaSender<byte[], byte[]> testSender = new KafkaSender<>(testSenderConfig);
+        SenderOptions<byte[], byte[]> testSenderOptions = SenderOptions.create(producerProps);
+        Sender<byte[], byte[]> testSender = Sender.create(testSenderOptions);
         testSender.send(Flux.range(1, 100)
-                            .map(i -> Tuples.of(new ProducerRecord<>(sourceTopic, new byte[100]), i)))
+                            .map(i -> SenderRecord.create(new ProducerRecord<>(sourceTopic, new byte[100]), i)), false)
                   .subscribe();
 
         if (!mirrorLatch.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS))

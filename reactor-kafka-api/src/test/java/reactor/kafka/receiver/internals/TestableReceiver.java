@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  **/
-package reactor.kafka.internals;
+package reactor.kafka.receiver.internals;
 
 import java.time.Duration;
 import java.util.Map;
@@ -34,38 +34,40 @@ import org.slf4j.LoggerFactory;
 
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Scheduler;
-import reactor.kafka.ConsumerMessage;
-import reactor.kafka.ConsumerOffset;
-import reactor.kafka.KafkaFlux;
+import reactor.kafka.receiver.ReceiverRecord;
+import reactor.kafka.receiver.Receiver;
+import reactor.kafka.receiver.ReceiverOffset;
 import reactor.kafka.util.TestUtils;
 
-public class TestableKafkaFlux {
+public class TestableReceiver {
 
-    private static final Logger log = LoggerFactory.getLogger(TestableKafkaFlux.class.getName());
+    private static final Logger log = LoggerFactory.getLogger(TestableReceiver.class.getName());
 
     public static final TopicPartition NON_EXISTENT_PARTITION = new TopicPartition("non-existent", 0);
 
-    private KafkaFlux<Integer, String> kafkaFlux;
+    private Flux<ReceiverRecord<Integer, String>> kafkaFlux;
+    private KafkaReceiver<Integer, String> kafkaReceiver;
 
-    public TestableKafkaFlux(KafkaFlux<Integer, String> kafkaFlux) {
+    public TestableReceiver(Receiver<Integer, String> kafkaReceiver, Flux<ReceiverRecord<Integer, String>> kafkaFlux) {
+        this.kafkaReceiver = (KafkaReceiver<Integer, String>) kafkaReceiver;
         this.kafkaFlux = kafkaFlux;
     }
 
-    public KafkaFlux<Integer, String> kafkaFlux() {
+    public Flux<ReceiverRecord<Integer, String>> kafkaFlux() {
         return kafkaFlux;
     }
 
     public void terminate() throws Exception {
-        Scheduler scheduler = TestUtils.getField(kafkaFlux, "fluxManager.eventScheduler");
+        Scheduler scheduler = TestUtils.getField(kafkaReceiver, "eventScheduler");
         scheduler.shutdown();
     }
 
     public Map<TopicPartition, Long> fluxOffsetMap() {
-        Map<TopicPartition, Long> commitOffsets = TestUtils.getField(kafkaFlux, "fluxManager.commitEvent.commitBatch.consumedOffsets");
+        Map<TopicPartition, Long> commitOffsets = TestUtils.getField(kafkaReceiver, "commitEvent.commitBatch.consumedOffsets");
         return commitOffsets;
     }
 
-    public Flux<ConsumerMessage<Integer, String>> withManualCommitFailures(boolean retriable, int failureCount,
+    public Flux<ReceiverRecord<Integer, String>> withManualCommitFailures(boolean retriable, int failureCount,
             Semaphore successSemaphore, Semaphore failureSemaphore) {
         AtomicInteger retryCount = new AtomicInteger();
         if (retriable)
@@ -83,7 +85,7 @@ public class TestableKafkaFlux {
                                     clearCommitError();
                                 return retryCount.get() <= failureCount + 1;
                             };
-                            record.consumerOffset().commit()
+                            record.offset().commit()
                                                    .doOnError(e -> failureSemaphore.release())
                                                    .doOnSuccess(i -> successSemaphore.release())
                                                    .retry(retryPredicate)
@@ -104,23 +106,22 @@ public class TestableKafkaFlux {
     }
 
     public void injectCommitEventForRetriableException() {
-        FluxManager<?, ?> fluxManager = TestUtils.getField(kafkaFlux, "fluxManager");
-        FluxManager<?, ?>.CommitEvent newEvent = fluxManager.new CommitEvent() {
+        KafkaReceiver<?, ?>.CommitEvent newEvent = kafkaReceiver.new CommitEvent() {
                 protected boolean isRetriableException(Exception exception) {
                     boolean retriable = exception instanceof RetriableCommitFailedException ||
                             exception.toString().contains(Errors.UNKNOWN_TOPIC_OR_PARTITION.exception().getMessage());
                     return retriable;
                 }
         };
-        TestUtils.setField(fluxManager, "commitEvent", newEvent);
+        TestUtils.setField(kafkaReceiver, "commitEvent", newEvent);
     }
 
     public void waitForClose() throws Exception {
-        AtomicBoolean fluxClosed = TestUtils.getField(kafkaFlux, "fluxManager.isClosed");
-        TestUtils.waitUntil("Flux not closed", null, closed -> closed.get(), fluxClosed, Duration.ofMillis(10000));
+        AtomicBoolean receiverClosed = TestUtils.getField(kafkaReceiver, "isClosed");
+        TestUtils.waitUntil("Receiver not closed", null, closed -> closed.get(), receiverClosed, Duration.ofMillis(10000));
     }
 
-    public static void setNonExistentPartition(ConsumerOffset offset) {
+    public static void setNonExistentPartition(ReceiverOffset offset) {
         try {
             MemberModifier.field(offset.getClass(), "topicPartition").set(offset, NON_EXISTENT_PARTITION);
         } catch (IllegalArgumentException | IllegalAccessException e) {

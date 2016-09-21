@@ -14,12 +14,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  **/
-package reactor.kafka;
+package reactor.kafka.receiver;
 
 import org.apache.kafka.common.TopicPartition;
 
 import reactor.core.publisher.Mono;
-import reactor.kafka.KafkaFlux.AckMode;
 
 /**
  * Single topic partition offset that must be acknowledged after message consumption
@@ -27,7 +26,7 @@ import reactor.kafka.KafkaFlux.AckMode;
  * is {@link AckMode#MANUAL_COMMIT}.
  *
  */
-public interface ConsumerOffset {
+public interface ReceiverOffset {
 
     /**
      * Returns the topic partition with which this offset is associated.
@@ -42,7 +41,7 @@ public interface ConsumerOffset {
     /**
      * Acknowledges the message associated with this offset. If ack mode is {@link AckMode#MANUAL_ACK},
      * the record will be committed automatically based on the commit configuration parameters
-     * {@link FluxConfig#commitInterval()} and {@link FluxConfig#commitBatchSize()}. If
+     * {@link ReceiverOptions#commitInterval()} and {@link ReceiverOptions#commitBatchSize()}. If
      * ack mode is {@link AckMode#MANUAL_COMMIT} it is the responsibility of the consuming application
      * to invoke {@link #commit()} to commit acknowledged records individually or in batches.
      * When an offset is acknowledged, it is assumed that all messages in this partition up to and

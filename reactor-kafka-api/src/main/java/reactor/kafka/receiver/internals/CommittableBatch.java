@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  **/
-package reactor.kafka.internals;
+package reactor.kafka.receiver.internals;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -29,9 +29,16 @@ import reactor.core.publisher.MonoSink;
 
 public class CommittableBatch {
 
-    private final Map<TopicPartition, Long> consumedOffsets = new HashMap<>();
+    private final Map<TopicPartition, Long> consumedOffsets;
+    private final Map<TopicPartition, Long> latestOffsets;
     private int batchSize;
-    private List<MonoSink<Void>> callbackEmitters = new ArrayList<>();
+    private List<MonoSink<Void>> callbackEmitters;
+
+    public CommittableBatch() {
+        consumedOffsets = new HashMap<>();
+        latestOffsets = new HashMap<>();
+        callbackEmitters = new ArrayList<>();
+    }
 
     public synchronized int updateOffset(TopicPartition topicPartition, long offset) {
         if (consumedOffsets.put(topicPartition, offset) != (Long) offset)
@@ -53,6 +60,7 @@ public class CommittableBatch {
 
     public synchronized CommitArgs getAndClearOffsets() {
         Map<TopicPartition, OffsetAndMetadata> offsetMap = new HashMap<>();
+        latestOffsets.putAll(consumedOffsets);
         Iterator<Map.Entry<TopicPartition, Long>> iterator = consumedOffsets.entrySet().iterator();
         while (iterator.hasNext()) {
             Map.Entry<TopicPartition, Long> entry = iterator.next();
@@ -74,8 +82,13 @@ public class CommittableBatch {
     protected synchronized void restoreOffsets(CommitArgs commitArgs) {
         // Restore offsets that haven't been updated. Mono emitters don't need to be restored for
         // retry since since new callbacks are registered.
-        for (Map.Entry<TopicPartition, OffsetAndMetadata> entry : commitArgs.offsets.entrySet())
-            consumedOffsets.putIfAbsent(entry.getKey(), entry.getValue().offset() - 1);
+        for (Map.Entry<TopicPartition, OffsetAndMetadata> entry : commitArgs.offsets.entrySet()) {
+            TopicPartition topicPart = entry.getKey();
+            long offset = entry.getValue().offset();
+            Long latestOffset = latestOffsets.get(topicPart);
+            if (latestOffset == null || latestOffset <= offset - 1)
+                consumedOffsets.putIfAbsent(topicPart, offset - 1);
+        }
     }
 
     @Override

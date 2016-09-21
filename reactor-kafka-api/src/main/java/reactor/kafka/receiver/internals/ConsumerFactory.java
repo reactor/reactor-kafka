@@ -14,45 +14,35 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  **/
-package reactor.kafka.internals;
+package reactor.kafka.receiver.internals;
 
 import java.time.Duration;
-import java.util.Map;
 
+import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.config.ConfigException;
 
-import reactor.kafka.FluxConfig;
+import reactor.kafka.receiver.ReceiverOptions;
 
 public class ConsumerFactory {
 
     public static final ConsumerFactory INSTANCE = new ConsumerFactory();
 
-    private ConsumerFactory() {
+    protected ConsumerFactory() {
     }
 
-    public <K, V> KafkaConsumer<K, V> createConsumer(FluxConfig<K, V> config) {
+    public <K, V> Consumer<K, V> createConsumer(ReceiverOptions<K, V> config) {
         return new KafkaConsumer<>(config.consumerProperties());
     }
 
-    public String groupId(FluxConfig<?, ?> config) {
-        return (String) config.consumerProperties().get(ConsumerConfig.GROUP_ID_CONFIG);
+    public String groupId(ReceiverOptions<?, ?> receiverOptions) {
+        return (String) receiverOptions.consumerProperty(ConsumerConfig.GROUP_ID_CONFIG);
     }
 
-    public Duration heartbeatInterval(FluxConfig<?, ?> config) {
-        Map<String, Object> properties = config.consumerProperties();
-        long heartbeatIntervalMs = 0;
-        if (properties.containsKey(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG)) {
-            Object value = properties.get(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG);
-            if (value instanceof Long)
-                heartbeatIntervalMs = (Long) value;
-            else if (value instanceof String)
-                heartbeatIntervalMs = Long.parseLong((String) value);
-            else
-                throw new ConfigException("Invalid heartbeat interval " + value);
-        } else
-            heartbeatIntervalMs = 3000; // Kafka default
+    public Duration heartbeatInterval(ReceiverOptions<?, ?> receiverOptions) {
+        long defaultValue = 3000; // Kafka default
+        long heartbeatIntervalMs = getLongOption(receiverOptions, ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, defaultValue);
         return Duration.ofMillis(heartbeatIntervalMs);
     }
 
@@ -60,4 +50,18 @@ public class ConsumerFactory {
         return Duration.ofMillis(5000); // Kafka default
     }
 
+    public long getLongOption(ReceiverOptions<?, ?> receiverOptions, String optionName, long defaultValue) {
+        Object value = receiverOptions.consumerProperty(optionName);
+        long optionValue = 0;
+        if (value != null) {
+            if (value instanceof Long)
+                optionValue = (Long) value;
+            else if (value instanceof String)
+                optionValue = Long.parseLong((String) value);
+            else
+                throw new ConfigException("Invalid value " + value);
+        } else
+            optionValue = defaultValue;
+        return optionValue;
+    }
 }

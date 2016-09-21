@@ -28,11 +28,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import reactor.core.publisher.Flux;
-import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
-import reactor.kafka.KafkaSender;
-import reactor.kafka.SenderConfig;
-import reactor.util.function.Tuples;
+import reactor.kafka.sender.Sender;
+import reactor.kafka.sender.SenderOptions;
+import reactor.kafka.sender.SenderRecord;
 
 /**
  * Sample producer application using Reactive API for Kafka.
@@ -52,7 +50,7 @@ public class SampleProducer {
     private static final String BOOTSTRAP_SERVERS = "localhost:9092";
     private static final String TOPIC = "demo-topic";
 
-    private final KafkaSender<Integer, String> sender;
+    private final Sender<Integer, String> sender;
     private final SimpleDateFormat dateFormat;
 
     public SampleProducer(String bootstrapServers) {
@@ -63,21 +61,20 @@ public class SampleProducer {
         props.put(ProducerConfig.ACKS_CONFIG, "all");
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class);
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        SenderConfig<Integer, String> senderConfig = new SenderConfig<>(props);
+        SenderOptions<Integer, String> senderOptions = SenderOptions.create(props);
 
-        sender = new KafkaSender<>(senderConfig);
+        sender = Sender.create(senderOptions);
         dateFormat = new SimpleDateFormat("HH:mm:ss:SSS z dd MMM yyyy");
     }
 
     public void sendMessages(String topic, int count, CountDownLatch latch) throws InterruptedException {
-        Scheduler scheduler = Schedulers.newSingle("sample");
         sender.send(Flux.range(1, count)
-                        .map(i -> Tuples.of(new ProducerRecord<>(topic, i, "Message_" + i), i)), scheduler, 1024, true)
+                        .map(i -> SenderRecord.create(new ProducerRecord<>(topic, i, "Message_" + i), i)), true)
               .doOnError(e-> log.error("Send failed", e))
               .subscribe(r -> {
-                      RecordMetadata metadata = r.getT1();
+                      RecordMetadata metadata = r.recordMetadata();
                       System.out.printf("Message %d sent successfully, topic-partition=%s-%d offset=%d timestamp=%s\n",
-                          r.getT2(),
+                          r.correlationMetadata(),
                           metadata.topic(),
                           metadata.partition(),
                           metadata.offset(),

@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  **/
-package reactor.kafka;
+package reactor.kafka.receiver;
 
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.TopicPartition;
@@ -24,7 +24,7 @@ import org.apache.kafka.common.TopicPartition;
  * that can be invoked when partitions are assigned.
  *
  */
-public interface SeekablePartition {
+public interface ReceiverPartition {
 
     /**
      * Returns the underlying Kafka topic partition.
@@ -52,5 +52,5 @@ public interface SeekablePartition {
     /**
      * Returns the offset of the next record that will be fetched from this topic partition.
      */
-    long position(TopicPartition partition);
+    long position();
 }

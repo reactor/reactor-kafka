@@ -36,10 +36,10 @@ import org.junit.Test;
 import reactor.core.Cancellation;
 import reactor.core.publisher.Mono;
 import reactor.kafka.AbstractKafkaTest;
-import reactor.kafka.ConsumerMessage;
-import reactor.kafka.ConsumerOffset;
-import reactor.kafka.FluxConfig;
-import reactor.kafka.KafkaFlux;
+import reactor.kafka.receiver.ReceiverOptions;
+import reactor.kafka.receiver.ReceiverRecord;
+import reactor.kafka.receiver.Receiver;
+import reactor.kafka.receiver.ReceiverOffset;
 import reactor.kafka.samples.SampleScenarios.AtmostOnce;
 import reactor.kafka.samples.SampleScenarios.CommittableSource;
 import reactor.kafka.samples.SampleScenarios.FanOut;
@@ -68,7 +68,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
     }
 
     @Test
-    public void kafkaSinkTest() throws Exception {
+    public void kafkaSink() throws Exception {
         List<Person> expected = new ArrayList<>();
         List<Person> received = new ArrayList<>();
         subscribeToDestTopic(topic, received);
@@ -79,7 +79,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
     }
 
     @Test
-    public void kafkaSourceTest() throws Exception {
+    public void kafkaSource() throws Exception {
         List<Person> expected = new ArrayList<>();
         List<Person> received = new ArrayList<>();
         KafkaSource source = new KafkaSource(bootstrapServers, topic) {
@@ -87,8 +87,8 @@ public class SampleScenariosTest extends AbstractKafkaTest {
                 received.add(person);
                 return Mono.empty();
             }
-            public FluxConfig<Integer, Person> fluxConfig() {
-                return super.fluxConfig().consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+            public ReceiverOptions<Integer, Person> receiverOptions() {
+                return super.receiverOptions().consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
             }
         };
         cancellations.add(source.flux().subscribe());
@@ -97,15 +97,15 @@ public class SampleScenariosTest extends AbstractKafkaTest {
     }
 
     @Test
-    public void kafkaTransformTest() throws Exception {
+    public void kafkaTransform() throws Exception {
         List<Person> expected = new ArrayList<>();
         List<Person> received = new ArrayList<>();
         String sourceTopic = topic;
         String destTopic = "testtopic2";
         createNewTopic(destTopic, partitions);
         KafkaTransform flow = new KafkaTransform(bootstrapServers, sourceTopic, destTopic) {
-            public FluxConfig<Integer, Person> fluxConfig() {
-                return super.fluxConfig().consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+            public ReceiverOptions<Integer, Person> receiverOptions() {
+                return super.receiverOptions().consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
             }
         };
         cancellations.add(flow.flux().subscribe());
@@ -117,15 +117,15 @@ public class SampleScenariosTest extends AbstractKafkaTest {
     }
 
     @Test
-    public void atmostOnceTest() throws Exception {
+    public void atmostOnce() throws Exception {
         List<Person> expected = new ArrayList<>();
         List<Person> received = new ArrayList<>();
         String sourceTopic = topic;
         String destTopic = "testtopic2";
         createNewTopic(destTopic, partitions);
         AtmostOnce flow = new AtmostOnce(bootstrapServers, sourceTopic, destTopic) {
-            public FluxConfig<Integer, Person> fluxConfig() {
-                return super.fluxConfig().consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+            public ReceiverOptions<Integer, Person> receiverOptions() {
+                return super.receiverOptions().consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
             }
         };
         cancellations.add(flow.flux().subscribe());
@@ -137,7 +137,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
     }
 
     @Test
-    public void fanOutTest() throws Exception {
+    public void fanOut() throws Exception {
         List<Person> expected1 = new ArrayList<>();
         List<Person> expected2 = new ArrayList<>();
         List<Person> received1 = new ArrayList<>();
@@ -148,8 +148,8 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         createNewTopic(destTopic1, partitions);
         createNewTopic(destTopic2, partitions);
         FanOut flow = new FanOut(bootstrapServers, sourceTopic, destTopic1, destTopic2) {
-            public FluxConfig<Integer, Person> fluxConfig() {
-                return super.fluxConfig().consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+            public ReceiverOptions<Integer, Person> receiverOptions() {
+                return super.receiverOptions().consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
             }
         };
         cancellations.add(flow.flux().subscribe());
@@ -167,21 +167,21 @@ public class SampleScenariosTest extends AbstractKafkaTest {
     }
 
     @Test
-    public void partitionTest() throws Exception {
+    public void partition() throws Exception {
         List<Person> expected = new ArrayList<>();
         List<Person> received = new ArrayList<>();
         Map<Integer, List<Person>> partitionMap = new HashMap<>();
         for (int i = 0; i < partitions; i++)
             partitionMap.put(i, new ArrayList<>());
         PartitionProcessor source = new PartitionProcessor(bootstrapServers, topic) {
-            public FluxConfig<Integer, Person> fluxConfig() {
-                return super.fluxConfig().consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+            public ReceiverOptions<Integer, Person> receiverOptions() {
+                return super.receiverOptions().consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
             }
             @Override
-            public ConsumerOffset processRecord(TopicPartition topicPartition, ConsumerMessage<Integer, Person> message) {
-                Person person = message.consumerRecord().value();
+            public ReceiverOffset processRecord(TopicPartition topicPartition, ReceiverRecord<Integer, Person> message) {
+                Person person = message.record().value();
                 received.add(person);
-                partitionMap.get(message.consumerRecord().partition()).add(person);
+                partitionMap.get(message.record().partition()).add(person);
                 return super.processRecord(topicPartition, message);
             }
 
@@ -194,11 +194,12 @@ public class SampleScenariosTest extends AbstractKafkaTest {
 
     private void subscribeToDestTopic(String topic, List<Person> received) {
         KafkaSource source = new KafkaSource(bootstrapServers, topic);
-        FluxConfig<Integer, Person> fluxConfig = source.fluxConfig()
+        ReceiverOptions<Integer, Person> receiverOptions = source.receiverOptions()
                 .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
                 .consumerProperty(ConsumerConfig.GROUP_ID_CONFIG, "test-group");
-        Cancellation c = KafkaFlux.listenOn(fluxConfig, Collections.singleton(topic))
-                                  .subscribe(m -> received.add(m.consumerRecord().value()));
+        Cancellation c = Receiver.create(receiverOptions.subscription(Collections.singleton(topic)))
+                                 .receive()
+                                 .subscribe(m -> received.add(m.record().value()));
         cancellations.add(c);
     }
     private CommittableSource createTestSource(int count, List<Person> expected) {

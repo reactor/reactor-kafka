@@ -14,21 +14,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  **/
-package reactor.kafka.internals;
+package reactor.kafka.receiver.internals;
 
 import java.util.Collections;
 
-import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.common.TopicPartition;
 
-import reactor.kafka.SeekablePartition;
+import reactor.kafka.receiver.ReceiverPartition;
 
-public class SeekableKafkaPartition implements SeekablePartition {
+public class SeekablePartition implements ReceiverPartition {
 
-    private final KafkaConsumer<?, ?> consumer;
+    private final Consumer<?, ?> consumer;
     private final TopicPartition topicPartition;
 
-    public SeekableKafkaPartition(KafkaConsumer<?, ?> consumer, TopicPartition topicPartition) {
+    public SeekablePartition(Consumer<?, ?> consumer, TopicPartition topicPartition) {
         this.consumer = consumer;
         this.topicPartition = topicPartition;
     }
@@ -54,8 +54,8 @@ public class SeekableKafkaPartition implements SeekablePartition {
     }
 
     @Override
-    public long position(TopicPartition partition) {
-        return this.consumer.position(partition);
+    public long position() {
+        return this.consumer.position(topicPartition);
     }
 
     @Override

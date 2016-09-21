@@ -14,19 +14,29 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  **/
-package reactor.kafka.internals;
+package reactor.kafka.mock;
 
-import org.apache.kafka.clients.producer.KafkaProducer;
-import reactor.kafka.SenderConfig;
+public class Message {
 
-public class ProducerFactory {
+    private final int key;
+    private final String value;
+    private final long timestamp;
 
-    public static final ProducerFactory INSTANCE = new ProducerFactory();
-
-    private ProducerFactory() {
+    public Message(int key, String value, Long timestamp) {
+        this.key = key;
+        this.value = value;
+        this.timestamp = timestamp == null ? -1 : timestamp.longValue();
     }
 
-    public static <K, V> KafkaProducer<K, V> createProducer(SenderConfig<K, V> config) {
-        return new KafkaProducer<>(config.producerProperties());
+    public Integer key() {
+        return key;
+    }
+
+    public String value() {
+        return value;
+    }
+
+    public long timestamp() {
+        return timestamp;
     }
 }

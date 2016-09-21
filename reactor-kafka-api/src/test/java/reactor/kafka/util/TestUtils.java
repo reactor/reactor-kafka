@@ -17,7 +17,9 @@
 package reactor.kafka.util;
 
 import java.time.Duration;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
@@ -52,6 +54,11 @@ public class TestUtils {
         }
         String message = errorMessageArg == null ? errorMessage : errorMessage + errorMessageArg.get();
         fail(message);
+    }
+
+    public static void waitForLatch(String errorPrefix, CountDownLatch latch, Duration duration) throws InterruptedException {
+        if (!latch.await(duration.toMillis(), TimeUnit.MILLISECONDS))
+            fail(errorPrefix + ", remaining=" + latch.getCount());
     }
 
     @SuppressWarnings("unchecked")

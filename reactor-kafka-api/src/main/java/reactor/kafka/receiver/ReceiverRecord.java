@@ -14,33 +14,29 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  **/
-package reactor.kafka;
+package reactor.kafka.receiver;
 
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
-import reactor.kafka.KafkaFlux.AckMode;
-
 
 /**
- * Represents an incoming message dispatched by {@link KafkaFlux}.
+ * Represents an incoming message dispatched by {@link Receiver}.
  *
  * @param <K> Key type
  * @param <V> Value type
  */
-public interface ConsumerMessage<K, V> {
+public interface ReceiverRecord<K, V> {
 
     /**
      * Returns the Kafka consumer record associated with this instance.
      */
-    ConsumerRecord<K, V> consumerRecord();
+    ConsumerRecord<K, V> record();
 
     /**
      * Returns an acknowlegeable offset instance that should be acknowledged after this
      * message record has been consumed if the ack mode is {@link AckMode#MANUAL_ACK} or
      * {@link AckMode#MANUAL_COMMIT}. If ack mode is {@value AckMode#MANUAL_COMMIT},
-     * {@link ConsumerOffset#commit()} must be invoked to commit all acknowledged records.
+     * {@link ReceiverOffset#commit()} must be invoked to commit all acknowledged records.
      */
-    ConsumerOffset consumerOffset();
-
-
+    ReceiverOffset offset();
 }
