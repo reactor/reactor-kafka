@@ -51,11 +51,12 @@ public class SampleConsumer {
     private static final String TOPIC = "demo-topic";
 
     private final FluxConfig<Integer, String> fluxConfig;
-    private final SimpleDateFormat dateFormat;
+    private final ThreadLocal<SimpleDateFormat> dateFormat
+        = ThreadLocal.withInitial(() -> new SimpleDateFormat("HH:mm:ss:SSS z dd MMM yyyy"));
 
-    public SampleConsumer(String bootstrapServers) {
+    public SampleConsumer(final String bootstrapServers) {
 
-        Map<String, Object> props = new HashMap<>();
+        final Map<String, Object> props = new HashMap<>();
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         props.put(ConsumerConfig.CLIENT_ID_CONFIG, "sample-consumer");
         props.put(ConsumerConfig.GROUP_ID_CONFIG, "sample-group");
@@ -64,34 +65,32 @@ public class SampleConsumer {
 
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         fluxConfig = new FluxConfig<>(props);
-
-        dateFormat = new SimpleDateFormat("HH:mm:ss:SSS z dd MMM yyyy");
     }
 
-    public Cancellation consumeMessages(String topic, CountDownLatch latch) {
+    public Cancellation consumeMessages(final String topic, final CountDownLatch latch) {
 
-        KafkaFlux<Integer, String> kafkaFlux =
+        final KafkaFlux<Integer, String> kafkaFlux =
                 KafkaFlux.listenOn(fluxConfig, Collections.singleton(topic))
                          .doOnPartitionsAssigned(partitions -> log.debug("onPartitionsAssigned {}", partitions))
                          .doOnPartitionsRevoked(partitions -> log.debug("onPartitionsRevoked {}", partitions));
         return kafkaFlux.subscribe(message -> {
-                ConsumerOffset offset = message.consumerOffset();
-                ConsumerRecord<Integer, String> record = message.consumerRecord();
+                final ConsumerOffset offset = message.consumerOffset();
+                final ConsumerRecord<Integer, String> record = message.consumerRecord();
                 System.out.printf("Received message: topic-partition=%s offset=%d timestamp=%s key=%d value=%s\n",
                         offset.topicPartition(),
                         offset.offset(),
-                        dateFormat.format(new Date(record.timestamp())),
+                        dateFormat.get().format(new Date(record.timestamp())),
                         record.key(),
                         record.value());
                 latch.countDown();
             });
     }
 
-    public static void main(String[] args) throws Exception {
-        int count = 20;
-        CountDownLatch latch = new CountDownLatch(count);
-        SampleConsumer consumer = new SampleConsumer(BOOTSTRAP_SERVERS);
-        Cancellation cancellation = consumer.consumeMessages(TOPIC, latch);
+    public static void main(final String[] args) throws Exception {
+        final int count = 20;
+        final CountDownLatch latch = new CountDownLatch(count);
+        final SampleConsumer consumer = new SampleConsumer(BOOTSTRAP_SERVERS);
+        final Cancellation cancellation = consumer.consumeMessages(TOPIC, latch);
         latch.await(10, TimeUnit.SECONDS);
         cancellation.dispose();
     }
