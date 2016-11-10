@@ -26,15 +26,21 @@ import reactor.kafka.tools.util.PerfTestUtils;
 
 public class EndToEndLatencyTest extends AbstractKafkaTest {
 
+    private int numMessages;
+    private int messageSize;
+    private int maxPercentDiff;
+
     @Before
     public void setUp() throws Exception {
         super.setUp();
+
+        numMessages = PerfTestUtils.getTestConfig("reactor.kafka.test.numMessages", 10000);
+        messageSize = PerfTestUtils.getTestConfig("reactor.kafka.test.messageSize", 100);
+        maxPercentDiff = PerfTestUtils.getTestConfig("reactor.kafka.test.maxPercentDiff", 100);
     }
 
     @Test
     public void performanceRegressionTest() throws Exception {
-        int numMessages = 10000;
-        int messageSize = 100;
         Map<String, Object> producerProps = PerfTestUtils.producerProps(embeddedKafka);
         Map<String, Object> consumerProps = PerfTestUtils.consumerProps(embeddedKafka);
 
@@ -45,6 +51,6 @@ public class EndToEndLatencyTest extends AbstractKafkaTest {
 
         double r75 = rLatencies[(int) (rLatencies.length * 0.75)];
         double nr75 = nrLatencies[(int) (rLatencies.length * 0.75)];
-        PerfTestUtils.verifyReactiveLatency(r75, nr75, 100);
+        PerfTestUtils.verifyReactiveLatency(r75, nr75, maxPercentDiff);
     }
 }

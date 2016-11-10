@@ -111,11 +111,12 @@ public class MockProducer implements Producer<Integer, String> {
     @Override
     public void close() {
         closed = true;
+        executor.shutdown();
     }
 
     @Override
     public void close(long timeout, TimeUnit unit) {
-        closed = true;
+        close();
     }
 
     private <T> T call(Callable<T> callable) {

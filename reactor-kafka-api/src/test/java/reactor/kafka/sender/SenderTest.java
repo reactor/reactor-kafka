@@ -57,6 +57,10 @@ import reactor.kafka.receiver.internals.ConsumerFactory;
 import reactor.kafka.util.TestUtils;
 import reactor.test.StepVerifier;
 
+/**
+ * Kafka sender integration tests using embedded Kafka brokers and producers.
+ *
+ */
 public class SenderTest extends AbstractKafkaTest {
 
     private static final Logger log = LoggerFactory.getLogger(SenderTest.class.getName());
@@ -79,6 +83,10 @@ public class SenderTest extends AbstractKafkaTest {
             kafkaSender.close();
     }
 
+    /**
+     * Good path send without response. Tests that the returned Mono completes successfully
+     * when sends complete.
+     */
     @Test
     public void sendNoResponse() throws Exception {
         int count = 1000;
@@ -90,6 +98,10 @@ public class SenderTest extends AbstractKafkaTest {
         waitForMessages(consumer, count, true);
     }
 
+    /**
+     * Error path send without response. Tests that the returned Mono fails
+     * if a record cannot be delivered to Kafka.
+     */
     @Test
     public void sendNoResponseFailure() throws Exception {
         int count = 4;
@@ -106,6 +118,9 @@ public class SenderTest extends AbstractKafkaTest {
         assertTrue("Error callback not invoked", errorSemaphore.tryAcquire(requestTimeoutMillis, TimeUnit.MILLISECONDS));
     }
 
+    /**
+     * Tests sends where errors are ignored.
+     */
     @Test
     public void fireAndForget() throws Exception {
         int count = 1000;
@@ -116,8 +131,11 @@ public class SenderTest extends AbstractKafkaTest {
         waitForMessages(consumer, count, true);
     }
 
+    /**
+     * Tests that response flux returns responses for all records.
+     */
     @Test
-    public void sendCallback() throws Exception {
+    public void sendWithResponse() throws Exception {
         int count = 10;
         CountDownLatch latch = new CountDownLatch(count);
         Semaphore completeSemaphore = new Semaphore(0);
@@ -127,13 +145,16 @@ public class SenderTest extends AbstractKafkaTest {
             .doOnComplete(() -> completeSemaphore.release())
             .subscribe();
 
-        assertTrue("Missing callbacks " + latch.getCount(), latch.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
+        assertTrue("Missing responses " + latch.getCount(), latch.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
         assertTrue("Completion callback not invoked", completeSemaphore.tryAcquire(requestTimeoutMillis, TimeUnit.MILLISECONDS));
         waitForMessages(consumer, count, true);
     }
 
+    /**
+     * Tests correlation identifier in send response flux.
+     */
     @Test
-    public void sendCallbackCorrelator() throws Exception {
+    public void sendResponseCorrelator() throws Exception {
         int count = 10;
         Map<Integer, RecordMetadata> resultMap = new HashMap<>();
         Flux<Integer> source = Flux.range(0, count);
@@ -145,14 +166,17 @@ public class SenderTest extends AbstractKafkaTest {
         assertEquals(count, resultMap.size());
         for (int i = 0; i < count; i++) {
             RecordMetadata metadata = resultMap.get(i);
-            assertNotNull("Callback not invoked for " + i, metadata);
+            assertNotNull("Response not provided for " + i, metadata);
             assertEquals(i % partitions, metadata.partition());
             assertEquals(i / partitions, metadata.offset());
         }
     }
 
+    /**
+     * Tests that responses are returned for successful and failed sends when delayError=true.
+     */
     @Test
-    public void sendCallbackDelayError() throws Exception {
+    public void sendDelayError() throws Exception {
         int count = 4;
         Semaphore errorSemaphore = new Semaphore(0);
         kafkaSender.send(createOutboundErrorFlux(count, false, false).map(r -> SenderRecord.create(r, null)), true)
@@ -162,8 +186,11 @@ public class SenderTest extends AbstractKafkaTest {
         assertTrue("Error callback not invoked", errorSemaphore.tryAcquire(requestTimeoutMillis, TimeUnit.MILLISECONDS));
     }
 
+    /**
+     * Tests that response flux is terminated with error on the first failure if delayError=false.
+     */
     @Test
-    public void sendCallbackFailOnError() throws Exception {
+    public void sendFailOnError() throws Exception {
         int count = 4;
         Semaphore errorSemaphore = new Semaphore(0);
         try {
@@ -178,8 +205,11 @@ public class SenderTest extends AbstractKafkaTest {
         assertTrue("Error callback not invoked", errorSemaphore.tryAcquire(requestTimeoutMillis, TimeUnit.MILLISECONDS));
     }
 
+    /**
+     * Tests that blocking response flux onNext does not block the producer network thread.
+     */
     @Test
-    public void sendCallbackBlock() throws Exception {
+    public void sendResponseBlock() throws Exception {
         int count = 20;
         Semaphore blocker = new Semaphore(0);
         CountDownLatch sendLatch = new CountDownLatch(count);
@@ -198,9 +228,12 @@ public class SenderTest extends AbstractKafkaTest {
         for (int i = 0; i < count / 2; i++)
             blocker.release();
         if (!sendLatch.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS))
-            fail(sendLatch.getCount() + " send callbacks not received");
+            fail(sendLatch.getCount() + " send responses not received");
     }
 
+    /**
+     * Tests resume of send after a failure.
+     */
     @Test
     public void sendResume() throws Exception {
         int count = 4;
@@ -226,6 +259,9 @@ public class SenderTest extends AbstractKafkaTest {
         waitForMessages(consumer, count, false);
     }
 
+    /**
+     * Tests concurrent sends using a shared KafkaSender.
+     */
     @Test
     public void concurrentSends() throws Exception {
         int count = 1000;
@@ -240,11 +276,14 @@ public class SenderTest extends AbstractKafkaTest {
                        .subscribe();
         }
 
-        assertTrue("Missing callbacks " + latch.getCount(), latch.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
+        assertTrue("Missing responses " + latch.getCount(), latch.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
         waitForMessages(consumer, count * fluxCount, false);
         scheduler.shutdown();
     }
 
+    /**
+     * Tests maximum number of records in flight.
+     */
     @Test
     public void maxInFlight() throws Exception {
         kafkaSender.close();
@@ -274,13 +313,16 @@ public class SenderTest extends AbstractKafkaTest {
                        })
                    .subscribe();
 
-        assertTrue("Missing callbacks " + latch.getCount(), latch.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
+        assertTrue("Missing responses " + latch.getCount(), latch.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
         assertTrue("Too many messages in flight " + maxInflight, maxInflight.get() <= maxConcurrency);
         waitForMessages(consumer, count, true);
     }
 
+    /**
+     * Tests processing of responses using an EmitterProcessor.
+     */
     @Test
-    public void sendCallbackEmitter() throws Exception {
+    public void sendResponseEmitter() throws Exception {
         int count = 5000;
         EmitterProcessor<Integer> emitter = EmitterProcessor.create();
         BlockingSink<Integer> sink = emitter.connectSink();

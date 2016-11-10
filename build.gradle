@@ -13,8 +13,11 @@ allprojects {
 }
 
 ext {
+    defaultKafkaVersion = "0.10.1.0"
+    def getKafkaVersion = project.hasProperty('kafkaVersion') ? project.property('kafkaVersion') : "${defaultKafkaVersion}"
+
     gradleVersion = "2.13"
-    kafkaVersion = '0.10.0.1'
+    kafkaVersion = getKafkaVersion
     scalaVersion = '2.11'
     junitVersion = '4.12'
     log4jVersion = '1.2.17'
@@ -119,6 +122,10 @@ project(':reactor-kafka-tools') {
         testCompile "org.assertj:assertj-core:$assertjVersion"
         testCompile "org.slf4j:slf4j-api:$slf4jVersion"
         testCompile "org.slf4j:slf4j-log4j12:$slf4jVersion"
+    }
+
+    test {
+        systemProperties System.properties
     }
 }
 

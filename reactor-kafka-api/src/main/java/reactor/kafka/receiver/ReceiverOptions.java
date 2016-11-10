@@ -39,6 +39,9 @@ import reactor.kafka.receiver.internals.ConsumerFactory;
  */
 public class ReceiverOptions<K, V> {
 
+    private static final Duration DEFAULT_POLL_TIMEOUT = Duration.ofMillis(100);
+    private static final int DEFAULT_MAX_COMMIT_ATTEMPTS = 100;
+
     private final Map<String, Object> properties;
     private final List<Consumer<Collection<ReceiverPartition>>> assignListeners;
     private final List<Consumer<Collection<ReceiverPartition>>> revokeListeners;
@@ -48,7 +51,7 @@ public class ReceiverOptions<K, V> {
     private Duration closeTimeout;
     private Duration commitInterval;
     private int commitBatchSize;
-    private int maxAutoCommitAttempts;
+    private int maxCommitAttempts;
     private Collection<String> subscribeTopics;
     private Collection<TopicPartition> assignTopicPartitions;
     private Pattern subscribePattern;
@@ -84,11 +87,11 @@ public class ReceiverOptions<K, V> {
         revokeListeners = new ArrayList<>();
 
         ackMode = AckMode.AUTO_ACK;
-        pollTimeout = Duration.ofMillis(100);
+        pollTimeout = DEFAULT_POLL_TIMEOUT;
         closeTimeout = Duration.ofNanos(Long.MAX_VALUE);
         commitInterval = ConsumerFactory.INSTANCE.defaultAutoCommitInterval();
         commitBatchSize = Integer.MAX_VALUE;
-        maxAutoCommitAttempts = Integer.MAX_VALUE;
+        maxCommitAttempts = DEFAULT_MAX_COMMIT_ATTEMPTS;
         properties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
     }
 
@@ -318,19 +321,21 @@ public class ReceiverOptions<K, V> {
     }
 
     /**
-     * Returns the maximum number of consecutive commit failures that are tolerated before the inbound
-     * flux is terminated with an error.
+     * Returns the maximum number of consecutive non-fatal commit failures that are tolerated.
+     * For manual commits, failure in commit after the configured number of attempts fails
+     * the commit operation. For auto commits, the inbound flux is terminated.
      */
-    public int maxAutoCommitAttempts() {
-        return maxAutoCommitAttempts;
+    public int maxCommitAttempts() {
+        return maxCommitAttempts;
     }
 
     /**
-     * Configures the maximum number of consecutive commit failures that are tolerated before the inbound
-     * flux is terminated with an error.
+     * Configures the maximum number of consecutive non-fatal commit failures that are tolerated.
+     * For manual commits, failure in commit after the configured number of attempts fails
+     * the commit operation. For auto commits, the inbound flux is terminated.
      */
-    public ReceiverOptions<K, V> maxAutoCommitAttempts(int maxAttempts) {
-        this.maxAutoCommitAttempts = maxAttempts;
+    public ReceiverOptions<K, V> maxCommitAttempts(int maxAttempts) {
+        this.maxCommitAttempts = maxAttempts;
         return this;
     }
 
@@ -401,7 +406,7 @@ public class ReceiverOptions<K, V> {
             }
 
             @Override
-            public ReceiverOptions<K, V> maxAutoCommitAttempts(int maxRetries) {
+            public ReceiverOptions<K, V> maxCommitAttempts(int maxRetries) {
                 throw new java.lang.UnsupportedOperationException("Cannot modify immutable options");
             }
 
@@ -419,7 +424,7 @@ public class ReceiverOptions<K, V> {
         options.closeTimeout = closeTimeout;
         options.commitInterval = commitInterval;
         options.commitBatchSize = commitBatchSize;
-        options.maxAutoCommitAttempts = maxAutoCommitAttempts;
+        options.maxCommitAttempts = maxCommitAttempts;
         return options;
     }
 }

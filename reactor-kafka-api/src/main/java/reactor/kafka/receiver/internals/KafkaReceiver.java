@@ -131,8 +131,11 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
 
         initEvent = new InitEvent(kafkaSubscribeOrAssign);
         pollEvent = new PollEvent();
-        heartbeatEvent = new HeartbeatEvent();
+
         commitEvent = new CommitEvent();
+
+        if (!consumerFactory.autoHeartbeatEnabledInConsumer())
+            heartbeatEvent = new HeartbeatEvent();
 
         recordEmitter = EmitterProcessor.create();
         recordSubmission = recordEmitter.connectSink();
@@ -147,7 +150,7 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
                             throw e;
                         }
                     })
-                .doOnCancel(() -> cancel())
+                .doOnCancel(() -> cancel(true))
                 .concatMap(consumerRecords -> Flux.fromIterable(consumerRecords)
                                                   .map(record -> newConsumerMessage(record)));
         consumerFlux = consumerFlux
@@ -168,7 +171,7 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
     }
 
     public void close() {
-        cancel();
+        cancel(true);
     }
 
     private Collection<ReceiverPartition> toSeekable(Collection<TopicPartition> partitions) {
@@ -192,14 +195,16 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
         eventScheduler.start();
 
         Flux<InitEvent> initFlux = Flux.just(initEvent);
-        Flux<HeartbeatEvent> heartbeatFlux =
-                Flux.interval(receiverOptions.heartbeatInterval())
-                     .doOnSubscribe(i -> needsHeartbeat.set(true))
-                     .map(i -> heartbeatEvent);
 
         fluxList.add(eventEmitter);
         fluxList.add(initFlux);
-        fluxList.add(heartbeatFlux);
+        if (heartbeatEvent != null) {
+            Flux<HeartbeatEvent> heartbeatFlux =
+                    Flux.interval(receiverOptions.heartbeatInterval())
+                         .doOnSubscribe(i -> needsHeartbeat.set(true))
+                         .map(i -> heartbeatEvent);
+            fluxList.add(heartbeatFlux);
+        }
         AckMode ackMode = receiverOptions.ackMode();
         if ((ackMode == AckMode.AUTO_ACK || ackMode == AckMode.MANUAL_ACK) && receiverOptions.commitInterval() != null) {
             Flux<CommitEvent> periodicCommitFlux = Flux.interval(receiverOptions.commitInterval())
@@ -213,13 +218,13 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
         cancellations.add(eventFlux.subscribe(event -> doEvent(event)));
     }
 
-    private void fail(Throwable e) {
+    private void fail(Throwable e, boolean async) {
         log.error("Consumer flux exception", e);
         recordSubmission.error(e);
-        cancel();
+        cancel(async);
     }
 
-    private void cancel() {
+    private void cancel(boolean async) {
         log.debug("cancel {}", isActive);
         if (isActive.compareAndSet(true, false)) {
             boolean isConsumerClosed = consumer == null;
@@ -229,8 +234,11 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
                     long closeStartNanos = System.nanoTime();
                     long closeEndNanos = closeStartNanos + receiverOptions.closeTimeout().toNanos();
                     CloseEvent closeEvent = new CloseEvent(closeEndNanos);
-                    emit(closeEvent);
-                    isConsumerClosed = closeEvent.await();
+                    if (async) {
+                        emit(closeEvent);
+                        isConsumerClosed = closeEvent.await();
+                    } else
+                        closeEvent.run();
                 }
             } catch (Exception e) {
                 log.warn("Cancel exception: " + e);
@@ -271,9 +279,7 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
                 committableOffset.acknowledge();
                 break;
             case ATMOST_ONCE:
-                committableOffset.commit()
-                                 .doOnError(e -> fail(e))
-                                 .block();
+                committableOffset.commit().block();
                 break;
             case MANUAL_ACK:
             case MANUAL_COMMIT:
@@ -289,7 +295,7 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
         try {
             event.run();
         } catch (Exception e) {
-            fail(e);
+            fail(e, false);
         }
     }
 
@@ -327,7 +333,7 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
             } catch (Exception e) {
                 if (isActive.get()) {
                     log.error("Unexpected exception", e);
-                    fail(e);
+                    fail(e, false);
                 }
             }
         }
@@ -349,20 +355,23 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
                     // Ensure that commits are not queued behind polls since number of poll events is
                     // chosen by reactor.
                     commitEvent.runIfRequired(false);
+
                     ConsumerRecords<K, V> records = consumer.poll(pollTimeoutMs);
                     if (records.count() > 0) {
                         Emission emission = recordSubmission.emit(records);
                         if (emission != Emission.OK)
                             log.error("Emission of consumer records failed with error " + emission);
                     }
-                    isPending.compareAndSet(true, false);
-                    if (requestsPending.addAndGet(0 - records.count()) > 0 && isActive.get())
-                        scheduleIfRequired();
+                    if (isActive.get()) {
+                        isPending.compareAndSet(true, false);
+                        if (requestsPending.addAndGet(0 - records.count()) > 0)
+                            scheduleIfRequired();
+                    }
                 }
             } catch (Exception e) {
                 if (isActive.get()) {
                     log.error("Unexpected exception", e);
-                    fail(e);
+                    fail(e, false);
                 }
             }
         }
@@ -387,7 +396,7 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
             final CommitArgs commitArgs = commitBatch.getAndClearOffsets();
             try {
                 if (commitArgs != null) {
-                    if (!commitArgs.offsets.isEmpty()) {
+                    if (!commitArgs.offsets().isEmpty()) {
                         inProgress.incrementAndGet();
                         consumer.commitAsync(commitArgs.offsets(), (offsets, exception) -> {
                                 inProgress.decrementAndGet();
@@ -397,7 +406,7 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
                                     handleFailure(commitArgs, exception);
                             });
                     } else {
-                        handleSuccess(commitArgs, commitArgs.offsets);
+                        handleSuccess(commitArgs, commitArgs.offsets());
                     }
                 }
             } catch (Exception e) {
@@ -416,8 +425,8 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
         private void handleSuccess(CommitArgs commitArgs, Map<TopicPartition, OffsetAndMetadata> offsets) {
             if (!offsets.isEmpty())
                 consecutiveCommitFailures.set(0);
-            if (commitArgs.callbackEmitters != null) {
-                for (MonoSink<Void> emitter : commitArgs.callbackEmitters) {
+            if (commitArgs.callbackEmitters() != null) {
+                for (MonoSink<Void> emitter : commitArgs.callbackEmitters()) {
                     emitter.success();
                 }
             }
@@ -428,18 +437,20 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
             AckMode ackMode = receiverOptions.ackMode();
             boolean mayRetry = isRetriableException(exception) &&
                     !isClosed.get() &&
-                    consecutiveCommitFailures.incrementAndGet() < receiverOptions.maxAutoCommitAttempts() &&
-                    ackMode != AckMode.MANUAL_COMMIT && ackMode != AckMode.ATMOST_ONCE;
-            if (ackMode == AckMode.MANUAL_COMMIT) {
-                commitBatch.restoreOffsets(commitArgs);
-                for (MonoSink<Void> emitter : commitArgs.callbackEmitters()) {
-                    emitter.error(exception);
-                }
-            } else if (!mayRetry) {
-                fail(exception);
+                    consecutiveCommitFailures.incrementAndGet() < receiverOptions.maxCommitAttempts();
+            if (!mayRetry) {
+                if (ackMode == AckMode.MANUAL_COMMIT || ackMode == AckMode.ATMOST_ONCE) {
+                    isPending.set(false);
+                    commitBatch.restoreOffsets(commitArgs, false);
+                    for (MonoSink<Void> emitter : commitArgs.callbackEmitters()) {
+                        emitter.error(exception);
+                    }
+                } else
+                    fail(exception, false);
             } else {
-                commitBatch.restoreOffsets(commitArgs);
-                log.error("Commit failed with exception" + exception + ", retries remaining " + (receiverOptions.maxAutoCommitAttempts() - consecutiveCommitFailures.get()));
+                commitBatch.restoreOffsets(commitArgs, true);
+                log.warn("Commit failed with exception" + exception + ", retries remaining " + (receiverOptions.maxCommitAttempts() - consecutiveCommitFailures.get()));
+                isPending.set(true);
             }
         }
 
@@ -489,14 +500,16 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
                     } catch (WakeupException e) {
                         // ignore
                     }
-                    commitEvent.runIfRequired(true);
-                    commitEvent.waitFor(closeEndTimeNanos);
+                    if (receiverOptions.ackMode() != AckMode.ATMOST_ONCE) {
+                        commitEvent.runIfRequired(true);
+                        commitEvent.waitFor(closeEndTimeNanos);
+                    }
                     consumer.close();
                 }
                 semaphore.release();
             } catch (Exception e) {
                 log.error("Unexpected exception", e);
-                fail(e);
+                fail(e, false);
             }
         }
         boolean await(long timeoutNanos) throws InterruptedException {

@@ -36,6 +36,7 @@ import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -54,6 +55,10 @@ import reactor.kafka.sender.SenderResponse;
 import reactor.kafka.util.TestUtils;
 import reactor.test.StepVerifier;
 
+/**
+ * Kafka sender tests using mock Kafka producers.
+ *
+ */
 public class KafkaSenderTest {
 
     private final String topic = "testtopic";
@@ -62,6 +67,7 @@ public class KafkaSenderTest {
     private MockProducer producer;
     private OutgoingRecords outgoingRecords;
     private List<SenderResponse<Integer>> sendResponses;
+    private Sender<Integer, String> sender;
 
     @Before
     public void setUp() {
@@ -72,9 +78,18 @@ public class KafkaSenderTest {
         sendResponses = new ArrayList<>();
     }
 
+    @After
+    public void tearDown() {
+        if (sender != null)
+            sender.close();
+    }
+
+    /**
+     * Tests that Kafka producer is created lazily when required.
+     */
     @Test
     public void producerCreate() {
-        Sender<Integer, String> sender = new KafkaSender<>(producerFactory, SenderOptions.create());
+        sender = new KafkaSender<>(producerFactory, SenderOptions.create());
         assertEquals(0, producerFactory.producersInUse().size());
         Flux<PartitionInfo> partitions = sender.partitionsFor(topic);
         assertEquals(0, producerFactory.producersInUse().size());
@@ -85,9 +100,12 @@ public class KafkaSenderTest {
         assertEquals(Arrays.asList(producer), producerFactory.producersInUse());
     }
 
+    /**
+     * Tests that closing KafkaSender closes the underlying producer.
+     */
     @Test
     public void producerClose() {
-        Sender<Integer, String> sender = new KafkaSender<>(producerFactory, SenderOptions.create());
+        sender = new KafkaSender<>(producerFactory, SenderOptions.create());
         sender.send(outgoingRecords.append(topic, 10).producerRecords()).block();
         assertEquals(Arrays.asList(producer), producerFactory.producersInUse());
         assertFalse("Producer closed after send", producer.isClosed());
@@ -95,30 +113,47 @@ public class KafkaSenderTest {
         assertTrue("Producer not closed", producer.isClosed());
     }
 
+    /**
+     * Tests {@link Sender#send(org.reactivestreams.Publisher)} good path. Checks that the returned Mono
+     * completes successfully when all records are successfully sent to Kafka.
+     */
     @Test
     public void sendNoResponse() {
-        Sender<Integer, String> sender = new KafkaSender<>(producerFactory, SenderOptions.create());
+        sender = new KafkaSender<>(producerFactory, SenderOptions.create());
         sendNoResponseAndVerify(sender, topic, 10);
     }
 
+    /**
+     * Tests {@link Sender#send(org.reactivestreams.Publisher)} error path. Checks that the returned Mono
+     * fails if a record cannot be delivered to Kafka.
+     */
     @Test
     public void sendNoResponseFailure() {
-        Sender<Integer, String> sender = new KafkaSender<>(producerFactory, SenderOptions.create());
+        sender = new KafkaSender<>(producerFactory, SenderOptions.create());
         OutgoingRecords outgoing = outgoingRecords.append("nonexistent", 10);
         StepVerifier.create(sender.send(outgoing.producerRecords()))
                     .expectError(InvalidTopicException.class)
                     .verify();
     }
 
+    /**
+     * Tests {@link Sender#send(org.reactivestreams.Publisher, boolean) good path. Checks that
+     * responses are returned in the correct order for each partition.
+     */
     @Test
-    public void sendCallback() {
-        Sender<Integer, String> sender = new KafkaSender<>(producerFactory, SenderOptions.create());
+    public void sendWithResponse() {
+        sender = new KafkaSender<>(producerFactory, SenderOptions.create());
         sendAndVerifyResponses(sender, topic, 10);
     }
 
+    /**
+     * Tests {@link Sender#send(org.reactivestreams.Publisher, boolean) error path with delayed error.
+     * Checks that responses are returned in the correct order for each partition and that the flux
+     * is failed after attempting to deliver all records.
+     */
     @Test
-    public void sendCallbackFailure() {
-        Sender<Integer, String> sender = new KafkaSender<>(producerFactory, SenderOptions.create());
+    public void sendWithResponseFailure() {
+        sender = new KafkaSender<>(producerFactory, SenderOptions.create());
         OutgoingRecords outgoing = outgoingRecords.append("nonexistent", 10);
         StepVerifier.create(sender.send(outgoing.senderRecords(), true))
                     .recordWith(() -> sendResponses)
@@ -128,9 +163,13 @@ public class KafkaSenderTest {
         outgoing.verify(sendResponses);
     }
 
+    /**
+     * Checks delayed error sends when some records fail and some succeed. Checks that responses
+     * are returned for failed and successful responses with valid correlation identifiers.
+     */
     @Test
     public void sendDelayError() {
-        Sender<Integer, String> sender = new KafkaSender<>(producerFactory, SenderOptions.create());
+        sender = new KafkaSender<>(producerFactory, SenderOptions.create());
         OutgoingRecords outgoing = outgoingRecords.append("nonexistent", 10).append(topic, 10);
         StepVerifier.create(sender.send(outgoing.senderRecords(), true))
                     .recordWith(() -> sendResponses)
@@ -140,12 +179,15 @@ public class KafkaSenderTest {
         outgoing.verify(sendResponses);
     }
 
+    /**
+     * Tests that the configured scheduler is used to deliver responses.
+     */
     @Test
     public void responseFluxScheduler() {
         Scheduler scheduler = Schedulers.newSingle("scheduler-test");
         SenderOptions<Integer, String> senderOptions = SenderOptions.<Integer, String>create()
                 .scheduler(scheduler);
-        Sender<Integer, String> sender = new KafkaSender<>(producerFactory, senderOptions);
+        sender = new KafkaSender<>(producerFactory, senderOptions);
         OutgoingRecords outgoing = outgoingRecords.append(topic, 10);
         Semaphore semaphore = new Semaphore(0);
         sender.send(outgoing.senderRecords(), true)
@@ -166,12 +208,16 @@ public class KafkaSenderTest {
         outgoing.verify(sendResponses);
     }
 
+    /**
+     * Tests that the configured scheduler is used to complete the returned Mono when
+     * responses are not expected by the application.
+     */
     @Test
     public void responseMonoScheduler() {
         Scheduler scheduler = Schedulers.newSingle("scheduler-test");
         SenderOptions<Integer, String> senderOptions = SenderOptions.<Integer, String>create()
                 .scheduler(scheduler);
-        Sender<Integer, String> sender = new KafkaSender<>(producerFactory, senderOptions);
+        sender = new KafkaSender<>(producerFactory, senderOptions);
         OutgoingRecords outgoing = outgoingRecords.append(topic, 10);
         Semaphore semaphore = new Semaphore(0);
         sender.send(outgoing.producerRecords())
@@ -188,30 +234,40 @@ public class KafkaSenderTest {
         semaphore.release();
     }
 
+    /**
+     * Tests that the number of inflight records does not exceed the maximum configured value.
+     */
     @Test
     public void maxInFlight() {
         int maxInFlight = 2;
         SenderOptions<Integer, String> senderOptions = SenderOptions.<Integer, String>create()
                 .maxInFlight(maxInFlight);
-        Sender<Integer, String> sender = new KafkaSender<>(producerFactory, senderOptions);
+        sender = new KafkaSender<>(producerFactory, senderOptions);
         sendAndVerifyResponses(sender, topic, 10);
     }
 
+    /**
+     * Tests that the number of inflight records does not exceed the maximum configured value
+     * when responses are not expected.
+     */
     @Test
     public void maxInFlightNoResponse() {
         int maxInFlight = 2;
         SenderOptions<Integer, String> senderOptions = SenderOptions.<Integer, String>create()
                 .maxInFlight(maxInFlight);
-        Sender<Integer, String> sender = new KafkaSender<>(producerFactory, senderOptions);
+        sender = new KafkaSender<>(producerFactory, senderOptions);
         sendNoResponseAndVerify(sender, topic, 10);
     }
 
+    /**
+     * Tests retry of failed sends using {@link Flux#retry()}.
+     */
     @Test
     public void sendRetry() {
         int count = 10;
         SenderOptions<Integer, String> senderOptions = SenderOptions.<Integer, String>create()
                 .maxInFlight(1);
-        Sender<Integer, String> sender = new KafkaSender<>(producerFactory, senderOptions);
+        sender = new KafkaSender<>(producerFactory, senderOptions);
         OutgoingRecords outgoing = outgoingRecords.append(topic, count);
         AtomicBoolean completed = new AtomicBoolean();
         AtomicInteger exceptionCount = new AtomicInteger();
@@ -238,11 +294,14 @@ public class KafkaSenderTest {
         assertTrue("Sends not retried " + exceptionCount, exceptionCount.intValue() >= 1);
     }
 
+    /**
+     * Tests failure of sends after the requested number of retry attempts.
+     */
     @Test
     public void sendRetryFailure() {
         SenderOptions<Integer, String> senderOptions = SenderOptions.<Integer, String>create()
                 .maxInFlight(1);
-        Sender<Integer, String> sender = new KafkaSender<>(producerFactory, senderOptions);
+        sender = new KafkaSender<>(producerFactory, senderOptions);
         OutgoingRecords outgoing = outgoingRecords.append(topic, 10);
 
         AtomicInteger responseCount = new AtomicInteger();
@@ -262,12 +321,15 @@ public class KafkaSenderTest {
 
     }
 
+    /**
+     * Tests resuming of sends after an error.
+     */
     @Test
     public void sendResume() {
         int count = 10;
         SenderOptions<Integer, String> senderOptions = SenderOptions.<Integer, String>create()
                 .maxInFlight(1);
-        Sender<Integer, String> sender = new KafkaSender<>(producerFactory, senderOptions);
+        sender = new KafkaSender<>(producerFactory, senderOptions);
         OutgoingRecords outgoing = outgoingRecords.append(topic, count);
         List<Integer> remaining = new ArrayList<>();
         for (int i = 0; i < count; i++)
@@ -275,7 +337,8 @@ public class KafkaSenderTest {
         AtomicInteger exceptionCount = new AtomicInteger();
         sender.send(outgoing.senderRecords(), false)
               .onErrorResumeWith(e -> {
-                      exceptionCount.incrementAndGet();
+                      if (e instanceof LeaderNotAvailableException)
+                          exceptionCount.incrementAndGet();
                       for (TopicPartition partition : cluster.partitions(topic)) {
                           if (!cluster.leaderAvailable(partition))
                               cluster.restartLeader(partition);
@@ -286,11 +349,10 @@ public class KafkaSenderTest {
                       if (r.exception() == null) {
                           TopicPartition partition = new TopicPartition(r.recordMetadata().topic(), r.recordMetadata().partition());
                           assertTrue("Send completed on failed node", cluster.leaderAvailable(partition));
-                          if (remaining.size() == count)
+                          if (remaining.size() == count / 2)
                               cluster.failLeader(partition);
                           remaining.remove(r.correlationMetadata());
-                      } else if (r.exception() instanceof LeaderNotAvailableException)
-                          exceptionCount.incrementAndGet();
+                      }
                   })
               .blockLast();
 
@@ -298,18 +360,24 @@ public class KafkaSenderTest {
         assertTrue("Sends not retried " + exceptionCount, exceptionCount.intValue() >= 1);
     }
 
+    /**
+     * Tests {@link KafkaSender#partitionsFor(String)} good path.
+     */
     @Test
     public void partitionsFor() {
-        Sender<Integer, String> sender = new KafkaSender<>(producerFactory, SenderOptions.create());
+        sender = new KafkaSender<>(producerFactory, SenderOptions.create());
         StepVerifier.create(sender.partitionsFor(topic))
             .expectNextSequence(cluster.cluster().partitionsForTopic(topic))
             .expectComplete()
             .verify();
     }
 
+    /**
+     * Tests {@link KafkaSender#partitionsFor(String)} error path.
+     */
     @Test
     public void partitionsForNonExistentTopic() {
-        Sender<Integer, String> sender = new KafkaSender<>(producerFactory, SenderOptions.create());
+        sender = new KafkaSender<>(producerFactory, SenderOptions.create());
         StepVerifier.create(sender.partitionsFor("nonexistent"))
             .expectError(InvalidTopicException.class)
             .verify();

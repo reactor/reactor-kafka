@@ -22,6 +22,8 @@ import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.config.ConfigException;
+import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.protocol.ProtoUtils;
 
 import reactor.kafka.receiver.ReceiverOptions;
 
@@ -34,6 +36,12 @@ public class ConsumerFactory {
 
     public <K, V> Consumer<K, V> createConsumer(ReceiverOptions<K, V> config) {
         return new KafkaConsumer<>(config.consumerProperties());
+    }
+
+    public boolean autoHeartbeatEnabledInConsumer() {
+        // Background heartbeat thread was added to Kafka consumer in 0.10.1.0 when
+        // JoinGroup request version was incremented from 0 to 1.
+        return ProtoUtils.latestVersion(ApiKeys.JOIN_GROUP.id) != 0;
     }
 
     public String groupId(ReceiverOptions<?, ?> receiverOptions) {

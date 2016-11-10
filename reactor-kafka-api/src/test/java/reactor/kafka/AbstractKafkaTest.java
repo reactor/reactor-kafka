@@ -96,7 +96,7 @@ public class AbstractKafkaTest {
             props.putAll(propsOverride);
         receiverOptions = ReceiverOptions.create(props);
         receiverOptions.commitInterval(Duration.ofMillis(50));
-        receiverOptions.maxAutoCommitAttempts(1);
+        receiverOptions.maxCommitAttempts(1);
         return receiverOptions;
     }
 

@@ -109,7 +109,8 @@ public class TestableReceiver {
         KafkaReceiver<?, ?>.CommitEvent newEvent = kafkaReceiver.new CommitEvent() {
                 protected boolean isRetriableException(Exception exception) {
                     boolean retriable = exception instanceof RetriableCommitFailedException ||
-                            exception.toString().contains(Errors.UNKNOWN_TOPIC_OR_PARTITION.exception().getMessage());
+                            exception.toString().contains(Errors.UNKNOWN_TOPIC_OR_PARTITION.exception().getMessage()) ||
+                            exception.toString().contains(NON_EXISTENT_PARTITION.topic());
                     return retriable;
                 }
         };

@@ -54,4 +54,9 @@ public class PerfTestUtils {
         props.put(ConsumerConfig.CLIENT_ID_CONFIG, "cons-perf");
         return props;
     }
+
+    public static int getTestConfig(String propName, int defaultValue) {
+        String propValue = System.getProperty(propName);
+        return propValue != null ? Integer.parseInt(propValue) : defaultValue;
+    }
 }

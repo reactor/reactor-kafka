@@ -16,6 +16,7 @@
  **/
 package reactor.kafka.receiver;
 
+import org.apache.kafka.clients.consumer.RetriableCommitFailedException;
 import org.apache.kafka.common.TopicPartition;
 
 import reactor.core.publisher.Mono;
@@ -55,7 +56,9 @@ public interface ReceiverOffset {
      * when ack mode is {@link AckMode#MANUAL_COMMIT}.
      * <p>
      * This method commits asynchronously. {@link Mono#block()} may be invoked on the returned mono to
-     * wait for completion of the commit.
+     * wait for completion of the commit. If commit fails with {@link RetriableCommitFailedException}
+     * the commit operation is retried {@link ReceiverOptions#maxCommitAttempts()} times before the
+     * returned Mono is failed.
      */
     Mono<Void> commit();
 }

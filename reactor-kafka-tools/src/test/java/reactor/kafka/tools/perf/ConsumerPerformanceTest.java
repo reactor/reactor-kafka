@@ -28,15 +28,21 @@ import reactor.kafka.tools.util.PerfTestUtils;
 
 public class ConsumerPerformanceTest extends AbstractKafkaTest {
 
+    private int numMessages;
+    private int messageSize;
+    private int maxPercentDiff;
+
     @Before
     public void setUp() throws Exception {
         super.setUp();
+
+        numMessages = PerfTestUtils.getTestConfig("reactor.kafka.test.numMessages", 5000000);
+        messageSize = PerfTestUtils.getTestConfig("reactor.kafka.test.messageSize", 100);
+        maxPercentDiff = PerfTestUtils.getTestConfig("reactor.kafka.test.maxPercentDiff", 20);
     }
 
     @Test
     public void performanceRegressionTest() throws Exception {
-        int numMessages = 5000000;
-        int messageSize = 100;
         ConsumerPerfConfig config = new ConsumerPerfConfig();
         Map<String, Object> consumerProps = PerfTestUtils.consumerProps(embeddedKafka);
 
@@ -47,7 +53,7 @@ public class ConsumerPerformanceTest extends AbstractKafkaTest {
         ReactiveConsumerPerformance reactive = new ReactiveConsumerPerformance(consumerProps, topic, "reactive", config);
         reactive.runTest(numMessages);
 
-        PerfTestUtils.verifyReactiveThroughput(reactive.recordsPerSec(), nonReactive.recordsPerSec(), 20);
+        PerfTestUtils.verifyReactiveThroughput(reactive.recordsPerSec(), nonReactive.recordsPerSec(), maxPercentDiff);
     }
 
     private void sendToKafka(int numRecords, int recordSize) throws InterruptedException {

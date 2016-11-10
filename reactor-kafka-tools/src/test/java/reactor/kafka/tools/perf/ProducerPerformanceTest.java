@@ -31,27 +31,33 @@ import reactor.kafka.tools.util.PerfTestUtils;
 
 public class ProducerPerformanceTest extends AbstractKafkaTest {
 
+    private int numMessages;
+    private int messageSize;
+    private int maxPercentDiff;
+
     @Before
     public void setUp() throws Exception {
         super.setUp();
+
+        numMessages = PerfTestUtils.getTestConfig("reactor.kafka.test.numMessages", 5000000);
+        messageSize = PerfTestUtils.getTestConfig("reactor.kafka.test.messageSize", 100);
+        maxPercentDiff = PerfTestUtils.getTestConfig("reactor.kafka.test.maxPercentDiff", 50);
     }
 
     @Test
     public void performanceRegressionTest() throws Exception {
-        int numRecords = 5000000;
-        int recordSize = 100;
 
-        NonReactiveProducerPerformance nonReactive = new NonReactiveProducerPerformance(producerProps(), topic, numRecords, recordSize, -1);
+        NonReactiveProducerPerformance nonReactive = new NonReactiveProducerPerformance(producerProps(), topic, numMessages, messageSize, -1);
         Stats nrStats = nonReactive.runTest();
         nrStats.printTotal();
-        assertEquals(numRecords, (int) nrStats.count());
+        assertEquals(numMessages, (int) nrStats.count());
 
-        ReactiveProducerPerformance reactive = new ReactiveProducerPerformance(producerProps(), topic, numRecords, recordSize, -1);
+        ReactiveProducerPerformance reactive = new ReactiveProducerPerformance(producerProps(), topic, numMessages, messageSize, -1);
         Stats rStats = reactive.runTest();
         rStats.printTotal();
-        assertEquals(numRecords, (int) rStats.count());
+        assertEquals(numMessages, (int) rStats.count());
 
-        PerfTestUtils.verifyReactiveThroughput(rStats.recordsPerSec(), nrStats.recordsPerSec(), 50);
+        PerfTestUtils.verifyReactiveThroughput(rStats.recordsPerSec(), nrStats.recordsPerSec(), maxPercentDiff);
         // PerfTestUtils.verifyReactiveLatency(rStats.percentiles(0.75)[0], nrStats.percentiles(0.75)[0], 100);
     }
 

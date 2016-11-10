@@ -41,6 +41,7 @@ public class MockCluster {
     private final Set<Node> failedNodes;
     private Cluster cluster;
 
+    @SuppressWarnings("deprecation") // Using deprecated constructor to enable testing with 0.10.0.1 and 0.10.1.0
     public MockCluster(int brokerCount, List<String> topics, List<Integer> partitionCounts) {
         logs = new ConcurrentHashMap<>();
         committedOffsets = new HashMap<>();

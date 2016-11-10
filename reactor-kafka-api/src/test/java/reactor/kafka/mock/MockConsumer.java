@@ -40,6 +40,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.consumer.OffsetCommitCallback;
+import org.apache.kafka.clients.consumer.OffsetResetStrategy;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.Metric;
 import org.apache.kafka.common.MetricName;
@@ -47,15 +48,25 @@ import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InvalidOffsetException;
 import org.apache.kafka.common.record.TimestampType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.internals.ConsumerFactory;
 
-public class MockConsumer implements Consumer<Integer, String> {
+/**
+ * Mock consumer for testing. To enable testing with different Kafka versions, this class
+ * extends {@link org.apache.kafka.clients.consumer.MockConsumer (eg. to handle
+ * Consumer{@link #offsetsForTimes(Map)}
+ *
+ */
+public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer<Integer, String> {
 
+    private static final Logger log = LoggerFactory.getLogger(MockConsumer.class);
     private static final long MAX_POLL_RECORDS = 2;
 
     private final ScheduledExecutorService executor;
+    private final Queue<Runnable> completedCallbacks;
     private final ReentrantLock consumerLock;
     private final Set<TopicPartition> assignment;
     private final Set<String> subscription;
@@ -71,10 +82,11 @@ public class MockConsumer implements Consumer<Integer, String> {
     private ReceiverOptions<Integer, String> receiverOptions;
     private ConsumerRebalanceListener rebalanceCallback;
     private boolean assignmentPending = false;
-    private boolean closed;
 
     public MockConsumer(MockCluster cluster, boolean autoHeartbeat) {
+        super(OffsetResetStrategy.EARLIEST);
         executor = Executors.newSingleThreadScheduledExecutor();
+        completedCallbacks = new ConcurrentLinkedQueue<>();
         consumerLock = new ReentrantLock();
         assignment = new HashSet<>();
         subscription = new HashSet<>();
@@ -89,14 +101,7 @@ public class MockConsumer implements Consumer<Integer, String> {
 
     public void configure(ReceiverOptions<Integer, String> receiverOptions) {
         this.receiverOptions = receiverOptions;
-        if (!autoHeartbeat)
-            sessionTimeout = Duration.ofMillis(ConsumerFactory.INSTANCE.getLongOption(receiverOptions, ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, 2000L));
-        else
-            sessionTimeout = null;
-    }
-
-    public boolean isClosed() {
-        return closed;
+        sessionTimeout = Duration.ofMillis(ConsumerFactory.INSTANCE.getLongOption(receiverOptions, ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, 2000L));
     }
 
     public void addPollException(KafkaException exception, int count) {
@@ -140,7 +145,7 @@ public class MockConsumer implements Consumer<Integer, String> {
                     }
                 }
             }
-            if (sessionTimeout != null)
+            if (!autoHeartbeat)
                 sessionExpiryNanos = System.nanoTime() + sessionTimeout.toNanos();
             assignmentPending = true;
         } finally {
@@ -198,9 +203,11 @@ public class MockConsumer implements Consumer<Integer, String> {
                 doAssign();
                 assignmentPending = false;
                 return new ConsumerRecords<Integer, String>(records);
-            } else if (sessionTimeout != null && sessionExpiryNanos > 0 && System.nanoTime() > sessionExpiryNanos) {
+            } else if (!autoHeartbeat && sessionExpiryNanos > 0 && System.nanoTime() > sessionExpiryNanos) {
+                log.error("Consumer session timed out.");
                 doUnAssign();
             }
+            runCompletedCallbacks();
             try {
                 Thread.sleep(requestLatencyMs);
             } catch (InterruptedException e) {
@@ -211,6 +218,8 @@ public class MockConsumer implements Consumer<Integer, String> {
                 throw exception;
             int count = 0;
             for (TopicPartition partition : assignment) {
+                if (paused.contains(partition))
+                    continue;
                 records.put(partition, new ArrayList<>());
                 long offset = offsets.get(partition);
                 List<Message> log = cluster.log(partition);
@@ -225,10 +234,9 @@ public class MockConsumer implements Consumer<Integer, String> {
                         break;
                 }
             }
-            if (sessionTimeout != null)
+            if (!autoHeartbeat)
                 sessionExpiryNanos = System.nanoTime() + sessionTimeout.toNanos();
-            ConsumerRecords<Integer, String> consumerRecords = new ConsumerRecords<>(records);
-            return consumerRecords;
+            return new ConsumerRecords<>(records);
         } finally {
             release();
         }
@@ -274,9 +282,9 @@ public class MockConsumer implements Consumer<Integer, String> {
                         for (Map.Entry<TopicPartition, OffsetAndMetadata> entry : offsets.entrySet()) {
                             cluster.commitOffset(receiverOptions.groupId(), entry.getKey(), entry.getValue().offset());
                         }
-                        callback.onComplete(offsets, null);
+                        completedCallbacks.add(() -> callback.onComplete(offsets, null));
                     } catch (Exception e) {
-                        callback.onComplete(offsets, e);
+                        completedCallbacks.add(() -> callback.onComplete(offsets, e));
                     }
                 }, 10, TimeUnit.MILLISECONDS);
         } finally {
@@ -399,7 +407,8 @@ public class MockConsumer implements Consumer<Integer, String> {
         try {
             executor.shutdown();
             executor.awaitTermination(receiverOptions.closeTimeout().toMillis(), TimeUnit.MILLISECONDS);
-            closed = true;
+            runCompletedCallbacks();
+            super.close();
         } catch (InterruptedException e) {
             // ignore
         } finally {
@@ -441,6 +450,13 @@ public class MockConsumer implements Consumer<Integer, String> {
         offsets.clear();
     }
 
+    private void runCompletedCallbacks() {
+        Runnable callback;
+        while ((callback = completedCallbacks.poll()) != null) {
+            callback.run();
+        }
+    }
+
     private void acquire() {
         if (!consumerLock.tryLock())
             throw new ConcurrentModificationException("Consumer is not thread-safe");
@@ -453,15 +469,22 @@ public class MockConsumer implements Consumer<Integer, String> {
     public static class Pool extends ConsumerFactory {
         private final List<MockConsumer> freeConsumers = new ArrayList<>();
         private final List<MockConsumer> consumersInUse = new ArrayList<>();
-        public Pool(List<MockConsumer> freeConsumers) {
+        private boolean autoHeartbeatEnabledInConsumer;
+        public Pool(List<MockConsumer> freeConsumers, boolean autoHeartbeatEnabledInConsumer) {
             this.freeConsumers.addAll(freeConsumers);
+            this.autoHeartbeatEnabledInConsumer = autoHeartbeatEnabledInConsumer;
         }
         @SuppressWarnings("unchecked")
+        @Override
         public <K, V> Consumer<K, V> createConsumer(ReceiverOptions<K, V> receiverOptions) {
             MockConsumer consumer = freeConsumers.remove(0);
             consumer.configure((ReceiverOptions<Integer, String>) receiverOptions);
             consumersInUse.add(consumer);
             return (Consumer<K, V>) consumer;
+        }
+        @Override
+        public boolean autoHeartbeatEnabledInConsumer() {
+            return autoHeartbeatEnabledInConsumer;
         }
         public List<MockConsumer> consumersInUse() {
             return consumersInUse;

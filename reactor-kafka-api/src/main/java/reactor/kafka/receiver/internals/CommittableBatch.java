@@ -79,9 +79,8 @@ public class CommittableBatch {
         return new CommitArgs(offsetMap, currentCallbackEmitters);
     }
 
-    protected synchronized void restoreOffsets(CommitArgs commitArgs) {
-        // Restore offsets that haven't been updated. Mono emitters don't need to be restored for
-        // retry since since new callbacks are registered.
+    protected synchronized void restoreOffsets(CommitArgs commitArgs, boolean restoreCallbackEmitters) {
+        // Restore offsets that haven't been updated.
         for (Map.Entry<TopicPartition, OffsetAndMetadata> entry : commitArgs.offsets.entrySet()) {
             TopicPartition topicPart = entry.getKey();
             long offset = entry.getValue().offset();
@@ -89,6 +88,12 @@ public class CommittableBatch {
             if (latestOffset == null || latestOffset <= offset - 1)
                 consumedOffsets.putIfAbsent(topicPart, offset - 1);
         }
+        // If Mono is being failed after maxAttempts or due to fatal error, callback emitters
+        // are not restored. Mono#retry will generate new callback emitters. If Mono status
+        // is not being updated because commits are attempted again by KafkaReceiver, restore
+        // the emitters for the next attempt.
+        if (restoreCallbackEmitters && commitArgs.callbackEmitters != null)
+            this.callbackEmitters = commitArgs.callbackEmitters;
     }
 
     @Override
@@ -97,8 +102,8 @@ public class CommittableBatch {
     }
 
     static class CommitArgs {
-        Map<TopicPartition, OffsetAndMetadata> offsets;
-        List<MonoSink<Void>> callbackEmitters;
+        private Map<TopicPartition, OffsetAndMetadata> offsets;
+        private List<MonoSink<Void>> callbackEmitters;
         CommitArgs(Map<TopicPartition, OffsetAndMetadata> offsets, List<MonoSink<Void>> callbackEmitters) {
             this.offsets = offsets;
             this.callbackEmitters = callbackEmitters;
