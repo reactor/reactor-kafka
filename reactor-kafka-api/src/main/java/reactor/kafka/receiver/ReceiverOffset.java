@@ -36,14 +36,14 @@ public interface ReceiverOffset {
     TopicPartition topicPartition();
 
     /**
-     * Returns the offset corresponding to the message to which this offset is associated.
+     * Returns the partition offset corresponding to the message to which this offset is associated.
      * @return offset into partition
      */
     long offset();
 
     /**
      * Acknowledges the message associated with this offset. If ack mode is {@link AckMode#MANUAL_ACK},
-     * the record will be committed automatically based on the commit configuration parameters
+     * the offset will be committed automatically based on the commit configuration parameters
      * {@link ReceiverOptions#commitInterval()} and {@link ReceiverOptions#commitBatchSize()}. If
      * ack mode is {@link AckMode#MANUAL_COMMIT} it is the responsibility of the consuming application
      * to invoke {@link #commit()} to commit acknowledged records individually or in batches.
@@ -57,11 +57,11 @@ public interface ReceiverOffset {
      * for all topic partitions with pending commits. This method is used to manually commit offsets
      * when ack mode is {@link AckMode#MANUAL_COMMIT}.
      * <p>
-     * This method commits asynchronously. {@link Mono#block()} may be invoked on the returned mono to
+     * This method commits asynchronously. {@link Mono#block()} may be invoked on the returned Mono to
      * wait for completion of the commit. If commit fails with {@link RetriableCommitFailedException}
      * the commit operation is retried {@link ReceiverOptions#maxCommitAttempts()} times before the
      * returned Mono is failed.
-     * @return Mono that is completed when commit operation completes.
+     * @return Mono that completes when commit operation completes.
      */
     Mono<Void> commit();
 }

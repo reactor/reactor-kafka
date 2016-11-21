@@ -37,7 +37,7 @@ import reactor.kafka.sender.internals.ProducerFactory;
 public interface Sender<K, V> {
 
     /**
-     * Creates a Kafka producer that appends messages to Kafka topic partitions.
+     * Creates a Kafka sender that appends messages to Kafka topic partitions.
      * @param options Configuration options of this sender. Changes made to the options
      *        after the sender is created will not be configured for the sender.
      * @return new instance of Kafka sender
@@ -51,38 +51,42 @@ public interface Sender<K, V> {
      * partition and offset of each send request. Ordering of responses is guaranteed for partitions,
      * but responses from different partitions may be interleaved in a different order from the requests.
      * Additional correlation metadata may be passed through that is not sent to Kafka, but is included
-     * in the response flux to enable matching responses to requests.
+     * in the response Flux to enable matching responses to requests.
      * Example usage:
      * <pre>
      * {@code
      *     source = Flux.range(1, count)
      *                  .map(i -> SenderRecord.create(new ProducerRecord<>(topic, key(i), message(i)), i));
-     *     sender.send(source, false)
+     *     sender.send(source, true)
      *           .doOnNext(r -> System.out.println("Message #" + r.correlationMetadata() + " metadata=" + r.recordMetadata()));
      * }
      * </pre>
      *
-     * @param records Sequence of outbound records along with additional correation metadata to be included in response
+     * @param records Outbound records along with additional correation metadata to be included in response
      * @param delayError If false, send terminates when a response indicates failure, otherwise send is attempted for all records
-     * @return Flux of Kafka producer response record metadata along with the corresponding request correlation metadata
+     * @return Flux of Kafka producer response record metadata along with the corresponding request correlation metadata.
+     *         For records that could not be sent, the response contains an exception that indicates reason for failure.
      */
     <T> Flux<SenderResponse<T>> send(Publisher<SenderRecord<K, V, T>> records, boolean delayError);
 
     /**
-     * Sends a sequence of records to Kafka.
-     * @return Mono that succeeds if all records are delivered successfully to Kafka.
+     * Sends a sequence of producer records to Kafka. No metadata is returned for individual
+     * producer records on success or failure.
+     * @param records Outbound producer records
+     * @return Mono that succeeds if all records are delivered successfully to Kafka and
+     * fails if any of the sends fail.
      */
     Mono<Void> send(Publisher<? extends ProducerRecord<K, V>> records);
 
     /**
      * Returns partition information for the specified topic. This is useful for
-     * choosing partitions to which records are sent if default partition assignor is not used.
+     * choosing partitions to which records are sent if default partitioner is not used.
      * @return Flux of partitions of topic.
      */
     Flux<PartitionInfo> partitionsFor(String topic);
 
     /**
-     * Closes this producer and releases all resources allocated to it.
+     * Closes this sender and the underlying Kafka producer and releases all resources allocated to it.
      */
     void close();
 

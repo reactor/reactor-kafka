@@ -24,8 +24,9 @@ import org.apache.kafka.clients.producer.ProducerRecord;
  * additional correlation metadata may also be specified to correlate
  * {@link SenderResponse} to its corresponding record.
  *
- * @param <K> Key type
- * @param <V> Value type
+ * @param <K> Outgoing message key type
+ * @param <V> Outgoing message value type
+ * @param <T> Correlation metadata type
  */
 public class SenderRecord<K, V, T> {
 
@@ -33,11 +34,12 @@ public class SenderRecord<K, V, T> {
     private final T correlationMetadata;
 
     /**
-     * Creates a record to send to Kafka
+     * Creates a record to send to Kafka.
+     *
      * @param record the producer record to send to Kafka
      * @param correlationMetadata Additional correlation metadata that is not sent to Kafka, but is
      *        included in the response to match {@link SenderResponse} to this record.
-     * @return new outbound record
+     * @return new sender record that can be sent to Kafka using {@link Sender#send(org.reactivestreams.Publisher, boolean)}
      */
     public static <K, V, T> SenderRecord<K, V, T> create(ProducerRecord<K, V> record, T correlationMetadata) {
         return new SenderRecord<K, V, T>(record, correlationMetadata);
@@ -59,7 +61,7 @@ public class SenderRecord<K, V, T> {
     /**
      * Returns the correlation metadata associated with this instance which is not sent to Kafka,
      * but can be used to correlate response to outbound request.
-     * @return metadata associated with outbound record that is not sent to Kafka
+     * @return metadata associated with sender record that is not sent to Kafka
      */
     public T correlationMetadata() {
         return correlationMetadata;

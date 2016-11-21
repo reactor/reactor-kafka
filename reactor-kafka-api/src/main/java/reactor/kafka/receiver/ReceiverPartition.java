@@ -34,19 +34,19 @@ public interface ReceiverPartition {
 
     /**
      * Seeks to the first available offset of the topic partition. This overrides the offset
-     * from which messages are fetched on the next poll.
+     * starting from which messages are fetched.
      */
     void seekToBeginning();
 
     /**
      * Seeks to the last offset of the topic partition. This overrides the offset
-     * from which messages are fetched on the next poll.
+     * starting from which messages are fetched.
      */
     void seekToEnd();
 
     /**
      * Seeks to the specified offset of the topic partition. This overrides the offset
-     * from which messages are fetched on the next poll.
+     * starting from which messages are fetched.
      */
     void seek(long offset);
 

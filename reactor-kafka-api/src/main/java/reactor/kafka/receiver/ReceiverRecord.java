@@ -22,8 +22,8 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 /**
  * Represents an incoming message dispatched by {@link Receiver}.
  *
- * @param <K> Key type
- * @param <V> Value type
+ * @param <K> Incomimg message key type
+ * @param <V> Incomimg message value type
  */
 public interface ReceiverRecord<K, V> {
 
@@ -34,7 +34,7 @@ public interface ReceiverRecord<K, V> {
     ConsumerRecord<K, V> record();
 
     /**
-     * Returns an acknowlegeable offset instance that should be acknowledged after this
+     * Returns an acknowledgeable offset instance that should be acknowledged after this
      * message record has been consumed if the ack mode is {@link AckMode#MANUAL_ACK} or
      * {@link AckMode#MANUAL_COMMIT}. If ack mode is {@link AckMode#MANUAL_COMMIT},
      * {@link ReceiverOffset#commit()} must be invoked to commit all acknowledged records.

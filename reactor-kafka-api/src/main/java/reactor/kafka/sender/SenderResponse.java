@@ -21,18 +21,21 @@ import org.apache.kafka.clients.producer.RecordMetadata;
 /**
  * Response metadata for an outbound record that was acknowledged by Kafka.
  * This response also includes the correlation metadata provided in {@link SenderRecord}
- * that was not sent to Kafka.
+ * that was not sent to Kafka, but enables matching this response to its corresponding
+ * request.
  */
 public interface SenderResponse<T> {
 
     /**
      * Returns the record metadata returned by Kafka. May be null if send request failed.
+     * See {@link #exception()} for failure reason when record metadata is null.
      * @return response metadata from kafka
      */
     RecordMetadata recordMetadata();
 
     /**
-     * Returns the exception associated with a send failure.
+     * Returns the exception associated with a send failure. This is set to null for
+     * successful responses.
      * @return send exception from kafka if send failed.
      */
     Exception exception();

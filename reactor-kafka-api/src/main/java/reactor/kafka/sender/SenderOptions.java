@@ -22,6 +22,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 
+import org.apache.kafka.clients.producer.ProducerConfig;
+
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.concurrent.QueueSupplier;
@@ -46,7 +48,8 @@ public class SenderOptions<K, V> {
     }
 
     /**
-     * Creates a sender options instance with the specified config overrides.
+     * Creates a sender options instance with the specified config overrides for the underlying
+     * Kafka producer.
      * @return new instance of sender options
      */
     public static <K, V> SenderOptions<K, V> create(Map<String, Object> configProperties) {
@@ -56,7 +59,8 @@ public class SenderOptions<K, V> {
     }
 
     /**
-     * Creates a sender options instance with the specified config overrides.
+     * Creates a sender options instance with the specified config overrides for the underlying
+     * Kafka producer.
      * @return new instance of sender options
      */
     public static <K, V> SenderOptions<K, V> create(Properties configProperties) {
@@ -74,7 +78,7 @@ public class SenderOptions<K, V> {
     }
 
     /**
-     * Returns the configuration properties of the underlying Kafka producer.
+     * Returns the configuration properties for the underlying Kafka producer.
      * @return configuration options for Kafka producer
      */
     public Map<String, Object> producerProperties() {
@@ -91,7 +95,7 @@ public class SenderOptions<K, V> {
 
     /**
      * Sets Kafka producer configuration property to the specified value.
-     * @return sender options with updated option
+     * @return sender options with updated Kafka producer option
      */
     public SenderOptions<K, V> producerProperty(String name, Object value) {
         properties.put(name, value);
@@ -108,7 +112,7 @@ public class SenderOptions<K, V> {
 
     /**
      * Sets the scheduler used for publishing send responses.
-     * @return sender options with updated option
+     * @return sender options with response scheduler
      */
     public SenderOptions<K, V> scheduler(Scheduler scheduler) {
         this.scheduler = scheduler;
@@ -116,18 +120,20 @@ public class SenderOptions<K, V> {
     }
 
     /**
-     * Returns the maximum number of inflight messages that are prefetched
-     * from the outbound flux.
-     * @return maximum number of inflight records
+     * Returns the maximum number of in-flight messages that are pre-fetched
+     * from the outbound record publisher.
+     * @return maximum number of in-flight records
      */
     public int maxInFlight() {
         return maxInFlight;
     }
 
     /**
-     * Configures the maximum number of inflight messages that are prefetched
-     * from the outbound flux.
-     * @return sender options with updated option
+     * Configures the maximum number of in-flight messages that are pre-fetched
+     * from the outbound record publisher. This limit must be configured along
+     * with {@link ProducerConfig#BUFFER_MEMORY_CONFIG} to control memory usage
+     * and avoid blocking the reactive pipeline.
+     * @return sender options with new in-flight limit
      */
     public SenderOptions<K, V> maxInFlight(int maxInFlight) {
         this.maxInFlight = maxInFlight;
@@ -144,7 +150,7 @@ public class SenderOptions<K, V> {
 
     /**
      * Configures the timeout for graceful shutdown of this sender.
-     * @return sender options with updated option
+     * @return sender options with updated close timeout
      */
     public SenderOptions<K, V> closeTimeout(Duration timeout) {
         this.closeTimeout = timeout;

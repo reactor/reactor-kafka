@@ -16,6 +16,8 @@
  **/
 package reactor.kafka.receiver;
 
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+
 import reactor.core.publisher.Mono;
 
 /**
@@ -23,9 +25,9 @@ import reactor.core.publisher.Mono;
  */
 public enum AckMode {
     /**
-     * This is the default mode. In this mode, messages are acknowledged automatically before
-     * dispatch. Acknowledged messages will be committed periodically using commitAsync() based
-     * on the configured commit interval and/or commit batch size. No further acknowledge or commit
+     * In this mode, messages are acknowledged automatically before dispatch. This is the default
+     * mode. Acknowledged messages will be committed periodically using {@link KafkaConsumer#commitAsync()}
+     * based on the configured commit interval and/or commit batch size. No further acknowledge or commit
      * actions are required from the consuming application. This mode is efficient, but can lead to
      * message loss if the application crashes after a message was delivered but not processed.
      */
@@ -40,20 +42,24 @@ public enum AckMode {
     ATMOST_ONCE,
 
     /**
-     * Disables automatic acknowledgement of messages to ensure that messages are re-delivered if the consuming
-     * application crashes after message was dispatched but before it was processed. This mode provides
-     * atleast-once delivery semantics with periodic commits of consumed messages with the
-     * configured commit interval and/or maximum commit batch size. {@link ReceiverOffset#acknowledge()} must
-     * be invoked to acknowledge messages after the message has been processed.
+     * Messages are committed only after they are explicitly acknowledged after processing using
+     * {@link ReceiverOffset#acknowledge()}. Automatic acknowledgement is disabled to ensure that messages
+     * are re-delivered if the consuming application crashes after message was dispatched but before it was
+     * processed. This mode provides atleast-once delivery semantics with periodic commits of consumed
+     * messages with the configured commit interval and/or maximum commit batch size.
      */
     MANUAL_ACK,
 
     /**
-     * Disables automatic commits to enable consuming applications to control timing of commit
+     * Messages must be explicitly committed using {@link ReceiverOffset#commit()}. Automatic
+     * commits are disabled so that consuming applications can control the timing of commit
      * operations. {@link ReceiverOffset#commit()} must be used to commit acknowledged offsets when
      * required. This commit is asynchronous by default, but the application many invoke {@link Mono#block()}
-     * on the returned mono to implement synchronous commits. Applications may batch commits by acknowledging
+     * on the returned Mono to implement synchronous commits. Applications may batch commits by acknowledging
      * messages as they are consumed and invoking commit() periodically to commit acknowledged offsets.
+     * <p>
+     * Manual commit mode may also be used to disable commits to Kafka when offsets are managed using custom
+     * offset management.
      */
     MANUAL_COMMIT
 }

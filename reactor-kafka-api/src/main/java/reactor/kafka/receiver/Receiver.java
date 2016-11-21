@@ -21,7 +21,7 @@ import reactor.kafka.receiver.internals.ConsumerFactory;
 import reactor.kafka.receiver.internals.KafkaReceiver;
 
 /**
- * A reactive Kafka consumer that consumes messages from a Kafka cluster.
+ * A reactive Kafka receiver that consumes messages from a Kafka cluster.
  *
  * @param <K> incoming message key type
  * @param <V> incoming message value type
@@ -42,9 +42,11 @@ public interface Receiver<K, V> {
     }
 
     /**
-     * Starts a Kafka consumer and consumes records from the configured subscriptions.
-     * The Kafka consumer is closed after when the returned flux terminates.
-     * @return flux of inbound records
+     * Starts a Kafka consumer that consumes records from the subscriptions or partition
+     * assignments configured for this receiver. Records are consumed from Kafka and delivered
+     * on the returned Flux when requests are made on the Flux. The Kafka consumer is closed
+     * after when the returned Flux terminates.
+     * @return Flux of inbound records
      */
     Flux<ReceiverRecord<K, V>> receive();
 }
