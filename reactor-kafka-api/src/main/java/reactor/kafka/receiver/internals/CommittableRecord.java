@@ -24,11 +24,11 @@ import reactor.kafka.receiver.ReceiverOffset;
 public class CommittableRecord<K, V> implements ReceiverRecord<K, V> {
 
     private final ConsumerRecord<K, V> consumerRecord;
-    private final ReceiverOffset consumerOffset;
+    private final ReceiverOffset receiverOffset;
 
-    public CommittableRecord(ConsumerRecord<K, V> consumerRecord, ReceiverOffset consumerOffset) {
+    public CommittableRecord(ConsumerRecord<K, V> consumerRecord, ReceiverOffset receiverOffset) {
         this.consumerRecord = consumerRecord;
-        this.consumerOffset = consumerOffset;
+        this.receiverOffset = receiverOffset;
     }
 
     public ConsumerRecord<K, V> record() {
@@ -36,7 +36,7 @@ public class CommittableRecord<K, V> implements ReceiverRecord<K, V> {
     }
 
     public ReceiverOffset offset() {
-        return consumerOffset;
+        return receiverOffset;
     }
 
     @Override

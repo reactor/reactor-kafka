@@ -500,6 +500,9 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
                     } catch (WakeupException e) {
                         // ignore
                     }
+                    Collection<TopicPartition> manualAssignment = receiverOptions.assignment();
+                    if (manualAssignment != null && !manualAssignment.isEmpty())
+                        onPartitionsRevoked(manualAssignment);
                     if (receiverOptions.ackMode() != AckMode.ATMOST_ONCE) {
                         commitEvent.runIfRequired(true);
                         commitEvent.waitFor(closeEndTimeNanos);

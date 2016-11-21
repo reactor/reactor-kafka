@@ -1,0 +1,341 @@
+== Reactor Kafka API
+
+[[api-guide-overview]]
+=== Overview
+This section describes the reactive API for producing and consuming messages using Apache Kafka.
+There are two main interfaces in Reactor Kafka:
+
+. `reactor.kafka.Sender` for publishing messages to Kafka
+. `reactor.kafka.Receiver` for consuming messages from Kafka
+
+Full API for Reactor Kafka is available in the link:../api/index.html[javadocs].
+
+
+[[api-guide-sender]]
+=== Reactive Sender
+
+Outbound messages are sent to Kafka using `reactor.kafka.Sender`. Senders are thread-safe and can be shared
+across multiple threads to improve throughput. A Sender is associated with one `KafkaProducer` that is used
+to transport messages to Kafka.
+
+A sender is created with an instance of sender configuration options `reactor.kafka.sender.SenderOptions`.
+The properties of `KafkaProducer` including list of bootstrap Kafka brokers and serializers must be
+set on `SenderOptions` at creation time or using the setter `SenderOptions#producerProperty`. Other
+configuration options for the reactive sender can also be updated before the sender is created.
+Changes made to `SenderOptions` after the creation of `Sender` will not be used by the sender.
+
+The generic types of `SenderOptions` and `Sender` are the key and value types of producer records
+published using the sender and corresponding serializers must be set on the sender options before
+the sender is created.
+
+
+[source,java]
+--------
+SenderOptions<Integer, String> senderOptions = SenderOptions.create(producerProperties); // <1>
+Sender<Integer, String> sender = Sender.create(senderOptions);
+--------
+<1> Specify properties for `KafkaProducer`
+
+The sender is now ready to send messages to Kafka.
+The underlying `KafkaProducer` instance is created lazily when the first request is ready to be sent.
+At this point, a `Sender` instance has been created, but no connections to Kafka have been made yet.
+
+Let's now create a sequence of records to send to Kafka. Each `SenderRecord` consists of a Kafka producer
+record containing the message key and value as well as the Kafka topic to send the message to. Producer records
+may specify a partition to send the message to or use the configured partitioner to choose a partition.
+Sender records can specify a correlation identifier that is not sent to Kafka, but is included in the
+response from `Sender`.
+
+[source,java]
+--------
+Flux<SenderRecord<Integer. String> outboundFlux =
+    Flux.range(1, count)
+        .map(i -> SenderRecord.create(new ProducerRecord<>(topic, i, "Message_" + i), i);
+--------
+
+The code segment above creates a sequence of records to send to Kafka, using the message index as
+correlation metadata in each sender record. The outbound flux can now be sent to Kafka using the Sender created earlier.
+
+The code segment below sends the messages to Kafka and prints out the response metadata received from Kafka
+and the correlation metadata for each message.  The final subscribe() in the code block
+requests upstream to send the records to Kafka and the responses received from Kafka flow downstream.
+As each response is received, the response along with the correlation metadata identifying the message
+is printed out to console by the `onNext` handler. The response from Kafka includes the partition to which
+the message was sent as well as the offset at the which the message was appended, if available.
+When messages are sent to multiple partitions, responses arrive in order
+for each partition, but responses from different partitions may be interleaved.
+
+[source,java]
+--------
+sender.send(outboundFlux, true)                    // <1>
+      .doOnError(e-> log.error("Send failed", e))  // <2>
+      .doOnNext(r -> System.out.printf("Message #%d send response: %s\n", r.correlationMetadata(), r.recordMetadata())) <3>
+      .subscribe();    // <4>
+--------
+<1> Reactive send operation for the outbound flux that fails if any send fails
+<2> If Kafka send fails, log an error
+<3> For every successful send, print metadata returned by Kafka and the message index in `correlationMetadata()`
+<4> Subscribe with unlimited request. This triggers the actual send.
+
+==== Error handling
+A send operation can specify if the operation should fail immediately on error or wait until all messages have
+been processed. If `delayError` is true, a success or error response is returned for each outgoing record.
+For error responses, the exception from Kafka indicating the reason for send failure is set on `SenderResponse`.
+and can be retrieved using `SenderResponse#exception()`. The Flux fails with an error after an attempt to send all
+records has completed. If `delayError` is false, a response is returned for the first failed send and the flux
+terminates immediately with an error.
+
+==== Send without response metadata
+If individual responses are not required for each send request, producer records can be sent using the method:
+
+[source,java]
+--------
+Mono<Void> send(Publisher<? extends ProducerRecord<K, V>> records);
+--------
+
+The returned Mono completes successfully if all the outbound records are delivered successfully. The Mono
+terminates on the first send failure.
+
+[source,java]
+--------
+sender.send(Flux.range(1,  10).map(i -> new ProducerRecord<Integer, String>(topic, i, "Message_" + i))) // <1>
+      .doOnError(e -> e.printStackTrace())                       // <2>
+      .doOnSuccess(s -> System.out.println("Sends succeeded"))   // <3>
+      .subscribe();                                              // <4>
+--------
+<1> Create `ProducerRecord` flux. Records are not wrapped in `SenderRecord`
+<2> Error indicates failure to send one or more records
+<3> Success indicates all records were published, individual partitions or offsets not returned
+<4> Subscribe to request the actual sends
+
+
+Note that in all cases the retries configured for the `KafkaProducer` are attempted and failures returned by
+the reactive layer indicate a failure to send after the configured number of retry attempts.
+
+==== Threading model
+`KafkaProducer` uses a separate network thread for sending requests and processing responses. To ensure
+that the producer network thread is never blocked by applications while processing responses, `Sender`
+delivers responses to applications on a separate scheduler. By default, this is a single threaded
+pooled scheduler that is freed when no longer required. The scheduler can be overridden if required, for instance,
+to use a parallel scheduler when the Kafka sends are part of a larger pipeline. This is done on the options
+instance before the Sender instance is created using:
+
+
+[source,java]
+--------
+public SenderOptions<K, V> scheduler(Scheduler scheduler);
+--------
+
+==== Non-blocking back-pressure
+The number of in-flight sends can be controlled using the `maxInflight` option. Requests for more elements from
+upstream are limited by the configured `maxInflight` to ensure that the total number of requests at any time for which
+responses are pending are limited. Along with `buffer.memory` and `max.block.ms` options on `KafkaProducer`,
+`maxInflight` enables control of memory and thread usage when `Sender` is used in a reactive pipeline. This option
+can be configured on `SenderOptions` before the sender is created. Default value is 256. For small messages,
+ a higher value will improve throughput.
+
+
+[source,java]
+--------
+public SenderOptions<K, V> maxInFlight(int maxInFlight);
+--------
+
+==== Closing the Sender
+
+When the sender is no longer required, the sender instance can be closed. The underlying `KafkaProducer` is closed,
+closing all client connections and freeing all memory used by the producer.
+
+
+[source,java]
+--------
+sender.close();
+--------
+
+
+See https://github.com/reactor/reactor-kafka/blob/master/reactor-kafka-samples/src/main/java/reactor/kafka/samples/SampleProducer.java  for the full code listing of a sample producer.
+
+[[api-guide-receiver]]
+=== Reactive Receiver
+
+Messages stored in Kafka topics are consumed using the reactive receiver `reactor.kafka.receiver.Receiver`.
+Each instance of `Receiver` is associated with a single instance of `KafkaConsumer`. `Receiver` is not thread-safe
+since the underlying `KafkaConsumer` cannot be accessed concurrently by multiple threads.
+
+A receiver is created with an instance of receiver configuration options `reactor.kafka.receiver.ReceiverOptions`.
+The properties of `KafkaConsumer` including list of bootstrap Kafka brokers and de-serializers must be
+set on `ReceiverOptions` at creation time or using the setter `ReceiverOptions#consumerProperty`. Other
+configuration options for the reactive receiver including subscription topics and acknowledgement mode
+should be added to options before the receiver is created.
+Changes made to `ReceiverOptions` after the creation of the receiver instance will not be used by the `Receiver`.
+
+The generic types of `ReceiverOptions` and `Receiver` are the key and value types of consumer records
+consumer using the receiver and corresponding de-serializers must be set on the receiver options before
+the receiver is created.
+
+[source,java]
+--------
+ReceiverOptions<Integer, String> receiverOptions =
+    ReceiverOptions.create(consumerProperties)                     // <1>
+                   .ackMode(AckMode.MANUAL_ACK)                    // <2>
+                   .subscription(Collections.singleton(topic));    // <3>
+--------
+<1> Specify properties to be provided to `KafkaConsumer`
+<2> Acknowlegement mode, default is AUTO_ACK
+<3> Topics to subscribe to
+
+Once the required configuration options have been configured on the options instance, a new `Receiver` instance
+can be created with these options and inbound messages can be consumed on the `Receiver`.
+The code block below creates a receiver instance and creates an inbound flux for the receiver.
+The underlying `KafkaConsumer` instance is created lazily later when the inbound flux is subscribed to.
+
+
+[source,java]
+--------
+Flux<ReceiverRecord<Integer, String>> inboundFlux =
+    Receiver.create(receiverOptions)
+            .receive();
+--------
+
+The inbound Kafka flux is ready to be consumed. Each inbound `ReceiverRecord` from the flux contains one
+`ConsumerRecord` returned by `KafkaConsumer` along with a committable offset instance. If
+acknowledgement mode is `MANUAL_ACK`, the offset must be acknowledged after the message is processed
+since unacknowledged offsets will not be committed. If acknowledgement mode is `MANUAL_COMMIT`,
+the offset must be committed explicitly after the message or a batch of messages is processed.
+
+
+[source,java]
+--------
+inboundFlux.subscribe(message -> {
+    System.out.printf("Received message: %s\n", message.record());  // <1>
+    message.offset().acknowledge();                                 // <2>
+});
+--------
+<1> Prints each consumer record from Kafka
+<2> Acknowledges that the record has been processed so that the offset may be committed
+
+==== Subscribing to wildcard patterns
+The example above subscribed to a single Kafka topic. The same API can be used to subscribe to
+more than one topic by specifying multiple topics in the collection provided to `ReceiverOptions#subscription()`.
+Subscription can also be made to a wildcard pattern by specifying a pattern to subscribe to. Group
+management in `KafkaConsumer` dynamically updates topic assignment when topics matching the pattern
+are created or deleted and assigns partitions of matching topics to available consumer instances.
+
+[source,java]
+--------
+receiverOptions = receiverOptions.subscription(Pattern.compile("demo.*"));
+--------
+
+Changes to receiver options must be made before the receiver instance is created. Altering the subscription
+deletes any existing subscriptions on the options instance.
+
+==== Manual assignment of topic partitions
+Partitions may be manually assigned to the receiver without using Kafka consumer group management.
+
+[source,java]
+--------
+receiverOptions = receiverOptions.assignment(Collections.singleton(new TopicPartition(topic, 0));
+--------
+
+Existing subscriptions and assignments on the options instance are deleted.
+A receiver created from this options instance with manual assignment consumes messages from the
+specified partitions.
+
+
+==== Acknowledgement modes
+Reactive receivers support four acknowledgement modes:
+
+. AUTO_ACK
+. ATMOST_ONCE
+. MANUAL_ACK
+. MANUAL_COMMIT
+
+Default acknowledgement mode is `AUTO_ACK`. In this mode, records are automatically acknowledged
+before they are delivered to the application. Acknowledged records are committed periodically
+based on the configured commit interval and batch size. This mode is simple to use since applications
+do not need to perform any acknowledge or commit actions. It is efficient as well, but can lead to
+message loss if the application crashes after a message was delivered but not processed.
+
+In `ATMOST_ONCE` mode, offsets are committed synchronously before the corresponding message is dispatched.
+This mode is expensive since each method is committed individually and messages are not delivered until the
+commit operation succeeds. Messages are guaranteed not to be re-delivered even if the consuming application
+fails, but some messages may not be lost if an application fails after the commit before the message could
+be processed.
+
+`MANUAL_ACK` mode disables automatic acknowledgement of messages to ensure that messages are re-delivered
+if the consuming application crashes after message was dispatched but before it was processed. This mode provides
+atleast-once delivery semantics with periodic commits of consumed messages with the
+configured commit interval and/or maximum commit batch size. Consumed offsets must be acknowledged using
+`ReceiverOffset#acknowledge()` since unacknowledged offsets are not committed. Note that acknowledging an offset
+acknowledges all previous offsets on the same partition.
+
+`MANUAL_COMMIT` mode disables automatic commits to enable consuming applications to control timing of commit
+operations. `ReceiverOffset#commit()` must be invoked by the consuming application to commit offsets when
+required. This commit is asynchronous by default, but the application many invoke `Mono#block()`
+on the returned Mono to implement synchronous commits. Applications may batch commits by acknowledging
+messages as they are consumed and invoking commit() periodically to commit acknowledged offsets. Note the
+committing an offset acknowledges and commits all previous offsets on that partition.
+
+==== Controlling commit frequency
+
+Commit frequency for `AUTO_ACK` and `MANUAL_ACK` can be controlled using a combination of commit interval
+and commit batch size. Commits are performed when either the interval or batch size is reached. One or both
+of these options may be set on the receiver options before the receiver instance is created. If commit interval
+is configured, at least one commit is scheduled within that interval as long as at least one record was
+consumed. If commit batch size is configured, a commit is scheduled when the configured number of records
+are consumed.
+
+==== Partition assignment and revocation listeners
+Applications can enable assignment and revocation listeners to perform any actions when
+partitions are assigned or revoked from a consumer.
+
+When group management is used, assignment listeners are invoked whenever partitions are assigned
+to the consumer after a rebalance operation.  When manual assignment is used, assignment listeners
+are invoked when the consumer is started. Assignment listeners can be used to seek to particular offsets
+in the assigned partitions so that messages are consumed from the specified offset.
+
+When group management is used, revocation listeners are invoked whenever partitions are revoked
+from a consumer after a rebalance operation. When manual assignment is used, revocation listeners
+are invoked before the consumer is closed. Revocation listeners can be used to commit processed
+offsets when MANUAL_COMMIT is used. For other acknowledgement modes, acknowledged offsets are
+automatically committed.
+
+==== Controlling start offsets for consuming records
+By default, receivers start consuming records from the last committed offset of each assigned partition.
+If a committed offset is not available, the offset reset strategy configured for the `KafkaConsumer` is
+used to set the start offset to the earliest or latest offset on the partition. Applications can override
+offsets by seeking to new offsets in an assignment listener. Methods are provided on `ReceiverPartition`
+to seek to the earliest, latest or a specific offset in the partition.
+
+
+[source,java]
+--------
+void seekToBeginning();
+void seekToEnd();
+void seek(long offset);
+--------
+
+For example, the following code block starts consuming messages from the latest offset.
+
+
+[source,java]
+--------
+receiverOptions = receiverOptions
+            .addAssignListener(partitions -> partitions.forEach(p -> p.seekToEnd())) // <1>
+            .subscription(Collections.singleton(topic));
+Receiver.create(receiverOptions).receive().subscribe();
+--------
+<1> Seek to the last offset in each assigned partition
+
+
+==== Consumer lifecycle
+
+Each `Receiver` instance is associated with a `KafkaConsumer` that is created when the inbound
+flux returned by `Receiver#receive()` is subscribed to. The consumer is kept alive until
+the flux completes. When the flux completes, all acknowledged offsets are committed and the
+underlying consumer is closed. In Kafka version 0.10.0.x, heartbeats are sent by `KafkaConsumer`
+only when applications invoke `KafkaConsumer#poll()`. Hence delays in processing messages can
+result in session timeouts causing rebalance to be triggered. To avoid this, `Receiver` triggers
+periodic heartbeats when application processing takes longer than the heartbeat interval when
+running older versions of Kafka. In Kafka version 0.10.1.0 and above, `KafkaConsumer` sends
+heartbeats from a background thread to avoid this issue and `Receiver` does not track heartbeats.
+

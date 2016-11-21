@@ -27,17 +27,20 @@ public interface SenderResponse<T> {
 
     /**
      * Returns the record metadata returned by Kafka. May be null if send request failed.
+     * @return response metadata from kafka
      */
     RecordMetadata recordMetadata();
 
     /**
      * Returns the exception associated with a send failure.
+     * @return send exception from kafka if send failed.
      */
     Exception exception();
 
     /**
      * Returns the correlation metadata associated with this instance to enable this
      * response to be matched with the corresponding {@link SenderRecord} that was sent to Kafka.
+     * @return correlation metadata
      */
     T correlationMetadata();
 }

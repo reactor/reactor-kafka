@@ -29,14 +29,17 @@ public interface ReceiverRecord<K, V> {
 
     /**
      * Returns the Kafka consumer record associated with this instance.
+     * @return consumer record from kafka
      */
     ConsumerRecord<K, V> record();
 
     /**
      * Returns an acknowlegeable offset instance that should be acknowledged after this
      * message record has been consumed if the ack mode is {@link AckMode#MANUAL_ACK} or
-     * {@link AckMode#MANUAL_COMMIT}. If ack mode is {@value AckMode#MANUAL_COMMIT},
+     * {@link AckMode#MANUAL_COMMIT}. If ack mode is {@link AckMode#MANUAL_COMMIT},
      * {@link ReceiverOffset#commit()} must be invoked to commit all acknowledged records.
+     *
+     * @return committable offset
      */
     ReceiverOffset offset();
 }

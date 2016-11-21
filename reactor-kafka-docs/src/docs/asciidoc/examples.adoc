@@ -1,0 +1,178 @@
+== Sample Scenarios
+
+This section shows sample code segments for typical scenarios where Reactor Kafka API
+may be used. Full code listing for these scenarios are included in the
+https://github.com/reactor/reactor-kafka/tree/master/reactor-kafka-samples[samples sub-project].
+
+[[sample-producer]]
+=== Sending records to Kafka
+
+See <<api-guide-sender,Sender API>> for details on the Sender API for sending outbound records
+to Kafka. The following code segment creates a simple pipeline that sends records to Kafka and
+processes the responses. The outbound flow is triggered when the returned flux is subscribe to.
+
+[source,java]
+--------
+Sender.create(SenderOptions.<Integer, String>create(producerProps).maxInFlight(512))   // <1>
+      .send(outbound.map(r -> senderRecord(r)), false)                                 // <2>
+      .doOnNext(response -> processResponse(response))                                 // <3>
+      .doOnError(e -> processError(e));
+--------
+
+<1> Create a sender with maximum 512 messages in-flight.
+<2> Send a sequence of sender records with delayError=false
+<3> Process response when onNext is triggered for each response
+
+[[sample-consumer]]
+=== Consuming records from Kafka
+See <<api-guide-receiver,Receiver API>> for details on the Receiver API for consuming records
+from Kafka topics. The following code segment creates a flux that replays all records on a topic
+and commits offsets after processing the messages using at-least-once semantics with `MANUAL_ACK`
+acknowledgement mode.
+
+
+[source,java]
+--------
+ReceiverOptions<Integer, String> options =
+    ReceiverOptions.<Integer, String>create(consumerProps)
+                   .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")  // <1>
+                   .ackMode(AckMode.MANUAL_ACK)
+                   .commitBatchSize(10)                                                    // <2>
+                   .subscription(Collections.singleton("demo-topic"));                     // <3>
+Receiver.create(options)
+        .receive()
+        .doOnNext(r -> {
+                processRecord(r.record());  // <4>
+                r.offset().acknowledge();   // <5>
+            });
+--------
+<1> Start consuming from first available offset on each partition if committed offsets are not stored yet
+<2> Commit when 10 messages have been acknowledged
+<3> Topics to consume from
+<4> Process consumer record from kafka
+<5> Acknowledge that record has been consumed
+
+
+[[kafka-sink]]
+=== Reactive pipeline with Kafka sink
+
+The code segment below consumes messages from an external source, performs some transformation
+and stores the output records in Kafka. Large number of retry attempts are configured
+on the Kafka producer so that transient failures don't impact the pipeline. Source commits are
+performed only after records are successfully written to Kafka.
+
+[source,java]
+--------
+senderOptions = senderOptions
+    .producerProperty(ProducerConfig.ACKS_CONFIG, "all")                  // <1>
+    .producerProperty(ProducerConfig.RETRIES_CONFIG, Integer.MAX_VALUE)   // <2>
+    .maxInFlight(128)                                                     // <3>
+Sender.create(senderOptions)
+    .send(source.flux().map(r -> transform(r)), false)                    // <4>
+    .doOnError(e-> log.error("Send failed, terminating.", e))             // <5>
+    .doOnNext(r -> source.commit(r.correlationMetadata()));               // <6>
+--------
+<1> Send is acknowledged by Kafka for acks=all after message is delivered to all in-sync replicas
+<2> Large number of retries in the producer to cope with transient failures in brokers
+<3> Low in-flight count to avoid filling up producer buffer and blocking the pipeline
+<4> Receive from external source, transform and send to Kafka with fail-on-error
+<5> If a send fails, it indicates catastrophic error, fail the whole pipeline
+<6> Use correlation metadata in the sender record to commit source record
+
+
+[[kafka-source]]
+=== Reactive pipeline with Kafka source
+
+The code segment below consumes records from Kafka topics, transforms the record
+and sends the output to an external sink. Kafka consumer offsets are committed after
+records are successfully output to sink.
+
+[source,java]
+--------
+receiverOptions = receiverOptions
+    .ackMode(AckMode.MANUAL_COMMIT)           // <1>
+    .subscription(Pattern.compile(topics));   // <2>
+Receiver.create(receiverOptions)
+        .receive()
+        .publishOn(Schedulers.newSingle("sample", true))
+        .flatMap(m -> sink.store(transform(m.record()))                    // <3>
+                          .doOnSuccess(r -> m.offset().commit().block())); // <4>
+--------
+<1> MANUAL_COMMIT to ensure that offsets are committed only after records are processed
+<2> Wildcard subscription
+<3> Tranform Kafka record and store in external sink
+<4> Synchronous commit after record is successfully delivered to sink
+
+[[kafka-source-sink]]
+=== Reactive pipeline with Kafka source and sink
+
+The code segment below consumes messages from Kafka topic, performs some transformation
+on the incoming messages and stores the result in some Kafka topics. Manual acknowledgement
+mode provides atleast-once semantics with messages acknowledged after the output records
+are delivered to Kafka. Acknowledged offsets are committed periodically based on the
+configured commit interval.
+
+[source,java]
+--------
+receiverOptions = receiverOptions
+    .ackMode(AckMode.MANUAL_ACK)
+    .subscription(Pattern.compile(topics));
+sender.send(Receiver.create(receiverOptions)
+                    .receive()
+                    .map(m -> SenderRecord.create(transform(m.record().value()), m.offset())), false)  // <1>
+      .doOnNext(m -> m.correlationMetadata().acknowledge());  // <2>
+--------
+<1> Transform incoming record and create outbound record with transformed data in the payload and inbound offset as correlation metadata
+<2> Acknowledge the inbound offset using the offset instance in correlation metadata after outbound record is delivered to Kafka
+
+[[atmost-once]]
+=== Atmost once delivery
+The code segment below demonstrates a flow with at-most once delivery. Producer does not wait for acks and
+does not perform any retries. Messages that cannot be delivered to Kafka on the first attempt
+are dropped. Receiver with ATMOST_ONCE acknowledgement mode commits offsets before delivery
+to the application to ensure that if the consumer restarts, messages are not redelivered.
+With replication factor 1 for topic partitions, this code may be used for atmost-once delivery.
+
+[source,java]
+--------
+senderOptions = senderOptions
+    .producerProperty(ProducerConfig.ACKS_CONFIG, "0")     // <1>
+    .producerProperty(ProducerConfig.RETRIES_CONFIG, "0"); // <2>
+receiverOptions = receiverOptions
+    .ackMode(AckMode.ATMOST_ONCE)                          // <3>
+    .subscription(Collections.singleton(sourceTopic));
+Sender.create(senderOptions)
+      .send(Receiver.create(receiverOptions)
+                    .receive()
+                    .map(cr -> SenderRecord.create(transform(cr.record().value()), cr.offset())),
+            true);
+--------
+<1> Send with acks=0 completes when message is buffered locally, before it is delivered to Kafka broker
+<2> No retries in producer
+<3> Atmost-once receive acknowledgement mode
+
+[[concurrent-ordered]]
+=== Concurrent Processing with Partition-Based Ordering
+
+The code segment below demonstrates a flow where messages are consumed from a Kafka topic, processed
+by multiple threads and the results stored in another Kafka topic. Messages are grouped
+by partition to guarantee ordering in message processing and commit operations. Messages
+from each partition are processed on a single thread.
+
+[source,java]
+--------
+
+Scheduler scheduler = Schedulers.newElastic("sample", 60, true);
+Receiver.create(receiverOptions)
+        .receive()
+        .groupBy(m -> m.offset().topicPartition())                          // <1>
+        .flatMap(partitionFlux ->
+            partitionFlux.publishOn(scheduler)
+                         .map(r -> processRecord(partitionFlux.key(), r))
+                         .sample(Duration.ofMillis(5000))                   // <2>
+                         .concatMap(offset -> offset.commit()));            // <3>
+--------
+<1> Group by partition to guarantee ordering
+<2> Commit periodically
+<3> Commit in sequence using concatMap
+

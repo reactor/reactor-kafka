@@ -35,6 +35,7 @@ public interface Receiver<K, V> {
      *        after the sender is created will not be configured for the receiver.
      *        A subscription using group management or a manual assignment of partitions must be
      *        set on the options instance prior to creating this receiver.
+     * @return new receiver instance
      */
     public static <K, V> Receiver<K, V> create(ReceiverOptions<K, V> options) {
         return new KafkaReceiver<>(ConsumerFactory.INSTANCE, options);

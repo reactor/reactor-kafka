@@ -31,11 +31,13 @@ public interface ReceiverOffset {
 
     /**
      * Returns the topic partition with which this offset is associated.
+     * @return topic partition
      */
     TopicPartition topicPartition();
 
     /**
      * Returns the offset corresponding to the message to which this offset is associated.
+     * @return offset into partition
      */
     long offset();
 
@@ -59,6 +61,7 @@ public interface ReceiverOffset {
      * wait for completion of the commit. If commit fails with {@link RetriableCommitFailedException}
      * the commit operation is retried {@link ReceiverOptions#maxCommitAttempts()} times before the
      * returned Mono is failed.
+     * @return Mono that is completed when commit operation completes.
      */
     Mono<Void> commit();
 }

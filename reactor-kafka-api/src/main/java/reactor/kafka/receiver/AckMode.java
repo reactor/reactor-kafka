@@ -43,14 +43,14 @@ public enum AckMode {
      * Disables automatic acknowledgement of messages to ensure that messages are re-delivered if the consuming
      * application crashes after message was dispatched but before it was processed. This mode provides
      * atleast-once delivery semantics with periodic commits of consumed messages with the
-     * configured commit interval and/or maximum commit batch size. {@link ConsumerOffset#acknowledge()} must
+     * configured commit interval and/or maximum commit batch size. {@link ReceiverOffset#acknowledge()} must
      * be invoked to acknowledge messages after the message has been processed.
      */
     MANUAL_ACK,
 
     /**
      * Disables automatic commits to enable consuming applications to control timing of commit
-     * operations. {@link ConsumerOffset#commit()} must be used to commit acknowledged offsets when
+     * operations. {@link ReceiverOffset#commit()} must be used to commit acknowledged offsets when
      * required. This commit is asynchronous by default, but the application many invoke {@link Mono#block()}
      * on the returned mono to implement synchronous commits. Applications may batch commits by acknowledging
      * messages as they are consumed and invoking commit() periodically to commit acknowledged offsets.

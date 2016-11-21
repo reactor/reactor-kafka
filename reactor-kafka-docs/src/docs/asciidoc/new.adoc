@@ -1,0 +1,7 @@
+== New & Noteworthy
+
+[[new]]
+=== What's new in Reactor Kafka 1.0
+
+* First release of Reactor Kafka
+

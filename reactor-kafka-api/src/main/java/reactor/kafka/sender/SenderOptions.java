@@ -39,6 +39,7 @@ public class SenderOptions<K, V> {
 
     /**
      * Creates a sender options instance with default properties.
+     * @return new instance of sender options
      */
     public static <K, V> SenderOptions<K, V> create() {
         return new SenderOptions<>();
@@ -46,6 +47,7 @@ public class SenderOptions<K, V> {
 
     /**
      * Creates a sender options instance with the specified config overrides.
+     * @return new instance of sender options
      */
     public static <K, V> SenderOptions<K, V> create(Map<String, Object> configProperties) {
         SenderOptions<K, V> options = create();
@@ -55,6 +57,7 @@ public class SenderOptions<K, V> {
 
     /**
      * Creates a sender options instance with the specified config overrides.
+     * @return new instance of sender options
      */
     public static <K, V> SenderOptions<K, V> create(Properties configProperties) {
         SenderOptions<K, V> options = create();
@@ -72,6 +75,7 @@ public class SenderOptions<K, V> {
 
     /**
      * Returns the configuration properties of the underlying Kafka producer.
+     * @return configuration options for Kafka producer
      */
     public Map<String, Object> producerProperties() {
         return properties;
@@ -79,6 +83,7 @@ public class SenderOptions<K, V> {
 
     /**
      * Returns the Kafka producer configuration property for the specified option name.
+     * @return Kafka producer configuration option value
      */
     public Object producerProperty(String name) {
         return properties.get(name);
@@ -86,6 +91,7 @@ public class SenderOptions<K, V> {
 
     /**
      * Sets Kafka producer configuration property to the specified value.
+     * @return sender options with updated option
      */
     public SenderOptions<K, V> producerProperty(String name, Object value) {
         properties.put(name, value);
@@ -94,6 +100,7 @@ public class SenderOptions<K, V> {
 
     /**
      * Returns the scheduler used for publishing send responses.
+     * @return response scheduler
      */
     public Scheduler scheduler() {
         return scheduler;
@@ -101,6 +108,7 @@ public class SenderOptions<K, V> {
 
     /**
      * Sets the scheduler used for publishing send responses.
+     * @return sender options with updated option
      */
     public SenderOptions<K, V> scheduler(Scheduler scheduler) {
         this.scheduler = scheduler;
@@ -110,6 +118,7 @@ public class SenderOptions<K, V> {
     /**
      * Returns the maximum number of inflight messages that are prefetched
      * from the outbound flux.
+     * @return maximum number of inflight records
      */
     public int maxInFlight() {
         return maxInFlight;
@@ -118,6 +127,7 @@ public class SenderOptions<K, V> {
     /**
      * Configures the maximum number of inflight messages that are prefetched
      * from the outbound flux.
+     * @return sender options with updated option
      */
     public SenderOptions<K, V> maxInFlight(int maxInFlight) {
         this.maxInFlight = maxInFlight;
@@ -126,6 +136,7 @@ public class SenderOptions<K, V> {
 
     /**
      * Returns the timeout for graceful shutdown of this sender.
+     * @return close timeout duration
      */
     public Duration closeTimeout() {
         return closeTimeout;
@@ -133,6 +144,7 @@ public class SenderOptions<K, V> {
 
     /**
      * Configures the timeout for graceful shutdown of this sender.
+     * @return sender options with updated option
      */
     public SenderOptions<K, V> closeTimeout(Duration timeout) {
         this.closeTimeout = timeout;
@@ -141,6 +153,7 @@ public class SenderOptions<K, V> {
 
     /**
      * Returns a new immutable instance with the configuration properties of this instance.
+     * @return new immutable instance of sender options
      */
     public SenderOptions<K, V> toImmutable() {
         SenderOptions<K, V> options = new SenderOptions<K, V>() {

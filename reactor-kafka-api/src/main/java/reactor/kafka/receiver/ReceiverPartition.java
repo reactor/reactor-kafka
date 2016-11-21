@@ -28,6 +28,7 @@ public interface ReceiverPartition {
 
     /**
      * Returns the underlying Kafka topic partition.
+     * @return topic partition
      */
     TopicPartition topicPartition();
 
@@ -51,6 +52,7 @@ public interface ReceiverPartition {
 
     /**
      * Returns the offset of the next record that will be fetched from this topic partition.
+     * @return current offset of this partition
      */
     long position();
 }

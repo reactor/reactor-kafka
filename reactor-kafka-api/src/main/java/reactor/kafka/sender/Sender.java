@@ -40,6 +40,7 @@ public interface Sender<K, V> {
      * Creates a Kafka producer that appends messages to Kafka topic partitions.
      * @param options Configuration options of this sender. Changes made to the options
      *        after the sender is created will not be configured for the sender.
+     * @return new instance of Kafka sender
      */
     public static <K, V> Sender<K, V> create(SenderOptions<K, V> options) {
         return new KafkaSender<>(ProducerFactory.INSTANCE, options);
@@ -68,7 +69,7 @@ public interface Sender<K, V> {
     <T> Flux<SenderResponse<T>> send(Publisher<SenderRecord<K, V, T>> records, boolean delayError);
 
     /**
-     * Send a sequence of records to Kafka.
+     * Sends a sequence of records to Kafka.
      * @return Mono that succeeds if all records are delivered successfully to Kafka.
      */
     Mono<Void> send(Publisher<? extends ProducerRecord<K, V>> records);
@@ -76,6 +77,7 @@ public interface Sender<K, V> {
     /**
      * Returns partition information for the specified topic. This is useful for
      * choosing partitions to which records are sent if default partition assignor is not used.
+     * @return Flux of partitions of topic.
      */
     Flux<PartitionInfo> partitionsFor(String topic);
 

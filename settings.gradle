@@ -1,1 +1,1 @@
-include 'reactor-kafka-api', 'reactor-kafka-tools', 'reactor-kafka-samples'
+include 'reactor-kafka-api', 'reactor-kafka-tools', 'reactor-kafka-samples', 'reactor-kafka-docs'

@@ -20,6 +20,8 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -178,6 +180,49 @@ public class ReceiverTest extends AbstractKafkaTest {
                         .doOnNext(r -> r.offset().commit().block())
                         .doOnSubscribe(s -> assignSemaphore.release());
         sendReceiveWithSendDelay(kafkaFlux, Duration.ofMillis(1000), 0, 10);
+    }
+
+    @Test
+    public void manualAssignmentListeners() throws Exception {
+        int count = 10;
+        sendMessages(0, count);
+        CountDownLatch receiveLatch = new CountDownLatch(count);
+        Semaphore revokeSemaphore = new Semaphore(0);
+        Collection<TopicPartition> topicPartitions = getTopicPartitions();
+        Map<TopicPartition, ReceiverOffset> assignedPartitions = new HashMap<>();
+        receiverOptions = receiverOptions.ackMode(AckMode.MANUAL_COMMIT)
+                .assignment(topicPartitions)
+                .addAssignListener(partitions -> {
+                        for (ReceiverPartition p : partitions) {
+                            p.seekToBeginning();
+                            assignedPartitions.put(p.topicPartition(), null);
+                        }
+                        assignSemaphore.release();
+                    })
+                .addRevokeListener(partitions -> {
+                        for (ReceiverPartition p : partitions) {
+                            ReceiverOffset offset = assignedPartitions.remove(p);
+                            if (offset != null)
+                                offset.commit().block();
+                        }
+                        revokeSemaphore.release();
+                    });
+        Cancellation cancellation =
+                Receiver.create(receiverOptions)
+                        .receive()
+                        .doOnNext(m -> {
+                                assertTrue(assignedPartitions.containsKey(m.offset().topicPartition()));
+                                assignedPartitions.put(m.offset().topicPartition(), m.offset());
+                                receiveLatch.countDown();
+                            })
+                        .take(count)
+                        .subscribe();
+        waitFoPartitionAssignment();
+        assertEquals(new HashSet<>(topicPartitions), assignedPartitions.keySet());
+        waitForMessages(receiveLatch);
+        assertTrue("Partitions not revoked", revokeSemaphore.tryAcquire(5000, TimeUnit.MILLISECONDS));
+
+        cancellation.dispose();
     }
 
     @Test

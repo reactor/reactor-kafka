@@ -37,7 +37,7 @@ public class SenderRecord<K, V, T> {
      * @param record the producer record to send to Kafka
      * @param correlationMetadata Additional correlation metadata that is not sent to Kafka, but is
      *        included in the response to match {@link SenderResponse} to this record.
-     * @return
+     * @return new outbound record
      */
     public static <K, V, T> SenderRecord<K, V, T> create(ProducerRecord<K, V> record, T correlationMetadata) {
         return new SenderRecord<K, V, T>(record, correlationMetadata);
@@ -50,13 +50,16 @@ public class SenderRecord<K, V, T> {
 
     /**
      * Returns the Kafka producer record associated with this instance.
+     * @return record to send to Kafka
      */
     public ProducerRecord<K, V> record() {
         return record;
     }
 
     /**
-     * Returns the correlation metadata associated with this instance.
+     * Returns the correlation metadata associated with this instance which is not sent to Kafka,
+     * but can be used to correlate response to outbound request.
+     * @return metadata associated with outbound record that is not sent to Kafka
      */
     public T correlationMetadata() {
         return correlationMetadata;
