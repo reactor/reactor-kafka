@@ -17,7 +17,8 @@ buildscript {
         maven { url "http://repo.spring.io/plugins-release" }
   }
   dependencies {
-        classpath 'org.asciidoctor:asciidoctorj-pdf:1.5.0-alpha.11'
+        classpath 'org.asciidoctor:asciidoctorj-pdf:1.5.0-alpha.11',
+                  'org.springframework.build.gradle:propdeps-plugin:0.0.7'
   }
 }
 plugins {
@@ -38,10 +39,12 @@ allprojects {
 }
 
 ext {
+    gradleVersion = '3.1'
+    gradleScriptDir = "${rootProject.projectDir}/gradle"
+
     defaultKafkaVersion = "0.10.1.0"
     def getKafkaVersion = project.hasProperty('kafkaVersion') ? project.property('kafkaVersion') : "${defaultKafkaVersion}"
 
-    gradleVersion = "2.13"
     kafkaVersion = getKafkaVersion
     scalaVersion = '2.11'
     junitVersion = '4.12'
@@ -66,7 +69,8 @@ ext {
                     "http://projectreactor.io/core/docs/api/"] as String[]
 
 }
-apply from: file('wrapper.gradle')
+apply from: "$gradleScriptDir/setup.gradle"
+apply plugin: 'propdeps'
 
 subprojects {
 
