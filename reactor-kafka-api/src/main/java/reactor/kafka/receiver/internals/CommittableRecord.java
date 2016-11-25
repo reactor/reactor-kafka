@@ -21,7 +21,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import reactor.kafka.receiver.ReceiverRecord;
 import reactor.kafka.receiver.ReceiverOffset;
 
-public class CommittableRecord<K, V> implements ReceiverRecord<K, V> {
+class CommittableRecord<K, V> implements ReceiverRecord<K, V> {
 
     private final ConsumerRecord<K, V> consumerRecord;
     private final ReceiverOffset receiverOffset;

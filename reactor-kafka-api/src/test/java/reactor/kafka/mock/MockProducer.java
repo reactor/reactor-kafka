@@ -17,6 +17,7 @@
 package reactor.kafka.mock;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -105,7 +106,7 @@ public class MockProducer implements Producer<Integer, String> {
 
     @Override
     public Map<MetricName, ? extends Metric> metrics() {
-        return null;
+        return new HashMap<>();
     }
 
     @Override
@@ -172,6 +173,9 @@ public class MockProducer implements Producer<Integer, String> {
         }
         public List<MockProducer> producersInUse() {
             return producersInUse;
+        }
+        public void addProducer(MockProducer producer) {
+            freeProducers.add(producer);
         }
     }
 }

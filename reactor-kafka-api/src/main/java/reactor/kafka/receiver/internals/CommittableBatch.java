@@ -27,7 +27,7 @@ import org.apache.kafka.common.TopicPartition;
 
 import reactor.core.publisher.MonoSink;
 
-public class CommittableBatch {
+class CommittableBatch {
 
     private final Map<TopicPartition, Long> consumedOffsets;
     private final Map<TopicPartition, Long> latestOffsets;
@@ -79,7 +79,7 @@ public class CommittableBatch {
         return new CommitArgs(offsetMap, currentCallbackEmitters);
     }
 
-    protected synchronized void restoreOffsets(CommitArgs commitArgs, boolean restoreCallbackEmitters) {
+    public synchronized void restoreOffsets(CommitArgs commitArgs, boolean restoreCallbackEmitters) {
         // Restore offsets that haven't been updated.
         for (Map.Entry<TopicPartition, OffsetAndMetadata> entry : commitArgs.offsets.entrySet()) {
             TopicPartition topicPart = entry.getKey();

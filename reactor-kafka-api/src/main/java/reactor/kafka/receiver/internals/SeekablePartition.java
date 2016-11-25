@@ -23,7 +23,7 @@ import org.apache.kafka.common.TopicPartition;
 
 import reactor.kafka.receiver.ReceiverPartition;
 
-public class SeekablePartition implements ReceiverPartition {
+class SeekablePartition implements ReceiverPartition {
 
     private final Consumer<?, ?> consumer;
     private final TopicPartition topicPartition;

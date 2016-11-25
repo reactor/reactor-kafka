@@ -25,11 +25,14 @@ import java.util.Map;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.PartitionInfo;
@@ -51,7 +54,7 @@ import reactor.kafka.mock.MockProducer.Pool;
 import reactor.kafka.sender.Sender;
 import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.SenderRecord;
-import reactor.kafka.sender.SenderResponse;
+import reactor.kafka.sender.SenderResult;
 import reactor.kafka.util.TestUtils;
 import reactor.test.StepVerifier;
 
@@ -66,12 +69,14 @@ public class KafkaSenderTest {
     private Pool producerFactory;
     private MockProducer producer;
     private OutgoingRecords outgoingRecords;
-    private List<SenderResponse<Integer>> sendResponses;
+    private List<SenderResult<Integer>> sendResponses;
     private Sender<Integer, String> sender;
 
     @Before
     public void setUp() {
-        cluster = new MockCluster(2, Arrays.asList(topic), Arrays.asList(2));
+        Map<Integer, String> topics = new HashMap<>();
+        topics.put(2, topic);
+        cluster = new MockCluster(2, topics);
         producer = new MockProducer(cluster);
         producerFactory = new Pool(Arrays.asList(producer));
         outgoingRecords = new OutgoingRecords(cluster);
@@ -91,12 +96,12 @@ public class KafkaSenderTest {
     public void producerCreate() {
         sender = new KafkaSender<>(producerFactory, SenderOptions.create());
         assertEquals(0, producerFactory.producersInUse().size());
-        Flux<PartitionInfo> partitions = sender.partitionsFor(topic);
+        Mono<List<PartitionInfo>> partitions = sender.doOnProducer(producer -> producer.partitionsFor(topic));
         assertEquals(0, producerFactory.producersInUse().size());
         partitions.subscribe();
         assertEquals(Arrays.asList(producer), producerFactory.producersInUse());
         for (int i = 0; i < 10; i++)
-            sender.partitionsFor(topic).blockLast();
+            sender.doOnProducer(producer -> producer.partitionsFor(topic)).block();
         assertEquals(Arrays.asList(producer), producerFactory.producersInUse());
     }
 
@@ -361,24 +366,72 @@ public class KafkaSenderTest {
     }
 
     /**
-     * Tests {@link KafkaSender#partitionsFor(String)} good path.
+     * Tests invocation of methods on KafkaProducer using {@link Sender#doOnProducer(java.util.function.Function)}
      */
     @Test
+    public void producerMethods() {
+        testProducerMethod(p -> assertEquals(0, p.metrics().size()));
+        testProducerMethod(p -> assertEquals(2, p.partitionsFor(topic).size()));
+        testProducerMethod(p -> p.flush());
+    }
+
+    private void testProducerMethod(Consumer<Producer<Integer, String>> method) {
+        resetSender();
+        OutgoingRecords outgoing = outgoingRecords.append(topic, 10);
+        Flux<SenderResult<Integer>> result = sender.send(outgoing.senderRecords(), false)
+                .doOnNext(r -> sender.doOnProducer(p -> {
+                        method.accept(p);
+                        return true;
+                    }).block());
+        StepVerifier.create(result)
+                    .expectNextCount(10)
+                    .expectComplete()
+                    .verify();
+    }
+
+    /**
+     * Tests methods not permitted on KafkaProducer using {@link Sender#doOnProducer(java.util.function.Function)}
+     */
+    @Test
+    public void producerDisallowedMethods() {
+        testDisallowedMethod(p -> p.close());
+        testDisallowedMethod(p -> p.send(new ProducerRecord<>(topic, 1, "test")));
+        testDisallowedMethod(p -> p.send(new ProducerRecord<>(topic, 1, "test"), null));
+    }
+
+    private void testDisallowedMethod(Consumer<Producer<Integer, String>> method) {
+        resetSender();
+        OutgoingRecords outgoing = outgoingRecords.append(topic, 10);
+        Flux<SenderResult<Integer>> result = sender.send(outgoing.senderRecords(), false)
+                .doOnNext(r -> sender.doOnProducer(p -> {
+                        method.accept(p);
+                        return true;
+                    }).block());
+        StepVerifier.create(result)
+                    .expectError(UnsupportedOperationException.class)
+                    .verify();
+    }
+
+    /**
+     * Tests {@link KafkaProducer#partitionsFor(String)} good path.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
     public void partitionsFor() {
         sender = new KafkaSender<>(producerFactory, SenderOptions.create());
-        StepVerifier.create(sender.partitionsFor(topic))
-            .expectNextSequence(cluster.cluster().partitionsForTopic(topic))
+        StepVerifier.create(sender.doOnProducer(producer -> producer.partitionsFor(topic)))
+            .expectNext(cluster.cluster().partitionsForTopic(topic))
             .expectComplete()
             .verify();
     }
 
     /**
-     * Tests {@link KafkaSender#partitionsFor(String)} error path.
+     * Tests {@link KafkaProducer#partitionsFor(String)} error path.
      */
     @Test
     public void partitionsForNonExistentTopic() {
         sender = new KafkaSender<>(producerFactory, SenderOptions.create());
-        StepVerifier.create(sender.partitionsFor("nonexistent"))
+        StepVerifier.create(sender.doOnProducer(producer -> producer.partitionsFor("nonexistent")))
             .expectError(InvalidTopicException.class)
             .verify();
     }
@@ -401,10 +454,16 @@ public class KafkaSenderTest {
         outgoing.verify(cluster, topic);
     }
 
+    private void resetSender() {
+        producerFactory.addProducer(new MockProducer(cluster));
+        outgoingRecords = new OutgoingRecords(cluster);
+        sender = new KafkaSender<>(producerFactory, SenderOptions.create());
+    }
+
     private static class OutgoingRecords {
         final MockCluster cluster;
         final List<SenderRecord<Integer, String, Integer>> senderRecords = new ArrayList<>();
-        final Map<TopicPartition, List<SenderResponse<Integer>>> senderResponses = new HashMap<>();
+        final Map<TopicPartition, List<SenderResult<Integer>>> senderResponses = new HashMap<>();
         final Map<Integer, TopicPartition> recordPartitions = new HashMap<>();
 
         public OutgoingRecords(MockCluster cluster) {
@@ -419,7 +478,7 @@ public class KafkaSenderTest {
                 recordPartitions.put(correlation, partition);
                 senderRecords.add(SenderRecord.create(new ProducerRecord<>(topic, partition.partition(), i, "Message-" + i), correlation));
 
-                List<SenderResponse<Integer>> partitionResponses = senderResponses.get(partition);
+                List<SenderResult<Integer>> partitionResponses = senderResponses.get(partition);
                 if (partitionResponses == null) {
                     partitionResponses = new ArrayList<>();
                     senderResponses.put(partition, partitionResponses);
@@ -446,16 +505,16 @@ public class KafkaSenderTest {
             return Flux.fromIterable(senderRecords);
         }
 
-        public void verify(List<SenderResponse<Integer>> responses) {
+        public void verify(List<SenderResult<Integer>> responses) {
             assertEquals(senderRecords.size(), responses.size());
             Map<TopicPartition, Long> offsets = new HashMap<>();
             for (TopicPartition partition : senderResponses.keySet())
                 offsets.put(partition, 0L);
-            for (SenderResponse<Integer> response :responses) {
+            for (SenderResult<Integer> response :responses) {
                 TopicPartition partition = recordPartitions.get(response.correlationMetadata());
                 long offset = offsets.get(partition);
                 offsets.put(partition, offset + 1);
-                SenderResponse<Integer> expectedResponse = senderResponses.get(partition).get((int) offset);
+                SenderResult<Integer> expectedResponse = senderResponses.get(partition).get((int) offset);
                 assertEquals(expectedResponse.correlationMetadata(), response.correlationMetadata());
                 if (expectedResponse.exception() != null)
                     assertEquals(expectedResponse.exception().getClass(), response.exception().getClass());

@@ -239,7 +239,7 @@ public class SenderTest extends AbstractKafkaTest {
         int count = 4;
         AtomicInteger messageIndex = new AtomicInteger();
         AtomicInteger lastSuccessful = new AtomicInteger();
-        Flux<SenderResponse<Integer>> outboundFlux =
+        Flux<SenderResult<Integer>> outboundFlux =
             kafkaSender.send(createOutboundErrorFlux(count, false, true).map(r -> SenderRecord.create(r, messageIndex.getAndIncrement())), false)
                     .doOnNext(r -> {
                             if (r.exception() == null)
@@ -414,7 +414,7 @@ public class SenderTest extends AbstractKafkaTest {
                        });
     }
 
-    private Flux<SenderResponse<Integer>> outboundFlux(int startIndex, int count) {
+    private Flux<SenderResult<Integer>> outboundFlux(int startIndex, int count) {
         return kafkaSender.send(Flux.range(startIndex, count)
                                     .map(i -> SenderRecord.create(createProducerRecord(i, true), i)), false);
     }

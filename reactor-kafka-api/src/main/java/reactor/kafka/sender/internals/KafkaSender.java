@@ -16,15 +16,21 @@
  **/
 package reactor.kafka.sender.internals;
 
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
-import org.apache.kafka.common.PartitionInfo;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
@@ -37,7 +43,7 @@ import reactor.core.publisher.Operators;
 import reactor.kafka.sender.Sender;
 import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.SenderRecord;
-import reactor.kafka.sender.SenderResponse;
+import reactor.kafka.sender.SenderResult;
 
 /**
  * Reactive producer that sends messages to Kafka topic partitions. The producer is thread-safe
@@ -51,9 +57,17 @@ public class KafkaSender<K, V> implements Sender<K, V> {
 
     private static final Logger log = LoggerFactory.getLogger(KafkaSender.class.getName());
 
+    // Note: Methods added to this set should also be included in javadoc for {@link Sender#doOnProducer(Function)}
+    private static final Set<String> DELEGATE_METHODS = new HashSet<>(Arrays.asList(
+            "partitionsFor",
+            "metrics",
+            "flush"
+        ));
+
     private final Mono<Producer<K, V>> producerMono;
     private final AtomicBoolean hasProducer;
     private final SenderOptions<K, V> senderOptions;
+    private Producer<K, V> producerProxy;
 
     /**
      * Constructs a reactive Kafka producer with the specified configuration properties. All Kafka
@@ -70,10 +84,10 @@ public class KafkaSender<K, V> implements Sender<K, V> {
     }
 
     @Override
-    public <T> Flux<SenderResponse<T>> send(Publisher<SenderRecord<K, V, T>> records, boolean delayError) {
-        return new Flux<SenderResponse<T>>() {
+    public <T> Flux<SenderResult<T>> send(Publisher<SenderRecord<K, V, T>> records, boolean delayError) {
+        return new Flux<SenderResult<T>>() {
             @Override
-            public void subscribe(Subscriber<? super SenderResponse<T>> s) {
+            public void subscribe(Subscriber<? super SenderResult<T>> s) {
                 records.subscribe(new SendSubscriber<T>(s, delayError));
             }
         }
@@ -82,7 +96,7 @@ public class KafkaSender<K, V> implements Sender<K, V> {
     }
 
     @Override
-    public Mono<Void> send(Publisher<? extends ProducerRecord<K, V>> records) {
+    public Mono<Void> send(Publisher<ProducerRecord<K, V>> records) {
         return new Flux<RecordMetadata>() {
             @Override
             public void subscribe(Subscriber<? super RecordMetadata> s) {
@@ -95,15 +109,43 @@ public class KafkaSender<K, V> implements Sender<K, V> {
     }
 
     @Override
-    public Flux<PartitionInfo> partitionsFor(String topic) {
-        return producerMono
-                .flatMap(producer -> Flux.fromIterable(producer.partitionsFor(topic)));
+    public <T> Mono<T> doOnProducer(Function<Producer<K, V>, ? extends T> function) {
+        return producerMono.then(producer -> Mono.create(sink -> {
+                try {
+                    T ret = function.apply(producerProxy(producer));
+                    sink.success(ret);
+                } catch (Throwable t) {
+                    sink.error(t);
+                }
+            }));
     }
 
     @Override
     public void close() {
         if (hasProducer.getAndSet(false))
             producerMono.block().close(senderOptions.closeTimeout().toMillis(), TimeUnit.MILLISECONDS);
+    }
+
+    @SuppressWarnings("unchecked")
+    private synchronized Producer<K, V> producerProxy(Producer<K, V> producer) {
+        if (producerProxy == null) {
+            Class<?>[] interfaces = new Class<?>[]{Producer.class};
+            InvocationHandler handler = (proxy, method, args) -> {
+                if (DELEGATE_METHODS.contains(method.getName())) {
+                    try {
+                        return method.invoke(producer, args);
+                    } catch (InvocationTargetException e) {
+                        throw e.getCause();
+                    }
+                } else
+                    throw new UnsupportedOperationException("Method is not supported: " + method);
+            };
+            producerProxy = (Producer<K, V>) Proxy.newProxyInstance(
+                Producer.class.getClassLoader(),
+                interfaces,
+                handler);
+        }
+        return producerProxy;
     }
 
     private enum SubscriberState {
@@ -210,9 +252,9 @@ public class KafkaSender<K, V> implements Sender<K, V> {
         protected abstract C correlationMetadata(Q request);
     }
 
-    private class SendSubscriber<T> extends AbstractSendSubscriber<SenderRecord<K, V, T>, SenderResponse<T>, T> {
+    private class SendSubscriber<T> extends AbstractSendSubscriber<SenderRecord<K, V, T>, SenderResult<T>, T> {
 
-        SendSubscriber(Subscriber<? super SenderResponse<T>> actual, boolean delayError) {
+        SendSubscriber(Subscriber<? super SenderResult<T>> actual, boolean delayError) {
            super(actual, delayError);
         }
 
@@ -255,7 +297,7 @@ public class KafkaSender<K, V> implements Sender<K, V> {
         }
     }
 
-    protected static class Response<T> implements SenderResponse<T> {
+    static class Response<T> implements SenderResult<T> {
         private final RecordMetadata metadata;
         private final Exception exception;
         private final T correlationMetadata;
@@ -285,6 +327,5 @@ public class KafkaSender<K, V> implements Sender<K, V> {
         public String toString() {
             return String.format("Correlation=%s metadata=%s exception=%s", correlationMetadata, metadata, exception);
         }
-
     }
 }

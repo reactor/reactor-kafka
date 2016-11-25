@@ -22,6 +22,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 
+import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 
 import reactor.core.scheduler.Scheduler;
@@ -29,7 +30,8 @@ import reactor.core.scheduler.Schedulers;
 import reactor.util.concurrent.QueueSupplier;
 
 /**
- * Configuration properties for reactive Kafka sender and its underlying Kafka producer.
+ * Configuration properties for reactive Kafka {@link Sender} and its underlying Kafka
+ * {@link Producer}.
  */
 public class SenderOptions<K, V> {
 
@@ -49,7 +51,7 @@ public class SenderOptions<K, V> {
 
     /**
      * Creates a sender options instance with the specified config overrides for the underlying
-     * Kafka producer.
+     * Kafka {@link Producer}.
      * @return new instance of sender options
      */
     public static <K, V> SenderOptions<K, V> create(Map<String, Object> configProperties) {
@@ -60,7 +62,7 @@ public class SenderOptions<K, V> {
 
     /**
      * Creates a sender options instance with the specified config overrides for the underlying
-     * Kafka producer.
+     * Kafka {@link Producer}.
      * @return new instance of sender options
      */
     public static <K, V> SenderOptions<K, V> create(Properties configProperties) {
@@ -78,7 +80,7 @@ public class SenderOptions<K, V> {
     }
 
     /**
-     * Returns the configuration properties for the underlying Kafka producer.
+     * Returns the configuration properties for the underlying Kafka {@link Producer}.
      * @return configuration options for Kafka producer
      */
     public Map<String, Object> producerProperties() {
@@ -86,7 +88,7 @@ public class SenderOptions<K, V> {
     }
 
     /**
-     * Returns the Kafka producer configuration property for the specified option name.
+     * Returns the Kafka {@link Producer} configuration property for the specified option name.
      * @return Kafka producer configuration option value
      */
     public Object producerProperty(String name) {
@@ -94,7 +96,7 @@ public class SenderOptions<K, V> {
     }
 
     /**
-     * Sets Kafka producer configuration property to the specified value.
+     * Sets Kafka {@link Producer} configuration property to the specified value.
      * @return sender options with updated Kafka producer option
      */
     public SenderOptions<K, V> producerProperty(String name, Object value) {
@@ -112,7 +114,7 @@ public class SenderOptions<K, V> {
 
     /**
      * Sets the scheduler used for publishing send responses.
-     * @return sender options with response scheduler
+     * @return sender options with updated response scheduler
      */
     public SenderOptions<K, V> scheduler(Scheduler scheduler) {
         this.scheduler = scheduler;
@@ -120,8 +122,8 @@ public class SenderOptions<K, V> {
     }
 
     /**
-     * Returns the maximum number of in-flight messages that are pre-fetched
-     * from the outbound record publisher.
+     * Returns the maximum number of in-flight records that are fetched
+     * from the outbound record publisher while responses are pending.
      * @return maximum number of in-flight records
      */
     public int maxInFlight() {
@@ -129,10 +131,10 @@ public class SenderOptions<K, V> {
     }
 
     /**
-     * Configures the maximum number of in-flight messages that are pre-fetched
+     * Configures the maximum number of in-flight records that are fetched
      * from the outbound record publisher. This limit must be configured along
      * with {@link ProducerConfig#BUFFER_MEMORY_CONFIG} to control memory usage
-     * and avoid blocking the reactive pipeline.
+     * and to avoid blocking the reactive pipeline.
      * @return sender options with new in-flight limit
      */
     public SenderOptions<K, V> maxInFlight(int maxInFlight) {

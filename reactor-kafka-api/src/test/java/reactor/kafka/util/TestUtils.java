@@ -45,12 +45,12 @@ public class TestUtils {
         }
     }
 
-    public static <T> void waitUntil(String errorMessage, Supplier<Object> errorMessageArg, Predicate<T> predicate, T arg, Duration duration) throws Exception {
+    public static <T> void waitUntil(String errorMessage, Supplier<Object> errorMessageArg, Predicate<T> predicate, T arg, Duration duration) {
         long endTimeMillis = System.currentTimeMillis() + duration.toMillis();
         while (System.currentTimeMillis() < endTimeMillis) {
             if (predicate.test(arg))
                 return;
-            Thread.sleep(10);
+            TestUtils.sleep(10);
         }
         String message = errorMessageArg == null ? errorMessage : errorMessage + errorMessageArg.get();
         fail(message);

@@ -22,40 +22,35 @@ import org.apache.kafka.common.TopicPartition;
 import reactor.core.publisher.Mono;
 
 /**
- * Single topic partition offset that must be acknowledged after message consumption
- * if ack mode is {@link AckMode#MANUAL_ACK} and committed when required if ack mode
- * is {@link AckMode#MANUAL_COMMIT}.
+ * Topic partition offset that must be acknowledged after the record in the
+ * corresponding {@link ReceiverRecord} is processed.
  *
  */
 public interface ReceiverOffset {
 
     /**
-     * Returns the topic partition with which this offset is associated.
+     * Returns the topic partition corresponding to this instance.
      * @return topic partition
      */
     TopicPartition topicPartition();
 
     /**
-     * Returns the partition offset corresponding to the message to which this offset is associated.
+     * Returns the partition offset corresponding to the record to which this instance is associated.
      * @return offset into partition
      */
     long offset();
 
     /**
-     * Acknowledges the message associated with this offset. If ack mode is {@link AckMode#MANUAL_ACK},
-     * the offset will be committed automatically based on the commit configuration parameters
-     * {@link ReceiverOptions#commitInterval()} and {@link ReceiverOptions#commitBatchSize()}. If
-     * ack mode is {@link AckMode#MANUAL_COMMIT} it is the responsibility of the consuming application
-     * to invoke {@link #commit()} to commit acknowledged records individually or in batches.
-     * When an offset is acknowledged, it is assumed that all messages in this partition up to and
-     * including this offset have been processed.
+     * Acknowledges the record associated with this offset. The offset will be committed
+     * automatically based on the commit configuration parameters {@link ReceiverOptions#commitInterval()}
+     * and {@link ReceiverOptions#commitBatchSize()}. When an offset is acknowledged, it is assumed that
+     * all records in this partition up to and including this offset have been processed.
+     * All acknowledged offsets are committed if possible when the receiver flux is cancelled.
      */
     void acknowledge();
 
     /**
-     * Acknowledges the message associated with this offset and commits the latest acknowledged offset
-     * for all topic partitions with pending commits. This method is used to manually commit offsets
-     * when ack mode is {@link AckMode#MANUAL_COMMIT}.
+     * Acknowledges the record associated with this instance and commits all acknowledged offsets.
      * <p>
      * This method commits asynchronously. {@link Mono#block()} may be invoked on the returned Mono to
      * wait for completion of the commit. If commit fails with {@link RetriableCommitFailedException}

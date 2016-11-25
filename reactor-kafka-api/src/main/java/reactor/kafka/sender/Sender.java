@@ -16,9 +16,11 @@
  **/
 package reactor.kafka.sender;
 
+import java.util.function.Function;
 
+import org.apache.kafka.clients.producer.Producer;
+import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.PartitionInfo;
 import org.reactivestreams.Publisher;
 
 import reactor.core.publisher.Flux;
@@ -27,19 +29,20 @@ import reactor.kafka.sender.internals.KafkaSender;
 import reactor.kafka.sender.internals.ProducerFactory;
 
 /**
- * Reactive producer that sends messages to Kafka topic partitions. The producer is thread-safe
- * and can be used to send messages to multiple partitions. It is recommended that a single
- * producer is shared for each message type in a client application.
+ * Reactive producer that sends outgoing records to topic partitions of a Kafka
+ * cluster. The producer is thread-safe and can be used to publish records to
+ * multiple partitions. It is recommended that a single Sender is shared for each record
+ * type in a client application.
  *
- * @param <K> outgoing message key type
- * @param <V> outgoing message value type
+ * @param <K> outgoing record key type
+ * @param <V> outgoing record value type
  */
 public interface Sender<K, V> {
 
     /**
-     * Creates a Kafka sender that appends messages to Kafka topic partitions.
+     * Creates a Kafka sender that appends records to Kafka topic partitions.
      * @param options Configuration options of this sender. Changes made to the options
-     *        after the sender is created will not be configured for the sender.
+     *        after the sender is created will not be used by the sender.
      * @return new instance of Kafka sender
      */
     public static <K, V> Sender<K, V> create(SenderOptions<K, V> options) {
@@ -47,11 +50,14 @@ public interface Sender<K, V> {
     }
 
     /**
-     * Sends a sequence of records to Kafka and returns a flux of response record metadata including
+     * Sends a sequence of records to Kafka and returns a {@link Flux} of response record metadata including
      * partition and offset of each send request. Ordering of responses is guaranteed for partitions,
      * but responses from different partitions may be interleaved in a different order from the requests.
-     * Additional correlation metadata may be passed through that is not sent to Kafka, but is included
-     * in the response Flux to enable matching responses to requests.
+     * Additional correlation metadata may be passed through in the {@link SenderRecord} that is not sent
+     * to Kafka, but is included in the response Flux to enable matching responses to requests.
+     * Results are published when the send is acknowledged based on the acknowledgement mode
+     * configured using the option {@link ProducerConfig#ACKS_CONFIG}.
+     * <p>
      * Example usage:
      * <pre>
      * {@code
@@ -62,28 +68,47 @@ public interface Sender<K, V> {
      * }
      * </pre>
      *
-     * @param records Outbound records along with additional correation metadata to be included in response
+     * @param records Outbound records along with additional correlation metadata to be included in response
      * @param delayError If false, send terminates when a response indicates failure, otherwise send is attempted for all records
      * @return Flux of Kafka producer response record metadata along with the corresponding request correlation metadata.
      *         For records that could not be sent, the response contains an exception that indicates reason for failure.
      */
-    <T> Flux<SenderResponse<T>> send(Publisher<SenderRecord<K, V, T>> records, boolean delayError);
+    <T> Flux<SenderResult<T>> send(Publisher<SenderRecord<K, V, T>> records, boolean delayError);
 
     /**
      * Sends a sequence of producer records to Kafka. No metadata is returned for individual
-     * producer records on success or failure.
+     * producer records on success or failure. The returned {@link Mono} is failed immediately if a
+     * send fails.
      * @param records Outbound producer records
      * @return Mono that succeeds if all records are delivered successfully to Kafka and
      * fails if any of the sends fail.
      */
-    Mono<Void> send(Publisher<? extends ProducerRecord<K, V>> records);
+    Mono<Void> send(Publisher<ProducerRecord<K, V>> records);
 
     /**
-     * Returns partition information for the specified topic. This is useful for
-     * choosing partitions to which records are sent if default partitioner is not used.
-     * @return Flux of partitions of topic.
+     * Invokes the specified function on the Kafka {@link Producer} associated with this Sender.
+     * The function is invoked when the returned {@link Mono} is subscribed to.
+     * <p>
+     * Example usage:
+     * <pre>
+     * {@code
+     *     sender.doOnProducer(producer -> producer.partitionsFor(topic))
+     *           .doOnSuccess(partitions -> System.out.println("Partitions " + partitions));
+     * }
+     * </pre>
+     * Functions that are directly supported on the reactive Sender interface (eg. send)
+     * should not be invoked from <code>function</code>. The methods supported by
+     * <code>doOnProducer</code> are:
+     * <ul>
+     *   <li>{@link Producer#partitionsFor(String)}
+     *   <li>{@link Producer#metrics()}
+     *   <li>{@link Producer#flush()}
+     * </ul>
+     *
+     * @param function A function that takes Kafka Producer as parameter
+     * @return Mono that completes with the value returned by <code>function</code>
      */
-    Flux<PartitionInfo> partitionsFor(String topic);
+    <T> Mono<T> doOnProducer(Function<Producer<K, V>, ? extends T> function);
 
     /**
      * Closes this sender and the underlying Kafka producer and releases all resources allocated to it.

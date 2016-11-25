@@ -16,10 +16,10 @@
  **/
 package reactor.kafka.receiver.internals;
 
-
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -34,15 +34,20 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
-import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.clients.consumer.OffsetCommitCallback;
 import org.apache.kafka.clients.consumer.RetriableCommitFailedException;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.PartitionInfo;
@@ -53,17 +58,19 @@ import org.junit.Test;
 
 import reactor.core.Cancellation;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.kafka.mock.MockCluster;
 import reactor.kafka.mock.MockConsumer;
-import reactor.kafka.receiver.AckMode;
+import reactor.kafka.receiver.Receiver;
 import reactor.kafka.receiver.ReceiverOffset;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.ReceiverPartition;
 import reactor.kafka.receiver.ReceiverRecord;
 import reactor.kafka.util.TestUtils;
 import reactor.test.StepVerifier;
+import reactor.test.StepVerifier.Step;
 
 /**
  * Kafka receiver tests using mock Kafka consumers.
@@ -71,13 +78,14 @@ import reactor.test.StepVerifier;
  */
 public class KafkaReceiverTest {
 
-    private final List<String> topics = Arrays.asList("testtopic", "topic20", "topic100");
     private final String groupId = "test-group";
-    private final Queue<ReceiverRecord<Integer, String>> receivedMessages = new ConcurrentLinkedQueue<>();
+    private final Queue<ConsumerRecord<Integer, String>> receivedMessages = new ConcurrentLinkedQueue<>();
+    private final List<ConsumerRecord<Integer, String>> uncommittedMessages = new ArrayList<>();
     private Map<TopicPartition, Long> receiveStartOffsets = new HashMap<>();
     private final Set<TopicPartition> assignedPartitions = new HashSet<>();
 
-    private String topic = topics.get(0);
+    private Map<Integer, String> topics;
+    private String topic;
     private MockCluster cluster;
     private MockConsumer.Pool consumerFactory;
     private MockConsumer consumer;
@@ -85,7 +93,11 @@ public class KafkaReceiverTest {
 
     @Before
     public void setUp() {
-        cluster = new MockCluster(2, topics, Arrays.asList(2, 20, 100));
+        topics = new HashMap<>();
+        for (int i : Arrays.asList(1, 2, 20, 200))
+            topics.put(i, "topic" + i);
+        topic = topics.get(2);
+        cluster = new MockCluster(2, topics);
         receiverOptions = ReceiverOptions.<Integer, String>create()
                 .consumerProperty(ConsumerConfig.GROUP_ID_CONFIG, groupId)
                 .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
@@ -98,7 +110,7 @@ public class KafkaReceiverTest {
                             assignedPartitions.remove(p.topicPartition());
                     });
         consumer = new MockConsumer(cluster, false);
-        consumerFactory = new MockConsumer.Pool(Arrays.asList(consumer), false);
+        consumerFactory = new MockConsumer.Pool(Arrays.asList(consumer));
 
         for (TopicPartition partition : cluster.partitions())
             receiveStartOffsets.put(partition, 0L);
@@ -129,7 +141,7 @@ public class KafkaReceiverTest {
     @Test
     public void receiveOne() {
         receiverOptions = receiverOptions.subscription(Collections.singleton(topic));
-        sendReceiveAndVerify(1, 1, r -> true);
+        sendReceiveAndVerify(1, 1);
     }
 
     /**
@@ -138,7 +150,7 @@ public class KafkaReceiverTest {
     @Test
     public void receiveMultiplePartitions() {
         receiverOptions = receiverOptions.subscription(Collections.singleton(topic));
-        sendReceiveAndVerify(10, 10, r -> true);
+        sendReceiveAndVerify(10, 10);
     }
 
     /**
@@ -148,7 +160,8 @@ public class KafkaReceiverTest {
     @Test
     public void assignCallback() {
         receiverOptions = receiverOptions.subscription(Collections.singleton(topic));
-        sendReceiveAndVerify(10, 10, r -> assignedPartitions.contains(r.offset().topicPartition()));
+        sendMessages(topic, 0, 10);
+        receiveAndVerify(10, r -> assertTrue("Assign callback not invoked", assignedPartitions.contains(r.offset().topicPartition())));
     }
 
     /**
@@ -166,7 +179,8 @@ public class KafkaReceiverTest {
                         assignSemaphore.release();
                     })
                 .subscription(Collections.singleton(topic));
-        receiveWithOneOffAction(10, 10, () -> sendMessages(topic, 10, 20));
+        KafkaReceiver<Integer, String> receiver = new KafkaReceiver<>(consumerFactory, receiverOptions);
+        receiveWithOneOffAction(receiver, 10, 10, () -> sendMessages(topic, 10, 20));
         assertTrue("Assign callback not invoked", assignSemaphore.tryAcquire(1, TimeUnit.SECONDS));
     }
 
@@ -245,7 +259,8 @@ public class KafkaReceiverTest {
     @Test
     public void manualAssignment() {
         receiverOptions = receiverOptions.assignment(cluster.partitions(topic));
-        sendReceiveAndVerify(10, 10, r -> assignedPartitions.contains(r.offset().topicPartition()));
+        sendMessages(topic, 0, 10);
+        receiveAndVerify(10, r -> assertTrue("Assign callback not invoked", assignedPartitions.contains(r.offset().topicPartition())));
     }
 
     /**
@@ -253,39 +268,44 @@ public class KafkaReceiverTest {
      */
     @Test
     public void wildcardSubscription() {
-        receiverOptions = receiverOptions.subscription(Pattern.compile("test.*"));
-        sendReceiveAndVerify(10, 10, r -> true);
+        receiverOptions = receiverOptions.subscription(Pattern.compile("[a-z]*2"));
+        sendReceiveAndVerify(10, 10);
     }
 
     /**
-     * Tests {@value AckMode#ATMOST_ONCE} acknowlegement mode good path without failures.
+     * Tests {@link Receiver#receiveAtmostOnce()} good path without failures.
      */
     @Test
     public void atmostOnce() {
         receiverOptions = receiverOptions
-                .subscription(Collections.singleton(topic))
-                .ackMode(AckMode.ATMOST_ONCE);
-        sendReceiveAndVerify(20, 10, r -> cluster.committedOffset(groupId, r.offset().topicPartition()) >= r.offset().offset());
+                .subscription(Collections.singleton(topic));
+        sendMessages(topic, 0, 20);
+        Flux<ConsumerRecord<Integer, String>> inboundFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
+                .receiveAtmostOnce()
+                .filter(r -> cluster.committedOffset(groupId, topicPartition(r)) >= r.offset());
+        verifyMessages(inboundFlux.take(10), 10);
         verifyCommits(groupId, topic, 10);
     }
 
     /**
-     * Tests that transient commit failures are retried with {@value AckMode#ATMOST_ONCE}.
+     * Tests that transient commit failures are retried with {@link Receiver#receiveAtmostOnce()}.
      */
     @Test
     public void atmostOnceCommitAttempts() throws Exception {
         consumer.addCommitException(new RetriableCommitFailedException("coordinator failed"), 2);
         receiverOptions = receiverOptions
-                .ackMode(AckMode.ATMOST_ONCE)
                 .maxCommitAttempts(10)
                 .subscription(Collections.singletonList(topic));
 
-        sendReceiveAndVerify(20, 10, r -> true);
+        sendMessages(topic, 0, 20);
+        Flux<ConsumerRecord<Integer, String>> inboundFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
+                .receiveAtmostOnce();
+        verifyMessages(inboundFlux.take(10), 10);
         verifyCommits(groupId, topic, 10);
     }
 
     /**
-     * Tests that {@value AckMode#ATMOST_ONCE} commit failures terminate the inbound flux with
+     * Tests that {@link Receiver#receiveAtmostOnce()} commit failures terminate the inbound flux with
      * an error.
      */
     @Test
@@ -293,50 +313,67 @@ public class KafkaReceiverTest {
         consumer.addCommitException(new RetriableCommitFailedException("coordinator failed"), 10);
         int count = 10;
         receiverOptions = receiverOptions
-                .ackMode(AckMode.ATMOST_ONCE)
                 .maxCommitAttempts(2)
                 .subscription(Collections.singletonList(topic));
         sendMessages(topic, 0, count + 10);
-        receiveVerifyError(RetriableCommitFailedException.class, r -> { });
+
+        Flux<ConsumerRecord<Integer, String>> inboundFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
+                .receiveAtmostOnce();
+        StepVerifier.create(inboundFlux)
+            .expectError(RetriableCommitFailedException.class)
+            .verify();
     }
 
     /**
      * Tests that messages are not redelivered if there are downstream message processing exceptions
-     * with {@value AckMode#ATMOST_ONCE}.
+     * with {@link Receiver#receiveAtmostOnce()}.
      */
     @Test
     public void atmostOnceMessageProcessingFailure() {
         receiverOptions = receiverOptions
-                .subscription(Collections.singleton(topic))
-                .ackMode(AckMode.ATMOST_ONCE);
+                .subscription(Collections.singleton(topic));
         sendMessages(topic, 0, 20);
-        receiveVerifyError(RuntimeException.class, r -> {
-                receiveStartOffsets.put(r.offset().topicPartition(), r.offset().offset() + 1);
-                throw new RuntimeException("Test exception");
-            });
+        Flux<ConsumerRecord<Integer, String>> inboundFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
+                .receiveAtmostOnce()
+                .doOnNext(r -> {
+                        receiveStartOffsets.put(topicPartition(r), r.offset() + 1);
+                        throw new RuntimeException("Test exception");
+                    });
+        StepVerifier.create(inboundFlux)
+            .expectError(RuntimeException.class)
+            .verify();
 
         consumerFactory.addConsumer(new MockConsumer(cluster, true));
-        receiveAndVerify(9, r -> cluster.committedOffset(groupId, r.offset().topicPartition()) >= r.offset().offset(), r -> { });
+        Flux<ConsumerRecord<Integer, String>> newFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
+                .receiveAtmostOnce();
+        verifyMessages(newFlux.take(9), 9);
         verifyCommits(groupId, topic, 10);
     }
 
     /**
-     * Tests good path acknowledgement mode {@link AckMode#AUTO_ACK}.
+     * Tests good path auto-ack acknowledgement mode {@link Receiver#receiveAutoAck()}.
      */
     @Test
     public void autoAck() {
         receiverOptions = receiverOptions
-                .subscription(Collections.singleton(topic))
-                .ackMode(AckMode.AUTO_ACK);
-        sendReceiveAndVerify(20, 10, r -> {
-                Long committed = cluster.committedOffset(groupId, r.offset().topicPartition());
-                return committed == null || committed.longValue() <= r.offset().offset();
-            });
+                .consumerProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 2)
+                .commitBatchSize(1)
+                .subscription(Collections.singleton(topic));
+        sendMessages(topic, 0, 20);
+        Flux<ConsumerRecord<Integer, String>> inboundFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
+                .receiveAutoAck()
+                .concatMap(r -> r)
+                .filter(r -> {
+                        Long committed = cluster.committedOffset(groupId, topicPartition(r));
+                        return committed == null || committed.longValue() <= r.offset();
+                    });
+        verifyMessages(inboundFlux.take(11), 11);
+        receivedMessages.removeIf(r -> r.offset() >= 5); // Last record should not be committed
         verifyCommits(groupId, topic, 10);
     }
 
     /**
-     * Tests that retriable commit exceptions are retried with {@value AckMode#AUTO_ACK}.
+     * Tests that retriable commit exceptions are retried with {@link Receiver#receiveAutoAck()}
      */
     @Test
     public void autoAckCommitTransientError() {
@@ -344,9 +381,13 @@ public class KafkaReceiverTest {
         receiverOptions = receiverOptions
                 .subscription(Collections.singleton(topic))
                 .maxCommitAttempts(5)
-                .commitBatchSize(2)
-                .ackMode(AckMode.AUTO_ACK);
-        sendReceiveAndVerify(20, 10, r -> true);
+                .commitBatchSize(2);
+        sendMessages(topic, 0, 20);
+        Flux<ConsumerRecord<Integer, String>> inboundFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
+                .receiveAutoAck()
+                .concatMap(r -> r);
+        verifyMessages(inboundFlux.take(11), 11);
+        receivedMessages.removeIf(r -> r.offset() >= 5); // Last record should not be committed
         verifyCommits(groupId, topic, 10);
     }
 
@@ -360,13 +401,13 @@ public class KafkaReceiverTest {
         receiverOptions = receiverOptions
                 .subscription(Collections.singleton(topic))
                 .maxCommitAttempts(5)
-                .commitBatchSize(2)
-                .ackMode(AckMode.AUTO_ACK);
+                .commitBatchSize(2);
         int count = 100;
         sendMessages(topic, 0, count);
         KafkaReceiver<Integer, String> receiver = new KafkaReceiver<>(consumerFactory, receiverOptions);
         Semaphore errorSemaphore = new Semaphore(0);
-        receiver.receive()
+        receiver.receiveAutoAck()
+                .concatMap(r -> r)
                 .doOnNext(r -> receivedMessages.add(r))
                 .doOnError(e -> errorSemaphore.release())
                 .subscribe();
@@ -383,13 +424,13 @@ public class KafkaReceiverTest {
         receiverOptions = receiverOptions
                 .subscription(Collections.singleton(topic))
                 .maxCommitAttempts(5)
-                .commitBatchSize(2)
-                .ackMode(AckMode.AUTO_ACK);
+                .commitBatchSize(2);
         int count = 100;
         sendMessages(topic, 0, count);
         KafkaReceiver<Integer, String> receiver = new KafkaReceiver<>(consumerFactory, receiverOptions);
         Semaphore errorSemaphore = new Semaphore(0);
-        receiver.receive()
+        receiver.receiveAutoAck()
+                .concatMap(r -> r)
                 .doOnNext(r -> receivedMessages.add(r))
                 .doOnError(e -> errorSemaphore.release())
                 .subscribe();
@@ -398,28 +439,28 @@ public class KafkaReceiverTest {
     }
 
     /**
-     * Tests that only acknowledged offsets are committed with acknowledgement mode
-     * {@value AckMode#MANUAL_ACK}.
+     * Tests that only acknowledged offsets are committed with manual-ack using
+     * {@link Receiver#receive()}.
      */
     @Test
     public void manualAck() {
         receiverOptions = receiverOptions
                 .subscription(Collections.singleton(topic))
-                .ackMode(AckMode.MANUAL_ACK)
                 .commitBatchSize(1);
         Map<TopicPartition, Long> acknowledged = new HashMap<>();
         for (TopicPartition partition : cluster.partitions(topic))
             acknowledged.put(partition, -1L);
-        sendReceiveAndVerify(20, 10, r -> {
-                TopicPartition partition = r.offset().topicPartition();
+        sendMessages(topic, 0, 20);
+        receiveAndVerify(10, r -> {
                 ReceiverOffset offset = r.offset();
+                TopicPartition partition = offset.topicPartition();
                 Long committedOffset = cluster.committedOffset(groupId, partition);
                 boolean valid = committedOffset == null || acknowledged.get(partition) >= committedOffset - 1;
                 if (offset.offset() % 3 == 0) {
                     offset.acknowledge();
                     acknowledged.put(partition, offset.offset());
                 }
-                return valid;
+                assertTrue("Unexpected commit state", valid);
             });
         for (Map.Entry<TopicPartition, Long> entry : acknowledged.entrySet()) {
             Long committedOffset = cluster.committedOffset(groupId, entry.getKey());
@@ -428,80 +469,111 @@ public class KafkaReceiverTest {
     }
 
     /**
-     * Tests acknowledgement mode {@value AckMode#MANUAL_ACK}. Tests that acknowledged
-     * offsets are committed using the configured batch size.
+     * Tests that acknowledged offsets are committed using the configured batch size.
      */
     @Test
     public void manualAckCommitBatchSize() {
+        topic = topics.get(1);
         int batchSize = 4;
         receiverOptions = receiverOptions
                 .subscription(Collections.singleton(topic))
-                .ackMode(AckMode.MANUAL_ACK)
                 .commitBatchSize(batchSize);
-        AtomicInteger receiveCount = new AtomicInteger();
-        sendReceiveAndVerify(20, 10, r -> {
-                if (receiveCount.incrementAndGet() > 10) {
-                    receivedMessages.remove(r);
-                    return false;
-                }
-                Long committedOffset = cluster.committedOffset(groupId, r.offset().topicPartition());
-                r.offset().acknowledge();
-                if (receiveCount.get() < batchSize)
-                    return committedOffset ==  null;
-                else
-                    return committedOffset == null ? true : committedOffset <= r.offset().offset();
+        sendMessages(topic, 0, 20);
+        AtomicLong lastCommitted = new AtomicLong(-1);
+        receiveAndVerify(15, r -> {
+                long offset = r.offset().offset();
+                if (offset < 10) {
+                    r.offset().acknowledge();
+                    if (((offset + 1) % batchSize) == 0)
+                        lastCommitted.set(offset);
+                } else
+                    uncommittedMessages.add(r.record());
+                verifyCommit(r, lastCommitted.get());
             });
         verifyCommits(groupId, topic, 10);
     }
 
     /**
-     * Tests acknowledgement mode {@value AckMode#MANUAL_ACK}. Tests that acknowledged
-     * offsets are committed using the configured commit interval.
+     * Tests that acknowledged offsets are committed using the configured commit interval.
      */
     @Test
     public void manualAckCommitInterval() {
+        topic = topics.get(1);
         Duration interval = Duration.ofMillis(500);
         receiverOptions = receiverOptions
                 .subscription(Collections.singleton(topic))
-                .ackMode(AckMode.MANUAL_ACK)
                 .commitInterval(interval);
-        AtomicInteger receiveCount = new AtomicInteger();
-        sendReceiveAndVerify(20, 10, r -> {
-                if (receiveCount.incrementAndGet() > 10) {
-                    receivedMessages.remove(r);
-                    return false;
-                }
-                Long committedOffset = cluster.committedOffset(groupId, r.offset().topicPartition());
-                r.offset().acknowledge();
-                if (receiveCount.get() < 10)
-                    return committedOffset ==  null;
-                else if (receiveCount.get() == 5)
-                    TestUtils.sleep(interval.toMillis());
-                return committedOffset == null ? true : committedOffset <= r.offset().offset();
+        sendMessages(topic, 0, 20);
+        final int delayIndex = 5;
+        AtomicLong lastCommitted = new AtomicLong(-1);
+        receiveAndVerify(15, r -> {
+                long offset = r.offset().offset();
+                if (r.offset().offset() < 10) {
+                    r.offset().acknowledge();
+                    if (offset == delayIndex) {
+                        TestUtils.sleep(interval.toMillis());
+                        lastCommitted.set(offset);
+                    }
+                } else
+                    uncommittedMessages.add(r.record());
+                verifyCommit(r, lastCommitted.get());
             });
         verifyCommits(groupId, topic, 10);
     }
 
+
+    /**
+     * Tests that acknowledged offsets are committed using the configured commit interval
+     * and the commit batch size if both are configured.
+     */
+    @Test
+    public void manualAckCommitIntervalOrBatchSize() {
+        Duration interval = Duration.ofMillis(500);
+        topic = topics.get(1);
+        int batchSize = 3;
+        final int delayIndex = 5;
+        receiverOptions = receiverOptions
+                .subscription(Collections.singleton(topic))
+                .commitInterval(interval)
+                .commitBatchSize(batchSize);
+        sendMessages(topic, 0, 20);
+        AtomicLong lastCommitted = new AtomicLong(-1);
+        receiveAndVerify(15, r -> {
+                long offset = r.offset().offset();
+                if (offset < 10) {
+                    r.offset().acknowledge();
+                    if (offset == delayIndex) {
+                        TestUtils.sleep(interval.toMillis());
+                        lastCommitted.set(offset);
+                    }
+                    if (((offset + 1) % batchSize) == 0)
+                        lastCommitted.set(offset);
+                } else
+                    uncommittedMessages.add(r.record());
+                verifyCommit(r, lastCommitted.get());
+            });
+
+        verifyCommits(groupId, topic, 10);
+    }
     /**
      * Tests that all acknowledged offsets are committed during graceful close.
      */
     @Test
     public void manualAckClose() throws Exception {
         receiverOptions = receiverOptions
-                .ackMode(AckMode.MANUAL_ACK)
                 .subscription(Collections.singletonList(topic));
-        sendReceiveAndVerify(20, 20, r -> {
+        sendMessages(topic, 0, 20);
+        receiveAndVerify(20, r -> {
                 if (r.offset().offset() < 5)
                     r.offset().acknowledge();
-                return true;
             });
-        receivedMessages.removeIf(r -> r.offset().offset() >= 5);
+        receivedMessages.removeIf(r -> r.offset() >= 5);
         consumerFactory.addConsumer(new MockConsumer(cluster, true));
-        receiveAndVerify(10, r -> true, r -> { });
+        receiveAndVerify(10, r -> { });
     }
 
     /**
-     * Tests acknowledgement mode {@link AckMode#MANUAL_COMMIT} with asynchronous commits.
+     * Tests manual commits for {@link Receiver#receive()} with asynchronous commits.
      * Tests that commits are completed when the flux is closed gracefully.
      */
     @Test
@@ -509,11 +581,12 @@ public class KafkaReceiverTest {
         int count = 10;
         CountDownLatch commitLatch = new CountDownLatch(count);
         receiverOptions = receiverOptions
-                .ackMode(AckMode.MANUAL_COMMIT)
+                .commitBatchSize(0)
+                .commitInterval(Duration.ofMillis(Long.MAX_VALUE))
                 .subscription(Collections.singletonList(topic));
 
         sendMessages(topic, 0, count + 10);
-        receiveAndVerify(10, r -> true, record -> {
+        receiveAndVerify(10, record -> {
                 record.offset()
                       .commit()
                       .doOnSuccess(i -> commitLatch.countDown())
@@ -524,18 +597,19 @@ public class KafkaReceiverTest {
     }
 
     /**
-     * Tests acknowledgement mode {@link AckMode#MANUAL_COMMIT} with synchronous commits
+     * Tests manual commits for {@link Receiver#receive()} with synchronous commits
      * after message processing.
      */
     @Test
     public void manualCommitSync() throws Exception {
         int count = 10;
         receiverOptions = receiverOptions
-                .ackMode(AckMode.MANUAL_COMMIT)
+                .commitBatchSize(0)
+                .commitInterval(Duration.ofMillis(Long.MAX_VALUE))
                 .subscription(Collections.singletonList(topic));
 
         sendMessages(topic, 0, count + 10);
-        receiveAndVerify(10, r -> true, record -> {
+        receiveAndVerify(10, record -> {
                 StepVerifier.create(record.offset().commit()).expectComplete().verify();
             });
         verifyCommits(groupId, topic, 10);
@@ -548,16 +622,17 @@ public class KafkaReceiverTest {
     @Test
     public void manualCommitClose() throws Exception {
         receiverOptions = receiverOptions
-                .ackMode(AckMode.MANUAL_COMMIT)
+                .commitBatchSize(0)
+                .commitInterval(Duration.ofMillis(Long.MAX_VALUE))
                 .subscription(Collections.singletonList(topic));
-        sendReceiveAndVerify(20, 20, r -> {
+        sendMessages(topic, 0, 20);
+        receiveAndVerify(20, r -> {
                 if (r.offset().offset() < 5)
                     r.offset().commit().block();
-                return true;
             });
-        receivedMessages.removeIf(r -> r.offset().offset() >= 5);
+        receivedMessages.removeIf(r -> r.offset() >= 5);
         consumerFactory.addConsumer(new MockConsumer(cluster, true));
-        receiveAndVerify(10, r -> true, r -> { });
+        receiveAndVerify(10, r -> { });
     }
 
     /**
@@ -569,12 +644,13 @@ public class KafkaReceiverTest {
         consumer.addCommitException(new RetriableCommitFailedException("coordinator failed"), 2);
         int count = 10;
         receiverOptions = receiverOptions
-                .ackMode(AckMode.MANUAL_COMMIT)
+                .commitBatchSize(0)
+                .commitInterval(Duration.ofMillis(Long.MAX_VALUE))
                 .maxCommitAttempts(10)
                 .subscription(Collections.singletonList(topic));
 
         sendMessages(topic, 0, count + 10);
-        receiveAndVerify(10, r -> true, record -> record.offset().commit().block());
+        receiveAndVerify(10, record -> record.offset().commit().block());
         verifyCommits(groupId, topic, 10);
     }
 
@@ -583,12 +659,13 @@ public class KafkaReceiverTest {
         consumer.addCommitException(new RetriableCommitFailedException("coordinator failed"), 2);
         int count = 10;
         receiverOptions = receiverOptions
-                .ackMode(AckMode.MANUAL_COMMIT)
+                .commitBatchSize(0)
+                .commitInterval(Duration.ofMillis(Long.MAX_VALUE))
                 .maxCommitAttempts(1)
                 .subscription(Collections.singletonList(topic));
 
         sendMessages(topic, 0, count + 10);
-        receiveAndVerify(10, r -> true, record -> record.offset().commit().retry().block());
+        receiveAndVerify(10, record -> record.offset().commit().retry().block());
         verifyCommits(groupId, topic, 10);
     }
 
@@ -601,7 +678,8 @@ public class KafkaReceiverTest {
         consumer.addCommitException(new RetriableCommitFailedException("coordinator failed"), 10);
         int count = 10;
         receiverOptions = receiverOptions
-                .ackMode(AckMode.MANUAL_COMMIT)
+                .commitBatchSize(0)
+                .commitInterval(Duration.ofMillis(Long.MAX_VALUE))
                 .maxCommitAttempts(2)
                 .subscription(Collections.singletonList(topic));
 
@@ -620,8 +698,7 @@ public class KafkaReceiverTest {
         int count = 10;
         consumerFactory.addConsumer(new MockConsumer(cluster, true));
         receiverOptions = receiverOptions
-                .subscription(Collections.singletonList(topic))
-                .ackMode(AckMode.MANUAL_ACK);
+                .subscription(Collections.singletonList(topic));
         KafkaReceiver<Integer, String> receiver = new KafkaReceiver<>(consumerFactory, receiverOptions);
         Flux<ReceiverRecord<Integer, String>> inboundFlux = receiver
                 .receive()
@@ -632,7 +709,7 @@ public class KafkaReceiverTest {
                 .onErrorResumeWith(e -> receiver.receive().doOnSubscribe(s -> receivedMessages.clear()));
 
         sendMessages(topic, 0, count);
-        receiveAndVerify(inboundFlux, 10, r -> true, r -> { });
+        receiveAndVerify(inboundFlux, 10);
     }
 
     /**
@@ -646,7 +723,7 @@ public class KafkaReceiverTest {
 
         sendMessages(topic, 0, count);
         receiveVerifyError(RuntimeException.class, record -> {
-                receivedMessages.add(record);
+                receivedMessages.add(record.record());
                 if (receivedMessages.size() == 1)
                     throw new RuntimeException("Failing onNext");
             });
@@ -664,7 +741,7 @@ public class KafkaReceiverTest {
     @Test
     public void groupByPartitionElasticScheduling() throws Exception {
         int countPerPartition = 50;
-        topic = topics.get(1);
+        topic = topics.get(20);
         int partitions = cluster.partitions(topic).size();
         CountDownLatch[] latch = new CountDownLatch[partitions];
         for (int i = 0; i < partitions; i++)
@@ -685,7 +762,7 @@ public class KafkaReceiverTest {
                         threadMap.put(thread, partitionSet);
                     }
                     partitionSet.add(partition);
-                    receivedMessages.add(record);
+                    receivedMessages.add(record.record());
                     latch[partition].countDown();
                 }));
 
@@ -717,8 +794,8 @@ public class KafkaReceiverTest {
      */
     @Test
     public void groupByPartitionThreadSharing() throws Exception {
-        int countPerPartition = 20;
-        topic = topics.get(2);
+        int countPerPartition = 10;
+        topic = topics.get(200);
         int partitions = cluster.partitions(topic).size();
         CountDownLatch latch = new CountDownLatch(countPerPartition * partitions);
         int parallelism = 4;
@@ -743,7 +820,7 @@ public class KafkaReceiverTest {
                                  threadMap.put(thread, partitionSet);
                              }
                              partitionSet.add(partition);
-                             receivedMessages.add(record);
+                             receivedMessages.add(record.record());
                              receiveCounts.put(partition, receiveCounts.get(partition) + 1);
                              latch.countDown();
                              synchronized (KafkaReceiverTest.this) {
@@ -756,7 +833,7 @@ public class KafkaReceiverTest {
 
         try {
             sendMessages(topic, 0, countPerPartition * partitions);
-            TestUtils.waitForLatch("Messages not received", latch, Duration.ofSeconds(20));
+            TestUtils.waitForLatch("Messages not received", latch, Duration.ofSeconds(60));
             verifyMessages(countPerPartition * partitions);
             assertEquals(parallelism, threadMap.size());
             // Thread assignment is currently not perfectly balanced, hence the lenient check
@@ -777,7 +854,7 @@ public class KafkaReceiverTest {
      */
     @Test
     public void parallelRoundRobinScheduler() throws Exception {
-        topic = topics.get(2);
+        topic = topics.get(200);
         int partitions = cluster.partitions(topic).size();
         int countPerPartition = 10;
         int count = countPerPartition * partitions;
@@ -795,7 +872,7 @@ public class KafkaReceiverTest {
             .subscribe(record -> {
                     if (firstMessage.compareAndSet(true, false))
                         blocker.acquireUninterruptibly();
-                    receivedMessages.add(record);
+                    receivedMessages.add(record.record());
                 });
         try {
             sendMessages(topic, 0, count);
@@ -819,13 +896,19 @@ public class KafkaReceiverTest {
     public void heartbeatFluxEnable() throws Exception {
         long sessionTimeoutMs = 500;
         consumer = new MockConsumer(cluster, false);
-        consumerFactory = new MockConsumer.Pool(Arrays.asList(consumer), false);
+        consumerFactory = new MockConsumer.Pool(Arrays.asList(consumer));
         receiverOptions = receiverOptions
                 .consumerProperty(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, String.valueOf(sessionTimeoutMs))
                 .consumerProperty(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, "100")
                 .subscription(Collections.singleton(topic));
         sendMessages(topic, 0, 10);
-        receiveWithOneOffAction(1, 9, () -> TestUtils.sleep(sessionTimeoutMs + 500));
+        KafkaReceiver<Integer, String> receiver = new KafkaReceiver<Integer, String>(consumerFactory, receiverOptions) {
+            @Override
+            protected boolean autoHeartbeatEnabledInConsumer() {
+                return false;
+            }
+        };
+        receiveWithOneOffAction(receiver, 1, 9, () -> TestUtils.sleep(sessionTimeoutMs + 500));
     }
 
     /**
@@ -836,13 +919,14 @@ public class KafkaReceiverTest {
     public void heartbeatFluxDisable() throws Exception {
         long sessionTimeoutMs = 500;
         consumer = new MockConsumer(cluster, true);
-        consumerFactory = new MockConsumer.Pool(Arrays.asList(consumer), true);
+        consumerFactory = new MockConsumer.Pool(Arrays.asList(consumer));
         receiverOptions = receiverOptions
                 .consumerProperty(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, String.valueOf(sessionTimeoutMs))
                 .consumerProperty(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, "100")
                 .subscription(Collections.singleton(topic));
         sendMessages(topic, 0, 10);
-        receiveWithOneOffAction(1, 9, () -> TestUtils.sleep(sessionTimeoutMs + 500));
+        KafkaReceiver<Integer, String> receiver = new KafkaReceiver<>(consumerFactory, receiverOptions);
+        receiveWithOneOffAction(receiver, 1, 9, () -> TestUtils.sleep(sessionTimeoutMs + 500));
     }
 
     /**
@@ -850,18 +934,23 @@ public class KafkaReceiverTest {
      * when the KafkaReceiver is created in auto-heartbeat mode.
      */
     @Test
-    public void heartbeatTimeout() throws Exception {
+    public void heartbeatTimeoutWithoutHeartbeatFlux() throws Exception {
         long sessionTimeoutMs = 500;
         consumer = new MockConsumer(cluster, false);
-        consumerFactory = new MockConsumer.Pool(Arrays.asList(consumer), true);
+        consumerFactory = new MockConsumer.Pool(Arrays.asList(consumer));
         receiverOptions = receiverOptions
                 .consumerProperty(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, String.valueOf(sessionTimeoutMs))
                 .consumerProperty(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, "100")
                 .subscription(Collections.singleton(topic));
         int count = 10;
         sendMessages(topic, 0, count);
-        KafkaReceiver<Integer, String> receiver = new KafkaReceiver<>(consumerFactory, receiverOptions);
-        StepVerifier.create(receiver.receive().take(count), 1)
+        KafkaReceiver<Integer, String> receiver = new KafkaReceiver<Integer, String>(consumerFactory, receiverOptions) {
+            @Override
+            protected boolean autoHeartbeatEnabledInConsumer() {
+                return true;
+            }
+        };
+        StepVerifier.create(receiver.receive().take(count).map(r -> r.record()), 1)
                 .recordWith(() -> receivedMessages)
                 .expectNextCount(1)
                 .thenRequest(1)
@@ -870,6 +959,191 @@ public class KafkaReceiverTest {
                 .expectNoEvent(Duration.ofMillis(sessionTimeoutMs + 1000))
                 .thenCancel()
                 .verify();
+    }
+
+    @Test
+    public void backPressureReceive() throws Exception {
+        receiverOptions = receiverOptions.consumerProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "1")
+            .subscription(Collections.singleton(topic));
+        Flux<?> flux = new KafkaReceiver<>(consumerFactory, receiverOptions).receive();
+        testBackPressure(flux);
+    }
+
+    @Test
+    public void backPressureReceiveAutoAck() throws Exception {
+        receiverOptions = receiverOptions.consumerProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "1")
+            .subscription(Collections.singleton(topic));
+        Flux<?> flux = new KafkaReceiver<>(consumerFactory, receiverOptions).receiveAutoAck();
+        testBackPressure(flux);
+    }
+
+    @Test
+    public void backPressureReceiveAtmostOnce() throws Exception {
+        receiverOptions = receiverOptions.consumerProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "1")
+            .subscription(Collections.singleton(topic));
+        Flux<?> flux = new KafkaReceiver<>(consumerFactory, receiverOptions).receiveAtmostOnce();
+        testBackPressure(flux);
+    }
+
+    private void testBackPressure(Flux<?> flux) throws Exception {
+        int count = 5;
+        sendMessages(topic, 0, count);
+        Step<?> step = StepVerifier.create(flux.take(count), 1);
+        for (int i = 0; i < count - 1; i++) {
+            step = step.expectNextCount(1)
+                       .then(() -> {
+                               long pollCount = consumer.pollCount();
+                               TestUtils.sleep(100);
+                               assertEquals(pollCount, consumer.pollCount());
+                           })
+                       .thenRequest(1);
+        }
+        step.expectNextCount(1).expectComplete().verify();
+    }
+
+    @Test
+    public void consumerMethods() throws Exception {
+        testConsumerMethod(c -> assertEquals(this.assignedPartitions, c.assignment()));
+        testConsumerMethod(c -> assertEquals(Collections.singleton(topic), c.subscription()));
+        testConsumerMethod(c -> assertEquals(2, c.partitionsFor(topics.get(2)).size()));
+        testConsumerMethod(c -> assertEquals(topics.size(), c.listTopics().size()));
+        testConsumerMethod(c -> assertEquals(0, c.metrics().size()));
+
+        testConsumerMethod(c -> {
+                Collection<TopicPartition> partitions = Collections.singleton(new TopicPartition(topic, 1));
+                c.pause(partitions);
+                assertEquals(partitions, c.paused());
+                c.resume(partitions);
+            });
+        testConsumerMethod(c -> {
+                TopicPartition partition = new TopicPartition(topic, 1);
+                Collection<TopicPartition> partitions = Collections.singleton(partition);
+                long position = c.position(partition);
+                c.seekToBeginning(partitions);
+                assertEquals(0, c.position(partition));
+                c.seekToEnd(partitions);
+                assertTrue("Did not seek to end", c.position(partition) > 0);
+                c.seek(partition, position);
+            });
+    }
+
+    private void testConsumerMethod(Consumer<org.apache.kafka.clients.consumer.Consumer<Integer, String>> method) {
+        receivedMessages.clear();
+        consumerFactory.addConsumer(new MockConsumer(cluster, true));
+        receiverOptions = receiverOptions
+                .subscription(Collections.singleton(topic));
+        KafkaReceiver<Integer, String> receiver = new KafkaReceiver<>(consumerFactory, receiverOptions);
+        Flux<ReceiverRecord<Integer, String>> inboundFlux = receiver
+                .receive()
+                .doOnNext(r -> {
+                        Mono<?> mono = receiver.doOnConsumer(c -> {
+                                method.accept(c);
+                                return true;
+                            });
+                        mono.block();
+                    });
+        sendMessages(topic, 0, 10);
+        receiveAndVerify(inboundFlux, 10);
+    }
+
+    /**
+     * Tests methods not permitted on KafkaConsumer using {@link Receiver#doOnConsumer(java.util.function.Function)}
+     */
+    @Test
+    public void consumerDisallowedMethods() {
+        ConsumerRebalanceListener rebalanceListener = new ConsumerRebalanceListener() {
+            @Override
+            public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
+            }
+            @Override
+            public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
+            }
+        };
+        OffsetCommitCallback commitListener = new OffsetCommitCallback() {
+            @Override
+            public void onComplete(Map<TopicPartition, OffsetAndMetadata> offsets, Exception exception) {
+            }
+        };
+        testDisallowedConsumerMethod(c -> c.poll(0));
+        testDisallowedConsumerMethod(c -> c.close());
+        testDisallowedConsumerMethod(c -> c.assign(Collections.singleton(new TopicPartition(topic, 0))));
+        testDisallowedConsumerMethod(c -> c.subscribe(Collections.singleton(topic)));
+        testDisallowedConsumerMethod(c -> c.subscribe(Collections.singleton(topic), rebalanceListener));
+        testDisallowedConsumerMethod(c -> c.subscribe(Pattern.compile(".*"), rebalanceListener));
+        testDisallowedConsumerMethod(c -> c.unsubscribe());
+        testDisallowedConsumerMethod(c -> c.commitAsync());
+        testDisallowedConsumerMethod(c -> c.commitAsync(commitListener));
+        testDisallowedConsumerMethod(c -> c.commitAsync(new HashMap<>(), commitListener));
+        testDisallowedConsumerMethod(c -> c.commitSync());
+        testDisallowedConsumerMethod(c -> c.commitSync(new HashMap<>()));
+        testDisallowedConsumerMethod(c -> c.wakeup());
+    }
+
+    private void testDisallowedConsumerMethod(Consumer<org.apache.kafka.clients.consumer.Consumer<Integer, String>> method) {
+        consumerFactory.addConsumer(new MockConsumer(cluster, true));
+        receiverOptions = receiverOptions
+                .subscription(Collections.singleton(topic));
+        sendMessages(topic, 0, 10);
+        KafkaReceiver<Integer, String> receiver = new KafkaReceiver<>(consumerFactory, receiverOptions);
+        Flux<ReceiverRecord<Integer, String>> inboundFlux = receiver
+                .receive()
+                .doOnNext(r -> {
+                        Mono<?> mono = receiver.doOnConsumer(c -> {
+                                method.accept(c);
+                                return true;
+                            });
+                        mono.block();
+                    });
+        StepVerifier.create(inboundFlux)
+            .expectError(UnsupportedOperationException.class)
+            .verify();
+    }
+
+    /**
+     * Tests that a receiver can receive again after the first receive terminates, but
+     * not while the first receive is still active.
+     */
+    @Test
+    public void multipleReceives() {
+        for (int i = 0; i < 5; i++)
+            consumerFactory.addConsumer(new MockConsumer(cluster, true));
+        receiverOptions = receiverOptions
+                .subscription(Collections.singleton(topic));
+        KafkaReceiver<Integer, String> receiver = new KafkaReceiver<>(consumerFactory, receiverOptions);
+        Flux<ReceiverRecord<Integer, String>> inboundFlux = receiver.receive()
+                .doOnNext(r -> r.offset().acknowledge());
+        try {
+            receiver.receive();
+            fail("Multiple outstanding receives on the same receiver");
+        } catch (IllegalStateException e) {
+            // Expected exception
+        }
+        try {
+            receiver.receiveAtmostOnce();
+            fail("Multiple outstanding receives on the same receiver");
+        } catch (IllegalStateException e) {
+            // Expected exception
+        }
+
+        try {
+            receiver.receiveAutoAck();
+            fail("Multiple outstanding receives on the same receiver");
+        } catch (IllegalStateException e) {
+            // Expected exception
+        }
+
+        sendMessages(topic, 0, 10);
+        receiveAndVerify(inboundFlux, 10);
+
+        inboundFlux = receiver.receive().doOnNext(r -> r.offset().acknowledge());
+        sendMessages(topic, 10, 10);
+        receiveAndVerify(inboundFlux, 10);
+
+        sendMessages(topic, 20, 10);
+        verifyMessages(receiver.receiveAtmostOnce().take(10), 10);
+
+        sendMessages(topic, 30, 10);
+        verifyMessages(receiver.receiveAutoAck().concatMap(r -> r).take(10), 10);
     }
 
     private void sendMessages(String topic, int startIndex, int count) {
@@ -888,20 +1162,26 @@ public class KafkaReceiverTest {
         }
     }
 
-    private void sendReceiveAndVerify(int sendCount, int receiveCount, Predicate<ReceiverRecord<Integer, String>> filter) {
+    private void sendReceiveAndVerify(int sendCount, int receiveCount) {
         sendMessages(topic, 0, sendCount);
-        receiveAndVerify(receiveCount, filter, r -> { });
+        receiveAndVerify(receiveCount, r -> { });
     }
 
-    private void receiveAndVerify(int receiveCount, Predicate<ReceiverRecord<Integer, String>> filter, Consumer<ReceiverRecord<Integer, String>> onNext) {
-        Flux<ReceiverRecord<Integer, String>> inboundFlux = new KafkaReceiver<>(consumerFactory, receiverOptions).receive();
-        receiveAndVerify(inboundFlux, receiveCount, filter, onNext);
+    private void receiveAndVerify(int receiveCount, Consumer<ReceiverRecord<Integer, String>> onNext) {
+        Flux<ReceiverRecord<Integer, String>> inboundFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
+                .receive()
+                .doOnNext(onNext);
+        receiveAndVerify(inboundFlux, receiveCount);
     }
 
-    private void receiveAndVerify(Flux<ReceiverRecord<Integer, String>> inboundFlux, int receiveCount,
-            Predicate<ReceiverRecord<Integer, String>> filter,
-            Consumer<ReceiverRecord<Integer, String>> onNext) {
-        StepVerifier.create(inboundFlux.take(receiveCount).filter(filter).doOnNext(onNext))
+    private void receiveAndVerify(Flux<ReceiverRecord<Integer, String>> inboundFlux, int receiveCount) {
+        Flux<ConsumerRecord<Integer, String>> flux = inboundFlux
+                .map(r -> r.record());
+        verifyMessages(flux.take(receiveCount), receiveCount);
+    }
+
+    private void verifyMessages(Flux<ConsumerRecord<Integer, String>> inboundFlux, int receiveCount) {
+        StepVerifier.create(inboundFlux)
                 .recordWith(() -> receivedMessages)
                 .expectNextCount(receiveCount)
                 .expectComplete()
@@ -916,9 +1196,8 @@ public class KafkaReceiverTest {
             .verify();
     }
 
-    private void receiveWithOneOffAction(int receiveCount1, int receiveCount2, Runnable task) {
-        KafkaReceiver<Integer, String> receiver = new KafkaReceiver<>(consumerFactory, receiverOptions);
-        StepVerifier.create(receiver.receive().take(receiveCount1 + receiveCount2), receiveCount1)
+    private void receiveWithOneOffAction(KafkaReceiver<Integer, String> receiver, int receiveCount1, int receiveCount2, Runnable task) {
+        StepVerifier.create(receiver.receive().take(receiveCount1 + receiveCount2).map(r -> r.record()), receiveCount1)
                 .recordWith(() -> receivedMessages)
                 .expectNextCount(receiveCount1)
                 .then(task)
@@ -931,14 +1210,14 @@ public class KafkaReceiverTest {
         verifyMessages(receiveCount1  + receiveCount2);
     }
 
-    private Map<TopicPartition, List<ReceiverRecord<Integer, String>>> receivedByPartition() {
-        Map<TopicPartition, List<ReceiverRecord<Integer, String>>> received = new HashMap<>();
+    private Map<TopicPartition, List<ConsumerRecord<Integer, String>>> receivedByPartition() {
+        Map<TopicPartition, List<ConsumerRecord<Integer, String>>> received = new HashMap<>();
         for (PartitionInfo partitionInfo: cluster.cluster().partitionsForTopic(topic)) {
             TopicPartition partition = new TopicPartition(topic, partitionInfo.partition());
-            List<ReceiverRecord<Integer, String>> list = new ArrayList<>();
+            List<ConsumerRecord<Integer, String>> list = new ArrayList<>();
             received.put(partition, list);
-            for (ReceiverRecord<Integer, String> r : receivedMessages) {
-                if (r.offset().topicPartition().equals(partition))
+            for (ConsumerRecord<Integer, String> r : receivedMessages) {
+                if (r.topic().equals(topic) && r.partition() == partition.partition())
                     list.add(r);
             }
         }
@@ -947,23 +1226,37 @@ public class KafkaReceiverTest {
 
     public void verifyMessages(int count) {
         Map<TopicPartition, Long> offsets = new HashMap<>(receiveStartOffsets);
-        for (ReceiverRecord<Integer, String> received : receivedMessages) {
-            TopicPartition partition = received.offset().topicPartition();
+        for (ConsumerRecord<Integer, String> received : receivedMessages) {
+            TopicPartition partition = topicPartition(received);
             long offset = offsets.get(partition);
             offsets.put(partition, offset + 1);
-            assertEquals(offset, received.offset().offset());
-            assertEquals(cluster.log(partition).get((int) offset).value(), received.record().value());
+            assertEquals(offset, received.offset());
+            assertEquals(cluster.log(partition).get((int) offset).value(), received.value());
         }
     }
 
     private void verifyCommits(String groupId, String topic, int remaining) {
-        for (Map.Entry<TopicPartition, List<ReceiverRecord<Integer, String>>> entry: receivedByPartition().entrySet()) {
+        receivedMessages.removeAll(uncommittedMessages);
+        for (Map.Entry<TopicPartition, List<ConsumerRecord<Integer, String>>> entry: receivedByPartition().entrySet()) {
             Long committedOffset = cluster.committedOffset(groupId, entry.getKey());
-            List<ReceiverRecord<Integer, String>> list = entry.getValue();
-            assertEquals(list.get(list.size() - 1).offset().offset() + 1, committedOffset.longValue());
+            List<ConsumerRecord<Integer, String>> list = entry.getValue();
+            assertFalse("No records received on " + entry.getKey(), list.isEmpty());
+            assertEquals(list.get(list.size() - 1).offset() + 1, committedOffset.longValue());
         }
         consumerFactory.addConsumer(new MockConsumer(cluster, true));
-        receiveAndVerify(remaining, r -> true, r -> { });
+        receiveAndVerify(remaining, r -> { });
+    }
+
+    private void verifyCommit(ReceiverRecord<Integer, String> r, long lastCommitted) {
+        TopicPartition partition = r.offset().topicPartition();
+        Long committedOffset = cluster.committedOffset(groupId, partition);
+        long offset = r.offset().offset();
+        if (lastCommitted >= 0 && offset == lastCommitted) {
+            TestUtils.waitUntil("Offset not committed", null,
+                    p -> cluster.committedOffset(groupId, p) == (Long) (offset + 1), partition, Duration.ofSeconds(1));
+        }
+        committedOffset = cluster.committedOffset(groupId, partition);
+        assertEquals(committedOffset, lastCommitted == -1 ? null : lastCommitted + 1);
     }
 
     private CountDownLatch asyncReceive(int receiveCount) {
@@ -971,10 +1264,14 @@ public class KafkaReceiverTest {
         CountDownLatch latch = new CountDownLatch(10);
         receiver.receive()
                 .doOnNext(r -> {
-                        receivedMessages.add(r);
+                        receivedMessages.add(r.record());
                         latch.countDown();
                     })
                 .subscribe();
         return latch;
+    }
+
+    private TopicPartition topicPartition(ConsumerRecord<?, ?> record) {
+        return new TopicPartition(record.topic(), record.partition());
     }
 }

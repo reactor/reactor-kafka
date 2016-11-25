@@ -32,11 +32,10 @@ import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.RetriableCommitFailedException;
 import org.apache.kafka.common.TopicPartition;
-
-import reactor.kafka.receiver.internals.ConsumerFactory;
+import org.apache.kafka.common.config.ConfigException;
 
 /**
- * Configuration properties for Reactive Kafka receiver and its underlying Kafka consumer.
+ * Configuration properties for Reactive Kafka {@link Receiver} and its underlying {@link KafkaConsumer}.
  */
 public class ReceiverOptions<K, V> {
 
@@ -47,7 +46,6 @@ public class ReceiverOptions<K, V> {
     private final List<Consumer<Collection<ReceiverPartition>>> assignListeners;
     private final List<Consumer<Collection<ReceiverPartition>>> revokeListeners;
 
-    private AckMode ackMode;
     private Duration pollTimeout;
     private Duration closeTimeout;
     private Duration commitInterval;
@@ -66,7 +64,7 @@ public class ReceiverOptions<K, V> {
     }
 
     /**
-     * Creates an options instance with the specified config overrides for Kafka consumer.
+     * Creates an options instance with the specified config overrides for {@link KafkaConsumer}.
      * @return new instance of receiver options
      */
     public static <K, V> ReceiverOptions<K, V> create(Map<String, Object> configProperties) {
@@ -76,7 +74,7 @@ public class ReceiverOptions<K, V> {
     }
 
     /**
-     * Creates an options instance with the specified config overrides for Kafka consumer.
+     * Creates an options instance with the specified config overrides for {@link KafkaConsumer}.
      * @return new instance of receiver options
      */
     public static <K, V> ReceiverOptions<K, V> create(Properties configProperties) {
@@ -90,17 +88,16 @@ public class ReceiverOptions<K, V> {
         assignListeners = new ArrayList<>();
         revokeListeners = new ArrayList<>();
 
-        ackMode = AckMode.AUTO_ACK;
         pollTimeout = DEFAULT_POLL_TIMEOUT;
         closeTimeout = Duration.ofNanos(Long.MAX_VALUE);
-        commitInterval = ConsumerFactory.INSTANCE.defaultAutoCommitInterval();
-        commitBatchSize = Integer.MAX_VALUE;
+        commitInterval = Duration.ofMillis(5000); // Kafka default
+        commitBatchSize = 0;
         maxCommitAttempts = DEFAULT_MAX_COMMIT_ATTEMPTS;
         properties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
     }
 
     /**
-     * Returns the configuration properties of the underlying Kafka consumer.
+     * Returns the configuration properties of the underlying {@link KafkaConsumer}.
      * @return options to configure for Kafka consumer.
      */
     public Map<String, Object> consumerProperties() {
@@ -108,7 +105,7 @@ public class ReceiverOptions<K, V> {
     }
 
     /**
-     * Returns the Kafka consumer configuration property for the specified option name.
+     * Returns the {@link KafkaConsumer} configuration property for the specified option name.
      * @return Kafka consumer configuration option value
      */
     public Object consumerProperty(String name) {
@@ -116,28 +113,11 @@ public class ReceiverOptions<K, V> {
     }
 
     /**
-     * Sets Kafka consumer configuration property to the specified value.
+     * Sets {@link KafkaConsumer} configuration property to the specified value.
      * @return options instance with updated Kafka consumer property
      */
     public ReceiverOptions<K, V> consumerProperty(String name, Object newValue) {
         this.properties.put(name, newValue);
-        return this;
-    }
-
-    /**
-     * Returns acknowledgement mode. See {@link AckMode} for details.
-     * @return acknowledgement mode
-     */
-    public AckMode ackMode() {
-        return ackMode;
-    }
-
-    /**
-     * Sets acknowledgement mode. See {@link AckMode} for details.
-     * @return options instance with acknowledgement mode
-     */
-    public ReceiverOptions<K, V> ackMode(AckMode ackMode) {
-        this.ackMode = ackMode;
         return this;
     }
 
@@ -152,7 +132,8 @@ public class ReceiverOptions<K, V> {
     /**
      * Sets the timeout for each {@link KafkaConsumer#poll(long)} operation. Since
      * the underlying Kafka consumer is not thread-safe, long poll intervals may delay
-     * commits. Very short timeouts may reduce batching and increase load on the broker,
+     * commits and other operations invoked using {@link Receiver#doOnConsumer(java.util.function.Function)}.
+     * Very short timeouts may reduce batching and increase load on the broker,
      * @return options instance with new poll timeout
      */
     public ReceiverOptions<K, V> pollTimeout(Duration timeout) {
@@ -161,7 +142,7 @@ public class ReceiverOptions<K, V> {
     }
 
     /**
-     * Returns timeout for graceful shutdown of Kafka consumer.
+     * Returns timeout for graceful shutdown of {@link KafkaConsumer}.
      * @return close timeout duration
      */
     public Duration closeTimeout() {
@@ -169,7 +150,7 @@ public class ReceiverOptions<K, V> {
     }
 
     /**
-     * Sets timeout for graceful shutdown of Kafka consumer.
+     * Sets timeout for graceful shutdown of {@link KafkaConsumer}.
      * @return options instance with new close timeout
      */
     public ReceiverOptions<K, V> closeTimeout(Duration timeout) {
@@ -182,7 +163,7 @@ public class ReceiverOptions<K, V> {
      * to different offsets of the assigned partitions using any of the seek methods in
      * {@link ReceiverPartition}. When group management is used, assign listeners are invoked
      * after every rebalance operation. With manual partition assignment using {@link ReceiverOptions#assignment()},
-     * assign listeners are invoked once when the inbound Flux is subscribed to.
+     * assign listeners are invoked once when the receive Flux is subscribed to.
      * @return options instance with new partition assignment listener
      */
     public ReceiverOptions<K, V> addAssignListener(Consumer<Collection<ReceiverPartition>> onAssign) {
@@ -191,11 +172,11 @@ public class ReceiverOptions<K, V> {
     }
 
     /**
-     * Adds a listener for partition revocations. Applications can use this listener to commit offsets
-     * when ack mode is {@link AckMode#MANUAL_COMMIT}. Acknowledged offsets are committed automatically
-     * on revocation for other ack modes. When group management is used, revoke listeners are invoked before
-     * every rebalance operation. With manual partition assignment using {@link ReceiverOptions#assignment()},
-     * revoke listeners are invoked once when the inbound Flux is terminated.
+     * Adds a listener for partition revocations. Applications can use this listener to commit
+     * offsets if required. Acknowledged offsets are committed automatically on revocation.
+     * When group management is used, revoke listeners are invoked before every rebalance
+     * operation. With manual partition assignment using {@link ReceiverOptions#assignment()},
+     * revoke listeners are invoked once when the receive Flux is terminated.
      * @return options instance with new partition revocation listener
      */
     public ReceiverOptions<K, V> addRevokeListener(Consumer<Collection<ReceiverPartition>> onRevoke) {
@@ -239,8 +220,8 @@ public class ReceiverOptions<K, V> {
 
     /**
      * Sets subscription using group management to the specified collection of topics.
-     * This subscription is enabled when a reactive consumer using this options
-     * instance is subscribed to. Any existing subscriptions or assignments on this
+     * This subscription is enabled when the receive Flux of a {@link Receiver} using this
+     * options instance is subscribed to. Any existing subscriptions or assignments on this
      * option are deleted.
      * @return options instance with new subscription
      */
@@ -253,8 +234,8 @@ public class ReceiverOptions<K, V> {
 
     /**
      * Sets subscription using group management to the specified pattern.
-     * This subscription is enabled when a reactive consumer using this options
-     * instance is subscribed to. Any existing subscriptions or assignments on this
+     * This subscription is enabled when the receive Flux of a {@link Receiver} using this
+     * options instance is subscribed to. Any existing subscriptions or assignments on this
      * option are deleted. Topics are dynamically assigned or removed when topics
      * matching the pattern are created or deleted.
      * @return options instance with new subscription
@@ -268,8 +249,8 @@ public class ReceiverOptions<K, V> {
 
     /**
      * Sets subscription using manual assignment to the specified partitions.
-     * This assignment is enabled when a reactive consumer using this options
-     * instance is subscribed to. Any existing subscriptions or assignments on this
+     * This assignment is enabled when the receive Flux of a {@link Receiver} using this
+     * options instance is subscribed to. Any existing subscriptions or assignments on this
      * option are deleted.
      * @return options instance with new partition assignment
      */
@@ -281,8 +262,8 @@ public class ReceiverOptions<K, V> {
     }
 
     /**
-     * Returns the collection of partitions to be assigned if this options is using
-     * manual assignment.
+     * Returns the collection of partitions to be assigned if this instance is
+     * configured for manual partition assignment.
      *
      * @return partitions to be assigned
      */
@@ -315,7 +296,7 @@ public class ReceiverOptions<K, V> {
      * @return group id
      */
     public String groupId() {
-        return ConsumerFactory.INSTANCE.groupId(this);
+        return (String) consumerProperty(ConsumerConfig.GROUP_ID_CONFIG);
     }
 
     /**
@@ -323,11 +304,14 @@ public class ReceiverOptions<K, V> {
      * @return heartbeat interval duration
      */
     public Duration heartbeatInterval() {
-        return ConsumerFactory.INSTANCE.heartbeatInterval(this);
+        long defaultValue = 3000; // Kafka default
+        long heartbeatIntervalMs = getLongOption(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, defaultValue);
+        return Duration.ofMillis(heartbeatIntervalMs);
     }
 
     /**
-     * Returns the configured commit interval for {@link AckMode#AUTO_ACK} or {@link AckMode#MANUAL_ACK}.
+     * Returns the configured commit interval for automatic commits for automatic
+     * commits of acknowledged records.
      * @return commit interval duration
      */
     public Duration commitInterval() {
@@ -335,17 +319,33 @@ public class ReceiverOptions<K, V> {
     }
 
     /**
-     * Configures commit interval for {@link AckMode#AUTO_ACK} or {@link AckMode#MANUAL_ACK}. At least
-     * one commit operation is attempted within this interval if messages are consumed.
+     * Configures commit interval for automatic commits. At least one commit operation is
+     * attempted within this interval if messages are consumed and acknowledged.
+     * <p>
+     * If <code>commitInterval</code> is null or zero, periodic commits based on time intervals
+     * are disabled. If commit batch size is configured, offsets are committed when the number
+     * of acknowledged offsets reaches the batch size. If commit batch size is zero, it
+     * is the responsibility of the application to explicitly commit records using
+     * {@link ReceiverOffset#commit()} if required.
+     *
      * @return options instance with new commit interval
      */
-    public ReceiverOptions<K, V> commitInterval(Duration interval) {
-        this.commitInterval = interval;
+    public ReceiverOptions<K, V> commitInterval(Duration commitInterval) {
+        if (commitInterval != null) {
+            long millis = commitInterval.toMillis();
+            if (millis < 0)
+                throw new IllegalArgumentException("Commit interval must be >= 0");
+            else if (millis == 0)
+                this.commitInterval = null;
+            else
+                this.commitInterval = commitInterval;
+        } else
+            this.commitInterval = null;
         return this;
     }
 
     /**
-     * Returns the configured commit batch size for {@link AckMode#AUTO_ACK} or {@link AckMode#MANUAL_ACK}.
+     * Returns the configured commit batch size for automatic commits of acknowledged records.
      * @return commit batch size
      */
     public int commitBatchSize() {
@@ -353,11 +353,18 @@ public class ReceiverOptions<K, V> {
     }
 
     /**
-     * Configures commit batch size for {@link AckMode#AUTO_ACK} or {@link AckMode#MANUAL_ACK}. At least
-     * one commit operation is attempted when the number of uncommitted offsets reaches this batch size.
+     * Configures commit batch size for automatic commits. At least one commit operation is
+     * attempted  when the number of acknowledged uncommitted offsets reaches this batch size.
+     * <p>
+     * If <code>commitBatchSize</code> is 0, commits are only performed based on commit
+     * interval. If commit interval is null, no automatic commits are performed and it is the
+     * responsibility of the application to commit offsets explicitly using {@link ReceiverOffset#commit()}
+     * if required.
      * @return options instance with new commit batch size
      */
     public ReceiverOptions<K, V> commitBatchSize(int commitBatchSize) {
+        if (commitBatchSize < 0)
+            throw new IllegalArgumentException("Commit batch size must be >= 0");
         this.commitBatchSize = commitBatchSize;
         return this;
     }
@@ -365,7 +372,7 @@ public class ReceiverOptions<K, V> {
     /**
      * Returns the maximum number of consecutive non-fatal commit failures that are tolerated.
      * For manual commits, failure in commit after the configured number of attempts fails
-     * the commit operation. For auto commits, the inbound Flux is terminated.
+     * the commit operation. For auto commits, the receive Flux is terminated.
      * @return maximum number of commit attempts
      */
     public int maxCommitAttempts() {
@@ -375,7 +382,7 @@ public class ReceiverOptions<K, V> {
     /**
      * Configures the maximum number of consecutive non-fatal {@link RetriableCommitFailedException}
      * commit failures that are tolerated. For manual commits, failure in commit after the configured
-     * number of attempts fails the commit operation. For auto commits, the inbound Flux is terminated
+     * number of attempts fails the commit operation. For auto commits, the receive Flux is terminated
      * if the commit does not succeed after these attempts.
      *
      * @return options instance with updated number of commit attempts
@@ -428,11 +435,6 @@ public class ReceiverOptions<K, V> {
             }
 
             @Override
-            public ReceiverOptions<K, V> ackMode(AckMode ackMode) {
-                throw new java.lang.UnsupportedOperationException("Cannot modify immutable options");
-            }
-
-            @Override
             public ReceiverOptions<K, V> pollTimeout(Duration timeout) {
                 throw new java.lang.UnsupportedOperationException("Cannot modify immutable options");
             }
@@ -466,12 +468,26 @@ public class ReceiverOptions<K, V> {
         if (assignTopicPartitions != null)
             options.assignTopicPartitions = new ArrayList<>(assignTopicPartitions);
         options.subscribePattern = subscribePattern;
-        options.ackMode = ackMode;
         options.pollTimeout = pollTimeout;
         options.closeTimeout = closeTimeout;
         options.commitInterval = commitInterval;
         options.commitBatchSize = commitBatchSize;
         options.maxCommitAttempts = maxCommitAttempts;
         return options;
+    }
+
+    private long getLongOption(String optionName, long defaultValue) {
+        Object value = consumerProperty(optionName);
+        long optionValue = 0;
+        if (value != null) {
+            if (value instanceof Long)
+                optionValue = (Long) value;
+            else if (value instanceof String)
+                optionValue = Long.parseLong((String) value);
+            else
+                throw new ConfigException("Invalid value " + value);
+        } else
+            optionValue = defaultValue;
+        return optionValue;
     }
 }

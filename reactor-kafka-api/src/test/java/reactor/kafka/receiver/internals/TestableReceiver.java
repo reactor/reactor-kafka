@@ -45,12 +45,17 @@ public class TestableReceiver {
 
     public static final TopicPartition NON_EXISTENT_PARTITION = new TopicPartition("non-existent", 0);
 
-    private Flux<ReceiverRecord<Integer, String>> kafkaFlux;
-    private KafkaReceiver<Integer, String> kafkaReceiver;
+    private final Flux<ReceiverRecord<Integer, String>> kafkaFlux;
+    private final KafkaReceiver<Integer, String> kafkaReceiver;
 
     public TestableReceiver(Receiver<Integer, String> kafkaReceiver, Flux<ReceiverRecord<Integer, String>> kafkaFlux) {
         this.kafkaReceiver = (KafkaReceiver<Integer, String>) kafkaReceiver;
         this.kafkaFlux = kafkaFlux;
+    }
+
+    public TestableReceiver(Receiver<Integer, String> kafkaReceiver) {
+        this.kafkaReceiver = (KafkaReceiver<Integer, String>) kafkaReceiver;
+        this.kafkaFlux = null;
     }
 
     public Flux<ReceiverRecord<Integer, String>> kafkaFlux() {
@@ -67,12 +72,12 @@ public class TestableReceiver {
         return commitOffsets;
     }
 
-    public Flux<ReceiverRecord<Integer, String>> withManualCommitFailures(boolean retriable, int failureCount,
+    public Flux<ReceiverRecord<Integer, String>> receiveWithManualCommitFailures(boolean retriable, int failureCount,
             Semaphore successSemaphore, Semaphore failureSemaphore) {
         AtomicInteger retryCount = new AtomicInteger();
         if (retriable)
             injectCommitEventForRetriableException();
-        return kafkaFlux
+        return kafkaReceiver.receive()
                 .doOnSubscribe(s -> {
                         if (retriable)
                             injectCommitEventForRetriableException();

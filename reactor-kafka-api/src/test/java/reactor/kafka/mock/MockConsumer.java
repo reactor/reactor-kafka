@@ -30,6 +30,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 
@@ -63,7 +64,6 @@ import reactor.kafka.receiver.internals.ConsumerFactory;
 public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer<Integer, String> {
 
     private static final Logger log = LoggerFactory.getLogger(MockConsumer.class);
-    private static final long MAX_POLL_RECORDS = 2;
 
     private final ScheduledExecutorService executor;
     private final Queue<Runnable> completedCallbacks;
@@ -76,12 +76,15 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
     private final Queue<KafkaException> commitExceptions;
     private final MockCluster cluster;
     private final boolean autoHeartbeat;
+    private final AtomicLong pollCount;
     private Duration sessionTimeout;
+    private int maxPollRecords;
     private long sessionExpiryNanos;
     private long requestLatencyMs;
     private ReceiverOptions<Integer, String> receiverOptions;
     private ConsumerRebalanceListener rebalanceCallback;
     private boolean assignmentPending = false;
+    private Thread consumerThread;
 
     public MockConsumer(MockCluster cluster, boolean autoHeartbeat) {
         super(OffsetResetStrategy.EARLIEST);
@@ -96,12 +99,14 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
         commitExceptions = new ConcurrentLinkedQueue<>();
         this.cluster = cluster;
         this.autoHeartbeat = autoHeartbeat;
+        this.pollCount = new AtomicLong();
         this.requestLatencyMs = 10;
     }
 
     public void configure(ReceiverOptions<Integer, String> receiverOptions) {
         this.receiverOptions = receiverOptions;
-        sessionTimeout = Duration.ofMillis(ConsumerFactory.INSTANCE.getLongOption(receiverOptions, ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, 2000L));
+        this.maxPollRecords = Integer.parseInt(getProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 2));
+        sessionTimeout = Duration.ofMillis(Long.parseLong(String.valueOf(getProperty(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, 2000))));
     }
 
     public void addPollException(KafkaException exception, int count) {
@@ -114,14 +119,28 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
             commitExceptions.add(exception);
     }
 
+    public long pollCount() {
+        return pollCount.get();
+    }
+
     @Override
     public Set<TopicPartition> assignment() {
-        return assignment;
+        acquire();
+        try {
+            return assignment;
+        } finally {
+            release();
+        }
     }
 
     @Override
     public Set<String> subscription() {
-        return subscription;
+        acquire();
+        try {
+            return subscription;
+        } finally {
+            release();
+        }
     }
 
     @Override
@@ -198,6 +217,7 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
     public ConsumerRecords<Integer, String> poll(long timeout) {
         acquire();
         try {
+            pollCount.incrementAndGet();
             Map<TopicPartition, List<ConsumerRecord<Integer, String>>> records = new HashMap<>();
             if (assignmentPending) {
                 doAssign();
@@ -230,7 +250,7 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
                             0, 4, message.value().length(), message.key(), message.value());
                     records.get(partition).add(record);
                     offsets.put(partition, offset + 1);
-                    if (count++ == MAX_POLL_RECORDS)
+                    if (++count == maxPollRecords)
                         break;
                 }
             }
@@ -249,7 +269,12 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
 
     @Override
     public void commitSync(Map<TopicPartition, OffsetAndMetadata> offsets) {
-        throw new UnsupportedOperationException("commitSync");
+        KafkaException exception;
+        if ((exception = commitExceptions.poll()) != null)
+            throw exception;
+        for (Map.Entry<TopicPartition, OffsetAndMetadata> entry : offsets.entrySet()) {
+            cluster.commitOffset(receiverOptions.groupId(), entry.getKey(), entry.getValue().offset());
+        }
     }
 
     @Override
@@ -276,12 +301,7 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
         try {
             executor.schedule(() -> {
                     try {
-                        KafkaException exception;
-                        if ((exception = commitExceptions.poll()) != null)
-                            throw exception;
-                        for (Map.Entry<TopicPartition, OffsetAndMetadata> entry : offsets.entrySet()) {
-                            cluster.commitOffset(receiverOptions.groupId(), entry.getKey(), entry.getValue().offset());
-                        }
+                        commitSync(offsets);
                         completedCallbacks.add(() -> callback.onComplete(offsets, null));
                     } catch (Exception e) {
                         completedCallbacks.add(() -> callback.onComplete(offsets, e));
@@ -349,7 +369,7 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
 
     @Override
     public Map<MetricName, ? extends Metric> metrics() {
-        return null;
+        return new HashMap<>();
     }
 
     @Override
@@ -378,7 +398,12 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
 
     @Override
     public Set<TopicPartition> paused() {
-        return paused;
+        acquire();
+        try {
+            return paused;
+        } finally {
+            release();
+        }
     }
 
     @Override
@@ -460,19 +485,28 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
     private void acquire() {
         if (!consumerLock.tryLock())
             throw new ConcurrentModificationException("Consumer is not thread-safe");
+        Thread currentThread = Thread.currentThread();
+        if (consumerThread == null)
+            consumerThread = currentThread;
+        else if (consumerThread != currentThread)
+            throw new ConcurrentModificationException("Consumer called from multiple threads");
     }
 
     private void release() {
         consumerLock.unlock();
     }
 
+    private String getProperty(String propName, Object defaultValue) {
+        Object value = receiverOptions.consumerProperty(propName);
+        if (value == null) value = defaultValue;
+        return String.valueOf(value);
+    }
+
     public static class Pool extends ConsumerFactory {
         private final List<MockConsumer> freeConsumers = new ArrayList<>();
         private final List<MockConsumer> consumersInUse = new ArrayList<>();
-        private boolean autoHeartbeatEnabledInConsumer;
-        public Pool(List<MockConsumer> freeConsumers, boolean autoHeartbeatEnabledInConsumer) {
+        public Pool(List<MockConsumer> freeConsumers) {
             this.freeConsumers.addAll(freeConsumers);
-            this.autoHeartbeatEnabledInConsumer = autoHeartbeatEnabledInConsumer;
         }
         @SuppressWarnings("unchecked")
         @Override
@@ -481,10 +515,6 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
             consumer.configure((ReceiverOptions<Integer, String>) receiverOptions);
             consumersInUse.add(consumer);
             return (Consumer<K, V>) consumer;
-        }
-        @Override
-        public boolean autoHeartbeatEnabledInConsumer() {
-            return autoHeartbeatEnabledInConsumer;
         }
         public List<MockConsumer> consumersInUse() {
             return consumersInUse;

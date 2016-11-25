@@ -41,7 +41,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
-import reactor.kafka.receiver.AckMode;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.ReceiverRecord;
 import reactor.kafka.receiver.Receiver;
@@ -49,7 +48,7 @@ import reactor.kafka.receiver.ReceiverOffset;
 import reactor.kafka.sender.Sender;
 import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.SenderRecord;
-import reactor.kafka.sender.SenderResponse;
+import reactor.kafka.sender.SenderResult;
 
 /**
  * Sample flows using Reactive API for Kafka.
@@ -127,7 +126,7 @@ public class SampleScenarios {
             this.topic = topic;
         }
         public Flux<?> flux() {
-            return Receiver.create(receiverOptions(AckMode.MANUAL_COMMIT, Collections.singletonList(topic)))
+            return Receiver.create(receiverOptions(Collections.singletonList(topic)).commitInterval(null))
                            .receive()
                            .publishOn(Schedulers.newSingle("sample", true))
                            .flatMap(m -> storeInDB(m.record().value())
@@ -157,7 +156,7 @@ public class SampleScenarios {
         }
         public Flux<?> flux() {
             Sender<Integer, Person> sender = sender(senderOptions());
-            return sender.send(Receiver.create(receiverOptions(AckMode.MANUAL_ACK, Collections.singleton(sourceTopic)))
+            return sender.send(Receiver.create(receiverOptions(Collections.singleton(sourceTopic)))
                                        .receive()
                                        .map(m -> SenderRecord.create(transform(m.record().value()), m.offset())), false)
                          .doOnNext(m -> m.correlationMetadata().acknowledge());
@@ -190,9 +189,9 @@ public class SampleScenarios {
                     .producerProperty(ProducerConfig.ACKS_CONFIG, "0")
                     .producerProperty(ProducerConfig.RETRIES_CONFIG, "0");
             return sender(senderOptions)
-                .send(Receiver.create(receiverOptions(AckMode.ATMOST_ONCE, Collections.singleton(sourceTopic)))
-                              .receive()
-                              .map(cr -> SenderRecord.create(transform(cr.record().value()), cr.offset())),
+                .send(Receiver.create(receiverOptions(Collections.singleton(sourceTopic)))
+                              .receiveAtmostOnce()
+                              .map(cr -> SenderRecord.create(transform(cr.value()), cr.offset())),
                       true);
         }
         public ProducerRecord<Integer, Person> transform(Person p) {
@@ -224,11 +223,12 @@ public class SampleScenarios {
             sender = sender(senderOptions());
             EmitterProcessor<Person> processor = EmitterProcessor.create();
             BlockingSink<Person> incoming = processor.connectSink();
-            Flux<?> inFlux = Receiver.create(receiverOptions(AckMode.AUTO_ACK, Collections.singleton(sourceTopic)))
-                                     .receive()
-                                     .doOnNext(m -> incoming.emit(m.record().value()));
-            Flux<SenderResponse<Integer>> stream1 = sender.send(processor.publishOn(scheduler1).map(p -> SenderRecord.create(process1(p), p.id())), false);
-            Flux<SenderResponse<Integer>> stream2 = sender.send(processor.publishOn(scheduler2).map(p -> SenderRecord.create(process2(p), p.id())), false);
+            Flux<?> inFlux = Receiver.create(receiverOptions(Collections.singleton(sourceTopic)))
+                                     .receiveAutoAck()
+                                     .concatMap(r -> r)
+                                     .doOnNext(m -> incoming.emit(m.value()));
+            Flux<SenderResult<Integer>> stream1 = sender.send(processor.publishOn(scheduler1).map(p -> SenderRecord.create(process1(p), p.id())), false);
+            Flux<SenderResult<Integer>> stream2 = sender.send(processor.publishOn(scheduler2).map(p -> SenderRecord.create(process2(p), p.id())), false);
             return Flux.merge(stream1, stream2)
                        .doOnSubscribe(s -> inFlux.subscribe());
         }
@@ -261,7 +261,7 @@ public class SampleScenarios {
         }
         public Flux<?> flux() {
             Scheduler scheduler = Schedulers.newElastic("sample", 60, true);
-            return Receiver.create(receiverOptions(AckMode.MANUAL_COMMIT, Collections.singleton(topic)))
+            return Receiver.create(receiverOptions(Collections.singleton(topic)).commitInterval(null))
                             .receive()
                             .groupBy(m -> m.offset().topicPartition())
                             .flatMap(partitionFlux -> partitionFlux.publishOn(scheduler)
@@ -445,10 +445,9 @@ public class SampleScenarios {
             return ReceiverOptions.<Integer, Person>create(props);
         }
 
-        public ReceiverOptions<Integer, Person> receiverOptions(AckMode ackMode, Collection<String> topics) {
+        public ReceiverOptions<Integer, Person> receiverOptions(Collection<String> topics) {
             return receiverOptions()
                     .addAssignListener(p -> log.info("Partitions assigned {}", p))
-                    .ackMode(ackMode)
                     .subscription(topics);
         }
 

@@ -18,12 +18,11 @@ package reactor.kafka.receiver;
 
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
-
 /**
- * Represents an incoming message dispatched by {@link Receiver}.
+ * Represents an incoming record dispatched by {@link Receiver}.
  *
- * @param <K> Incomimg message key type
- * @param <V> Incomimg message value type
+ * @param <K> Incomimg record key type
+ * @param <V> Incomimg record value type
  */
 public interface ReceiverRecord<K, V> {
 
@@ -35,11 +34,11 @@ public interface ReceiverRecord<K, V> {
 
     /**
      * Returns an acknowledgeable offset instance that should be acknowledged after this
-     * message record has been consumed if the ack mode is {@link AckMode#MANUAL_ACK} or
-     * {@link AckMode#MANUAL_COMMIT}. If ack mode is {@link AckMode#MANUAL_COMMIT},
-     * {@link ReceiverOffset#commit()} must be invoked to commit all acknowledged records.
+     * record record has been consumed. Acknowledged records are automatically committed
+     * based on the commit batch size and commit interval configured. Acknowledged records
+     * may be also committed using {@link ReceiverOffset#commit()}.
      *
-     * @return committable offset
+     * @return offset to acknowledge after record is processed
      */
     ReceiverOffset offset();
 }

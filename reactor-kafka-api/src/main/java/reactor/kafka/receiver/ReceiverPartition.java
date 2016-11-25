@@ -16,11 +16,10 @@
  **/
 package reactor.kafka.receiver;
 
-import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.TopicPartition;
 
 /**
- * Topic partition interface that supports seek {@link KafkaConsumer#seek(TopicPartition, long)} operations
+ * Topic partition interface that supports <code>seek</code> operations
  * that can be invoked when partitions are assigned.
  *
  */
@@ -34,19 +33,19 @@ public interface ReceiverPartition {
 
     /**
      * Seeks to the first available offset of the topic partition. This overrides the offset
-     * starting from which messages are fetched.
+     * starting from which records are fetched.
      */
     void seekToBeginning();
 
     /**
      * Seeks to the last offset of the topic partition. This overrides the offset
-     * starting from which messages are fetched.
+     * starting from which records are fetched.
      */
     void seekToEnd();
 
     /**
      * Seeks to the specified offset of the topic partition. This overrides the offset
-     * starting from which messages are fetched.
+     * starting from which records are fetched.
      */
     void seek(long offset);
 

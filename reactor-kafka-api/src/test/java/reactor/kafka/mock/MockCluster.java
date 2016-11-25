@@ -42,7 +42,7 @@ public class MockCluster {
     private Cluster cluster;
 
     @SuppressWarnings("deprecation") // Using deprecated constructor to enable testing with 0.10.0.1 and 0.10.1.0
-    public MockCluster(int brokerCount, List<String> topics, List<Integer> partitionCounts) {
+    public MockCluster(int brokerCount, Map<Integer, String> topics) {
         logs = new ConcurrentHashMap<>();
         committedOffsets = new HashMap<>();
         failedNodes = new HashSet<>();
@@ -50,8 +50,8 @@ public class MockCluster {
         for (int i = 0; i < brokerCount; i++)
             nodes.add(new Node(i, "host" + i, 9092));
         cluster = new Cluster(nodes, new ArrayList<PartitionInfo>(0), Collections.<String>emptySet());
-        for (int i = 0; i < topics.size(); i++)
-            addTopic(topics.get(i), partitionCounts.get(i));
+        for (Map.Entry<Integer, String> entry : topics.entrySet())
+            addTopic(entry.getValue(), entry.getKey());
     }
 
     public void addTopic(String topic, int partitions) {
