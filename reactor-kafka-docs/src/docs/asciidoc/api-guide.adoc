@@ -67,15 +67,18 @@ for each partition, but responses from different partitions may be interleaved.
 
 [source,java]
 --------
-sender.send(outboundFlux, true)                    // <1>
+sender.send(outboundFlux, false)                   // <1>
       .doOnError(e-> log.error("Send failed", e))  // <2>
       .doOnNext(r -> System.out.printf("Message #%d send response: %s\n", r.correlationMetadata(), r.recordMetadata())) <3>
       .subscribe();    // <4>
 --------
 <1> Reactive send operation for the outbound flux that fails if any send fails
 <2> If Kafka send fails, log an error
-<3> For every successful send, print metadata returned by Kafka and the message index in `correlationMetadata()`
-<4> Subscribe with unlimited request. This triggers the actual send.
+<3> Print metadata returned by Kafka and the message index in `correlationMetadata()`
+<4> Subscribe with unlimited request. This triggers the actual flow of records to Kafka.
+
+
+See https://github.com/reactor/reactor-kafka/blob/master/reactor-kafka-samples/src/main/java/reactor/kafka/samples/SampleProducer.java  for the full code listing of a sample producer.
 
 ==== Error handling
 A send operation can specify if the operation should fail immediately on error or wait until all messages have
@@ -86,7 +89,8 @@ records has completed. If `delayError` is false, a response is returned for the 
 terminates immediately with an error.
 
 ==== Send without response metadata
-If individual responses are not required for each send request, producer records can be sent using the method:
+If individual responses are not required for each send request, producer records can be sent directly to Kafka
+without wrapping in `SenderRecord` using the method:
 
 [source,java]
 --------
@@ -98,7 +102,8 @@ terminates on the first send failure.
 
 [source,java]
 --------
-sender.send(Flux.range(1,  10).map(i -> new ProducerRecord<Integer, String>(topic, i, "Message_" + i))) // <1>
+sender.send(Flux.range(1,  10)
+                .map(i -> new ProducerRecord<Integer, String>(topic, i, "Message_" + i))) // <1>
       .doOnError(e -> e.printStackTrace())                       // <2>
       .doOnSuccess(s -> System.out.println("Sends succeeded"))   // <3>
       .subscribe();                                              // <4>
@@ -110,14 +115,14 @@ sender.send(Flux.range(1,  10).map(i -> new ProducerRecord<Integer, String>(topi
 
 
 Note that in all cases the retries configured for the `KafkaProducer` are attempted and failures returned by
-the reactive layer indicate a failure to send after the configured number of retry attempts.
+the reactive `KafkaSender` indicate a failure to send after the configured number of retry attempts.
 
 ==== Threading model
 `KafkaProducer` uses a separate network thread for sending requests and processing responses. To ensure
 that the producer network thread is never blocked by applications while processing responses, `Sender`
 delivers responses to applications on a separate scheduler. By default, this is a single threaded
 pooled scheduler that is freed when no longer required. The scheduler can be overridden if required, for instance,
-to use a parallel scheduler when the Kafka sends are part of a larger pipeline. This is done on the options
+to use a parallel scheduler when the Kafka sends are part of a larger pipeline. This is done on the `SenderOptions`
 instance before the Sender instance is created using:
 
 
@@ -145,14 +150,27 @@ public SenderOptions<K, V> maxInFlight(int maxInFlight);
 When the sender is no longer required, the sender instance can be closed. The underlying `KafkaProducer` is closed,
 closing all client connections and freeing all memory used by the producer.
 
-
 [source,java]
 --------
 sender.close();
 --------
 
+==== Access to the underlying `KafkaProducer`
 
-See https://github.com/reactor/reactor-kafka/blob/master/reactor-kafka-samples/src/main/java/reactor/kafka/samples/SampleProducer.java  for the full code listing of a sample producer.
+Reactive applications may sometimes require access to the underlying producer instance to perform actions that are not
+exposed by the `Sender` interface. For example, an application might need to know the number of partitions in a topic
+in order to choose the partition to send a record to. Operations that are not provided directly by `Sender` like 'send`
+can be run on the underlying `KafkaProducer` using `doOnProducer`. User provided methods are executed asynchronously.
+
+[source,java]
+--------
+sender.doOnProducer(producer -> producer.partitionsFor(topic))
+      .doOnSuccess(partitions -> System.out.println("Partitions " + partitions))
+      .subscribe();
+--------
+
+A `Mono` is returned by `doOnProducer` which completes with the value returned by the user-provided function.
+
 
 [[api-guide-receiver]]
 === Reactive Receiver
@@ -164,27 +182,25 @@ since the underlying `KafkaConsumer` cannot be accessed concurrently by multiple
 A receiver is created with an instance of receiver configuration options `reactor.kafka.receiver.ReceiverOptions`.
 The properties of `KafkaConsumer` including list of bootstrap Kafka brokers and de-serializers must be
 set on `ReceiverOptions` at creation time or using the setter `ReceiverOptions#consumerProperty`. Other
-configuration options for the reactive receiver including subscription topics and acknowledgement mode
-should be added to options before the receiver is created.
-Changes made to `ReceiverOptions` after the creation of the receiver instance will not be used by the `Receiver`.
+configuration options for the reactive receiver including subscription topics must be added to options
+before the receiver is created. Changes made to `ReceiverOptions` after the creation of the receiver instance
+will not be used by the `Receiver`.
 
 The generic types of `ReceiverOptions` and `Receiver` are the key and value types of consumer records
-consumer using the receiver and corresponding de-serializers must be set on the receiver options before
+consumed using the receiver and corresponding de-serializers must be set on the receiver options before
 the receiver is created.
 
 [source,java]
 --------
 ReceiverOptions<Integer, String> receiverOptions =
     ReceiverOptions.create(consumerProperties)                     // <1>
-                   .ackMode(AckMode.MANUAL_ACK)                    // <2>
-                   .subscription(Collections.singleton(topic));    // <3>
+                   .subscription(Collections.singleton(topic));    // <2>
 --------
 <1> Specify properties to be provided to `KafkaConsumer`
-<2> Acknowlegement mode, default is AUTO_ACK
-<3> Topics to subscribe to
+<2> Topics to subscribe to
 
 Once the required configuration options have been configured on the options instance, a new `Receiver` instance
-can be created with these options and inbound messages can be consumed on the `Receiver`.
+can be created with these options to consume inbound messages.
 The code block below creates a receiver instance and creates an inbound flux for the receiver.
 The underlying `KafkaConsumer` instance is created lazily later when the inbound flux is subscribed to.
 
@@ -197,17 +213,19 @@ Flux<ReceiverRecord<Integer, String>> inboundFlux =
 --------
 
 The inbound Kafka flux is ready to be consumed. Each inbound `ReceiverRecord` from the flux contains one
-`ConsumerRecord` returned by `KafkaConsumer` along with a committable offset instance. If
-acknowledgement mode is `MANUAL_ACK`, the offset must be acknowledged after the message is processed
-since unacknowledged offsets will not be committed. If acknowledgement mode is `MANUAL_COMMIT`,
-the offset must be committed explicitly after the message or a batch of messages is processed.
+`ConsumerRecord` returned by `KafkaConsumer` along with a committable offset instance. The offset
+must be acknowledged after the message is processed since unacknowledged offsets will not be committed. 
+If commit interval or commit batch size are configured, acknowledged offsets will be committed periodically.
+Offsets may also be committed manually using `ReceiverOffset#commit()` if finer grain control of commit
+operations is required.
+
 
 
 [source,java]
 --------
-inboundFlux.subscribe(message -> {
-    System.out.printf("Received message: %s\n", message.record());  // <1>
-    message.offset().acknowledge();                                 // <2>
+inboundFlux.subscribe(r -> {
+    System.out.printf("Received message: %s\n", r.record());  // <1>
+    r.offset().acknowledge();                                 // <2>
 });
 --------
 <1> Prints each consumer record from Kafka
@@ -222,10 +240,11 @@ are created or deleted and assigns partitions of matching topics to available co
 
 [source,java]
 --------
-receiverOptions = receiverOptions.subscription(Pattern.compile("demo.*"));
+receiverOptions = receiverOptions.subscription(Pattern.compile("demo.*"));  // <1>
 --------
+<1> Consume records from all topics starting with "demo"
 
-Changes to receiver options must be made before the receiver instance is created. Altering the subscription
+Changes to `ReceiverOptions` must be made before the receiver instance is created. Altering the subscription
 deletes any existing subscriptions on the options instance.
 
 ==== Manual assignment of topic partitions
@@ -233,56 +252,79 @@ Partitions may be manually assigned to the receiver without using Kafka consumer
 
 [source,java]
 --------
-receiverOptions = receiverOptions.assignment(Collections.singleton(new TopicPartition(topic, 0));
+receiverOptions = receiverOptions.assignment(Collections.singleton(new TopicPartition(topic, 0)); // <1>
 --------
+<1> Consume from partition 0 of specified topic
 
-Existing subscriptions and assignments on the options instance are deleted.
-A receiver created from this options instance with manual assignment consumes messages from the
-specified partitions.
-
-
-==== Acknowledgement modes
-Reactive receivers support four acknowledgement modes:
-
-. AUTO_ACK
-. ATMOST_ONCE
-. MANUAL_ACK
-. MANUAL_COMMIT
-
-Default acknowledgement mode is `AUTO_ACK`. In this mode, records are automatically acknowledged
-before they are delivered to the application. Acknowledged records are committed periodically
-based on the configured commit interval and batch size. This mode is simple to use since applications
-do not need to perform any acknowledge or commit actions. It is efficient as well, but can lead to
-message loss if the application crashes after a message was delivered but not processed.
-
-In `ATMOST_ONCE` mode, offsets are committed synchronously before the corresponding message is dispatched.
-This mode is expensive since each method is committed individually and messages are not delivered until the
-commit operation succeeds. Messages are guaranteed not to be re-delivered even if the consuming application
-fails, but some messages may not be lost if an application fails after the commit before the message could
-be processed.
-
-`MANUAL_ACK` mode disables automatic acknowledgement of messages to ensure that messages are re-delivered
-if the consuming application crashes after message was dispatched but before it was processed. This mode provides
-atleast-once delivery semantics with periodic commits of consumed messages with the
-configured commit interval and/or maximum commit batch size. Consumed offsets must be acknowledged using
-`ReceiverOffset#acknowledge()` since unacknowledged offsets are not committed. Note that acknowledging an offset
-acknowledges all previous offsets on the same partition.
-
-`MANUAL_COMMIT` mode disables automatic commits to enable consuming applications to control timing of commit
-operations. `ReceiverOffset#commit()` must be invoked by the consuming application to commit offsets when
-required. This commit is asynchronous by default, but the application many invoke `Mono#block()`
-on the returned Mono to implement synchronous commits. Applications may batch commits by acknowledging
-messages as they are consumed and invoking commit() periodically to commit acknowledged offsets. Note the
-committing an offset acknowledges and commits all previous offsets on that partition.
+Existing subscriptions and assignments on the options instance are deleted when a new assignment
+is specified. Every receiver created from this options instance with manual assignment consumes messages
+from all the specified partitions.
 
 ==== Controlling commit frequency
 
-Commit frequency for `AUTO_ACK` and `MANUAL_ACK` can be controlled using a combination of commit interval
+Commit frequency can be controlled using a combination of commit interval
 and commit batch size. Commits are performed when either the interval or batch size is reached. One or both
-of these options may be set on the receiver options before the receiver instance is created. If commit interval
-is configured, at least one commit is scheduled within that interval as long as at least one record was
+of these options may be set on the receiver options before the `Receiver` instance is created. If commit interval
+is configured, at least one commit is scheduled within that interval if any records were
 consumed. If commit batch size is configured, a commit is scheduled when the configured number of records
 are consumed.
+
+Manual acknowledgement of consumed records after processing along with automatic commits based on
+the configured commit frequency provides at-least-once delivery semantics. Messages are re-delivered
+if the consuming application crashes after message was dispatched but before it was processed.
+Only offsets explictly acknowledged using `ReceiverOffset#acknowledge()` are committed. Note that
+acknowledging an offset acknowledges all previous offsets on the same partition.
+
+Automatic commits of acknowledged messages can be disabled by configuring zero commit interval and zero
+commit batch size. Applications which require fine-grained control over the timing of commit operations
+can disable automatic commits and explictly invoke `ReceiverOffset#commit()` when required to trigger
+a commit. This commit is asynchronous by default, but the application many invoke `Mono#block()`
+on the returned Mono to implement synchronous commits. Applications may batch commits by acknowledging
+messages as they are consumed and invoking commit() periodically to commit acknowledged offsets. Note that
+committing an offset acknowledges and commits all previous offsets on that partition.
+
+Applications which dont require offset commits to Kafka may disable automatic commits. If automatic commits
+are enabled, all acknowledged offsets are committed if partitions are revoked or the receive Flux is terminated.
+
+
+==== Auto-acknowledgement of batches of records
+`Receiver#receiveAutoAck` returns a `Flux` of batches of records returned by each `KafkaConsumer#poll()`.
+The records in each batch are automatically acknowledged when the Flux corresponding to the batch terminates.
+
+[source,java]
+--------
+Receiver.create(receiverOptions)
+        .receiveAutoAck()
+        .concatMap(r -> r)                                      // <1>
+        .subscribe(r -> System.out.println("Received: " + r));  // <2>
+--------
+<1> Concatenate in order
+<2> Print out each consumer record received, no explicit ack required
+
+The maximum number of records in each batch can be controlled using the `KafkaConsumer` property
+`MAX_POLL_RECORDS`. This is used together with the fetch size and wait times configured on the
+consumer to return a batch of `ConsumerRecords` in each poll. Each batch is returned as a Flux
+that is acknowledged after the Flux terminates. Acknowledged records are committed periodically
+based on the configured commit interval and batch size. This mode is simple to use since applications
+do not need to perform any acknowledge or commit actions. It is efficient as well and can be used
+for at-least-once delivery of messages.
+
+
+==== At-most-once delivery
+`Receiver#atmostOnce` delivers messages with at-most-once semantics. Offsets are committed synchronously
+before the corresponding message is dispatched. This mode is expensive since each method is committed
+individually and messages are not delivered until the commit operation succeeds. Messages are guaranteed
+not to be re-delivered even if the consuming application fails, but some messages may not be processed
+if an application fails after the commit before the message could be processed.
+
+
+[source,java]
+--------
+Receiver.create(receiverOptions)
+        .receiveAtmostOnce()
+        .subscribe(r -> System.out.println("Received: " + r));  // <1>
+--------
+<1> Process each consumer record, this record is not re-delivered if the processing fails
 
 ==== Partition assignment and revocation listeners
 Applications can enable assignment and revocation listeners to perform any actions when
@@ -296,8 +338,8 @@ in the assigned partitions so that messages are consumed from the specified offs
 When group management is used, revocation listeners are invoked whenever partitions are revoked
 from a consumer after a rebalance operation. When manual assignment is used, revocation listeners
 are invoked before the consumer is closed. Revocation listeners can be used to commit processed
-offsets when MANUAL_COMMIT is used. For other acknowledgement modes, acknowledged offsets are
-automatically committed.
+offsets when manual commits are used. Acknowledged offsets are automatically committed on revocation
+if automatic commits are not disabled.
 
 ==== Controlling start offsets for consuming records
 By default, receivers start consuming records from the last committed offset of each assigned partition.
@@ -335,7 +377,7 @@ the flux completes. When the flux completes, all acknowledged offsets are commit
 underlying consumer is closed. In Kafka version 0.10.0.x, heartbeats are sent by `KafkaConsumer`
 only when applications invoke `KafkaConsumer#poll()`. Hence delays in processing messages can
 result in session timeouts causing rebalance to be triggered. To avoid this, `Receiver` triggers
-periodic heartbeats when application processing takes longer than the heartbeat interval when
-running older versions of Kafka. In Kafka version 0.10.1.0 and above, `KafkaConsumer` sends
+periodic heartbeats when application processing takes longer than the heartbeat interval for
+older versions of Kafka. In Kafka version 0.10.1.0 and above, `KafkaConsumer` sends
 heartbeats from a background thread to avoid this issue and `Receiver` does not track heartbeats.
 

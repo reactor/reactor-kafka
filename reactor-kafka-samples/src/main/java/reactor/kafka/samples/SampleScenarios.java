@@ -126,7 +126,7 @@ public class SampleScenarios {
             this.topic = topic;
         }
         public Flux<?> flux() {
-            return Receiver.create(receiverOptions(Collections.singletonList(topic)).commitInterval(null))
+            return Receiver.create(receiverOptions(Collections.singletonList(topic)).commitInterval(Duration.ZERO))
                            .receive()
                            .publishOn(Schedulers.newSingle("sample", true))
                            .flatMap(m -> storeInDB(m.record().value())
@@ -227,19 +227,21 @@ public class SampleScenarios {
                                      .receiveAutoAck()
                                      .concatMap(r -> r)
                                      .doOnNext(m -> incoming.emit(m.value()));
-            Flux<SenderResult<Integer>> stream1 = sender.send(processor.publishOn(scheduler1).map(p -> SenderRecord.create(process1(p), p.id())), false);
-            Flux<SenderResult<Integer>> stream2 = sender.send(processor.publishOn(scheduler2).map(p -> SenderRecord.create(process2(p), p.id())), false);
+            Flux<SenderResult<Integer>> stream1 = sender.send(processor.publishOn(scheduler1).map(p -> SenderRecord.create(process1(p, true), p.id())), false);
+            Flux<SenderResult<Integer>> stream2 = sender.send(processor.publishOn(scheduler2).map(p -> SenderRecord.create(process2(p, true), p.id())), false);
             return Flux.merge(stream1, stream2)
                        .doOnSubscribe(s -> inFlux.subscribe());
         }
-        public ProducerRecord<Integer, Person> process1(Person p) {
-            log.debug("Processing person {} on stream1 in thread {}", p.id(), Thread.currentThread().getName());
+        public ProducerRecord<Integer, Person> process1(Person p, boolean debug) {
+            if (debug)
+                log.debug("Processing person {} on stream1 in thread {}", p.id(), Thread.currentThread().getName());
             Person transformed = new Person(p.id(), p.firstName(), p.lastName());
             transformed.email(p.firstName().toLowerCase(Locale.ROOT) + "@kafka.io");
             return new ProducerRecord<>(destTopic1, p.id(), transformed);
         }
-        public ProducerRecord<Integer, Person> process2(Person p) {
-            log.debug("Processing person {} on stream2 in thread {}", p.id(), Thread.currentThread().getName());
+        public ProducerRecord<Integer, Person> process2(Person p, boolean debug) {
+            if (debug)
+                log.debug("Processing person {} on stream2 in thread {}", p.id(), Thread.currentThread().getName());
             Person transformed = new Person(p.id(), p.firstName(), p.lastName());
             transformed.email(p.lastName().toLowerCase(Locale.ROOT) + "@reactor.io");
             return new ProducerRecord<>(destTopic2, p.id(), transformed);
@@ -261,7 +263,7 @@ public class SampleScenarios {
         }
         public Flux<?> flux() {
             Scheduler scheduler = Schedulers.newElastic("sample", 60, true);
-            return Receiver.create(receiverOptions(Collections.singleton(topic)).commitInterval(null))
+            return Receiver.create(receiverOptions(Collections.singleton(topic)).commitInterval(Duration.ZERO))
                             .receive()
                             .groupBy(m -> m.offset().topicPartition())
                             .flatMap(partitionFlux -> partitionFlux.publishOn(scheduler)
@@ -400,6 +402,7 @@ public class SampleScenarios {
 
     static abstract class AbstractScenario {
         String bootstrapServers = BOOTSTRAP_SERVERS;
+        String groupId = "sample-group";
         CommittableSource source;
         Sender<Integer, Person> sender;
         List<Cancellation> cancellations = new ArrayList<>();
@@ -438,7 +441,7 @@ public class SampleScenarios {
         public ReceiverOptions<Integer, Person> receiverOptions() {
             Map<String, Object> props = new HashMap<>();
             props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-            props.put(ConsumerConfig.GROUP_ID_CONFIG, "sample-group");
+            props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
             props.put(ConsumerConfig.CLIENT_ID_CONFIG, "sample-consumer");
             props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, IntegerDeserializer.class);
             props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, PersonSerDes.class);
@@ -447,7 +450,8 @@ public class SampleScenarios {
 
         public ReceiverOptions<Integer, Person> receiverOptions(Collection<String> topics) {
             return receiverOptions()
-                    .addAssignListener(p -> log.info("Partitions assigned {}", p))
+                    .addAssignListener(p -> log.info("Group {} partitions assigned {}", groupId, p))
+                    .addRevokeListener(p -> log.info("Group {} partitions assigned {}", groupId, p))
                     .subscription(topics);
         }
 

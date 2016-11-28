@@ -19,6 +19,7 @@ package reactor.kafka.receiver;
 import org.apache.kafka.clients.consumer.RetriableCommitFailedException;
 import org.apache.kafka.common.TopicPartition;
 
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
@@ -41,11 +42,11 @@ public interface ReceiverOffset {
     long offset();
 
     /**
-     * Acknowledges the record associated with this offset. The offset will be committed
+     * Acknowledges the {@link ReceiverRecord} associated with this offset. The offset will be committed
      * automatically based on the commit configuration parameters {@link ReceiverOptions#commitInterval()}
      * and {@link ReceiverOptions#commitBatchSize()}. When an offset is acknowledged, it is assumed that
      * all records in this partition up to and including this offset have been processed.
-     * All acknowledged offsets are committed if possible when the receiver flux is cancelled.
+     * All acknowledged offsets are committed if possible when the receiver {@link Flux} terminates.
      */
     void acknowledge();
 

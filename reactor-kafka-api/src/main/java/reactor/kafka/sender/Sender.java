@@ -54,9 +54,16 @@ public interface Sender<K, V> {
      * partition and offset of each send request. Ordering of responses is guaranteed for partitions,
      * but responses from different partitions may be interleaved in a different order from the requests.
      * Additional correlation metadata may be passed through in the {@link SenderRecord} that is not sent
-     * to Kafka, but is included in the response Flux to enable matching responses to requests.
+     * to Kafka, but is included in the response {@link Flux} to enable matching responses to requests.
+     * <p>
      * Results are published when the send is acknowledged based on the acknowledgement mode
-     * configured using the option {@link ProducerConfig#ACKS_CONFIG}.
+     * configured using the option {@link ProducerConfig#ACKS_CONFIG}. If acks=0, records are acknowledged
+     * after the requests are buffered without waiting for any server acknowledgements. In this case the
+     * requests are not retried and the offset returned in {@link SenderResult} will be -1. For other ack
+     * modes, requests are retried up to the configured {@link ProducerConfig#RETRIES_CONFIG} times. If
+     * the request does not succeed after these attempts, the request fails and an exception indicating
+     * the reason for failure is returned in {@link SenderResult#exception()}.
+     *
      * <p>
      * Example usage:
      * <pre>
@@ -76,9 +83,9 @@ public interface Sender<K, V> {
     <T> Flux<SenderResult<T>> send(Publisher<SenderRecord<K, V, T>> records, boolean delayError);
 
     /**
-     * Sends a sequence of producer records to Kafka. No metadata is returned for individual
-     * producer records on success or failure. The returned {@link Mono} is failed immediately if a
-     * send fails.
+     * Sends a sequence of producer records to Kafka. No metadata is returned for individual producer
+     * records on success or failure. The returned {@link Mono} is failed immediately if a record cannot
+     * be delivered to Kafka after the configured number of retries in {@link ProducerConfig#RETRIES_CONFIG}.
      * @param records Outbound producer records
      * @return Mono that succeeds if all records are delivered successfully to Kafka and
      * fails if any of the sends fail.
@@ -96,7 +103,7 @@ public interface Sender<K, V> {
      *           .doOnSuccess(partitions -> System.out.println("Partitions " + partitions));
      * }
      * </pre>
-     * Functions that are directly supported on the reactive Sender interface (eg. send)
+     * Functions that are directly supported on the reactive {@link Sender} interface (eg. send)
      * should not be invoked from <code>function</code>. The methods supported by
      * <code>doOnProducer</code> are:
      * <ul>

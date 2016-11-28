@@ -121,7 +121,7 @@ public class ProducerPerformance {
                  .metavar("PROP-NAME=PROP-VALUE")
                  .type(String.class)
                  .dest("producerConfig")
-                 .help("kafka producer related configuaration properties like bootstrap.servers,client.id etc..");
+                 .help("kafka producer related configuration properties like bootstrap.servers,client.id etc..");
 
         parser.addArgument("--reactive")
               .action(store())
@@ -395,7 +395,7 @@ public class ProducerPerformance {
         }
 
         int maxInflight() {
-            String sendBufSizeOverride = (String) producerProps.get(ProducerConfig.SEND_BUFFER_CONFIG);
+            String sendBufSizeOverride = (String) producerProps.get(ProducerConfig.BUFFER_MEMORY_CONFIG);
             long sendBufSize = sendBufSizeOverride != null ? Long.parseLong(sendBufSizeOverride) : DEFAULT_PRODUCER_BUFFER_SIZE;
             int payloadSizeLowerPowerOf2 = 1 << (recordSize < 2 ? 0 : 31 - Integer.numberOfLeadingZeros(recordSize - 1));
             int maxInflight = (int) (sendBufSize / payloadSizeLowerPowerOf2);

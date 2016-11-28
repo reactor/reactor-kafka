@@ -88,7 +88,7 @@ public class SenderOptions<K, V> {
     }
 
     /**
-     * Returns the Kafka {@link Producer} configuration property for the specified option name.
+     * Returns the Kafka {@link Producer} configuration property value for the specified option name.
      * @return Kafka producer configuration option value
      */
     public Object producerProperty(String name) {
@@ -105,7 +105,7 @@ public class SenderOptions<K, V> {
     }
 
     /**
-     * Returns the scheduler used for publishing send responses.
+     * Returns the scheduler used for publishing send results.
      * @return response scheduler
      */
     public Scheduler scheduler() {
@@ -113,7 +113,7 @@ public class SenderOptions<K, V> {
     }
 
     /**
-     * Sets the scheduler used for publishing send responses.
+     * Sets the scheduler used for publishing send results.
      * @return sender options with updated response scheduler
      */
     public SenderOptions<K, V> scheduler(Scheduler scheduler) {
@@ -123,7 +123,7 @@ public class SenderOptions<K, V> {
 
     /**
      * Returns the maximum number of in-flight records that are fetched
-     * from the outbound record publisher while responses are pending.
+     * from the outbound record publisher while acknowledgements are pending.
      * @return maximum number of in-flight records
      */
     public int maxInFlight() {
@@ -132,9 +132,9 @@ public class SenderOptions<K, V> {
 
     /**
      * Configures the maximum number of in-flight records that are fetched
-     * from the outbound record publisher. This limit must be configured along
-     * with {@link ProducerConfig#BUFFER_MEMORY_CONFIG} to control memory usage
-     * and to avoid blocking the reactive pipeline.
+     * from the outbound record publisher while acknowledgements are pending.
+     * This limit must be configured along with {@link ProducerConfig#BUFFER_MEMORY_CONFIG}
+     * to control memory usage and to avoid blocking the reactive pipeline.
      * @return sender options with new in-flight limit
      */
     public SenderOptions<K, V> maxInFlight(int maxInFlight) {

@@ -18,7 +18,8 @@ buildscript {
   }
   dependencies {
         classpath 'org.asciidoctor:asciidoctorj-pdf:1.5.0-alpha.11',
-                  'org.springframework.build.gradle:propdeps-plugin:0.0.7'
+                  'org.springframework.build.gradle:propdeps-plugin:0.0.7',
+                  'io.spring.gradle:spring-io-plugin:0.0.4.RELEASE'
   }
 }
 plugins {
@@ -28,16 +29,6 @@ plugins {
 description = 'Reactive interface for Apache Kafka'
 group = 'reactor.kafka'
 
-allprojects {
-    repositories {
-        mavenLocal()
-        maven { url 'http://repo.spring.io/libs-snapshot' }
-        maven { url 'https://repository.apache.org/content/groups/staging' }
-        mavenCentral()
-    }
-    apply plugin: 'maven'
-}
-
 ext {
     gradleVersion = '3.1'
     gradleScriptDir = "${rootProject.projectDir}/gradle"
@@ -46,21 +37,16 @@ ext {
     def getKafkaVersion = project.hasProperty('kafkaVersion') ? project.property('kafkaVersion') : "${defaultKafkaVersion}"
 
     kafkaVersion = getKafkaVersion
-    scalaVersion = '2.11'
-    junitVersion = '4.12'
-    log4jVersion = '1.2.17'
     reactorVersion = '3.0.4.BUILD-SNAPSHOT'
-    argparseVersion = '0.5.0'
     metricsVersion = '2.2.0'
+
+    argparseVersion = '0.5.0'
     joptVersion = '4.9'
+
     slf4jVersion = '1.7.21'
-
-    assertjVersion = '3.3.0'
-    gsCollectionsVersion = '5.0.0'
-    springRetryVersion = '1.1.2.RELEASE'
-    springKafkaVersion = '1.1.0.RELEASE'
-    springVersion = '4.2.5.RELEASE'
-
+    junitVersion = '4.12'
+    zkVersion = "3.4.9"
+    springKafkaVersion = '1.1.2.BUILD-SNAPSHOT'
     powermockVersion = '1.6.4'
 
     javadocLinks = ["http://docs.oracle.com/javase/8/docs/api/",
@@ -69,11 +55,25 @@ ext {
                     "http://projectreactor.io/core/docs/api/"] as String[]
 
 }
+
 apply from: "$gradleScriptDir/setup.gradle"
 apply plugin: 'propdeps'
 
-subprojects {
+configurations.all {
+  // check for snapshot updates every time
+  resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+}
 
+subprojects {
+    repositories {
+        mavenLocal()
+        maven { url 'http://repo.spring.io/libs-release' }
+        maven { url 'http://repo.spring.io/libs-snapshot' }
+        maven { url 'https://repository.apache.org/content/groups/staging' }
+        jcenter()
+        mavenCentral()
+    }
+    apply plugin: 'maven'
     apply plugin: 'eclipse'
     apply plugin: 'idea'
     apply plugin: 'checkstyle'
@@ -109,55 +109,36 @@ subprojects {
         archives srcJar
     }
 
-}
-
-project(':reactor-kafka-api') {
     dependencies {
         compile "org.apache.kafka:kafka-clients:$kafkaVersion"
         compile "io.projectreactor:reactor-core:$reactorVersion"
 
-        testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion"
         testCompile "org.apache.kafka:kafka-clients:$kafkaVersion:test"
-        testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion:test"
         testCompile "junit:junit:$junitVersion"
 
         testCompile "io.projectreactor.addons:reactor-test:$reactorVersion"
-        testCompile "com.goldmansachs:gs-collections:$gsCollectionsVersion"
-        testCompile "org.springframework:spring-test:$springVersion"
+        testCompile "org.apache.zookeeper:zookeeper:$zkVersion"
         testCompile "org.springframework.kafka:spring-kafka-test:$springKafkaVersion"
-        testCompile "org.springframework.retry:spring-retry:$springRetryVersion"
-        testCompile "org.assertj:assertj-core:$assertjVersion"
         testCompile "org.powermock:powermock-module-junit4:$powermockVersion"
         testCompile "org.powermock:powermock-core:$powermockVersion"
         testCompile "org.powermock:powermock-api-mockito:$powermockVersion"
         testCompile "org.slf4j:slf4j-api:$slf4jVersion"
         testCompile "org.slf4j:slf4j-log4j12:$slf4jVersion"
     }
+
+}
+
+project(':reactor-kafka-api') {
 }
 
 project(':reactor-kafka-tools') {
     dependencies {
         compile project(':reactor-kafka-api')
-        compile "org.apache.kafka:kafka-clients:$kafkaVersion"
-        compile "io.projectreactor:reactor-core:$reactorVersion"
-
         compile "com.yammer.metrics:metrics-core:$metricsVersion"
         compile "net.sf.jopt-simple:jopt-simple:$joptVersion"
         compile "net.sourceforge.argparse4j:argparse4j:$argparseVersion"
 
-        testCompile "junit:junit:$junitVersion"
         testCompile project(':reactor-kafka-api').sourceSets.test.output
-        testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion"
-        testCompile "org.apache.kafka:kafka-clients:$kafkaVersion:test"
-        testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion:test"
-        testCompile "io.projectreactor.addons:reactor-test:$reactorVersion"
-        testCompile "com.goldmansachs:gs-collections:$gsCollectionsVersion"
-        testCompile "org.springframework:spring-test:$springVersion"
-        testCompile "org.springframework.kafka:spring-kafka-test:$springKafkaVersion"
-        testCompile "org.springframework.retry:spring-retry:$springRetryVersion"
-        testCompile "org.assertj:assertj-core:$assertjVersion"
-        testCompile "org.slf4j:slf4j-api:$slf4jVersion"
-        testCompile "org.slf4j:slf4j-log4j12:$slf4jVersion"
     }
 
     test {
@@ -168,25 +149,11 @@ project(':reactor-kafka-tools') {
 project(':reactor-kafka-samples') {
     dependencies {
         compile project(':reactor-kafka-api')
-        compile "org.apache.kafka:kafka-clients:$kafkaVersion"
-        compile "io.projectreactor:reactor-core:$reactorVersion"
-
         compile "com.yammer.metrics:metrics-core:$metricsVersion"
 
-        testCompile "junit:junit:$junitVersion"
         testCompile project(':reactor-kafka-api').sourceSets.test.output
-        testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion"
-        testCompile "org.apache.kafka:kafka-clients:$kafkaVersion:test"
-        testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion:test"
-        testCompile "io.projectreactor.addons:reactor-test:$reactorVersion"
-        testCompile "com.goldmansachs:gs-collections:$gsCollectionsVersion"
-        testCompile "org.springframework:spring-test:$springVersion"
-        testCompile "org.springframework.kafka:spring-kafka-test:$springKafkaVersion"
-        testCompile "org.springframework.retry:spring-retry:$springRetryVersion"
-        testCompile "org.assertj:assertj-core:$assertjVersion"
-        testCompile "org.slf4j:slf4j-api:$slf4jVersion"
-        testCompile "org.slf4j:slf4j-log4j12:$slf4jVersion"
     }
+
     task classpath << {
         println sourceSets.main.runtimeClasspath.asPath
     }

@@ -189,7 +189,8 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
         log.debug("onPartitionsRevoked {}", partitions);
         if (!partitions.isEmpty()) {
             // It is safe to use the consumer here since we are in a poll()
-            commitEvent.runIfRequired(true);
+            if (ackMode != AckMode.ATMOST_ONCE)
+                commitEvent.runIfRequired(true);
             for (Consumer<Collection<ReceiverPartition>> onRevoke : receiverOptions.revokeListeners()) {
                 onRevoke.accept(toSeekable(partitions));
             }
@@ -283,7 +284,7 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
             fluxList.add(heartbeatFlux);
         }
         Duration commitInterval = receiverOptions.commitInterval();
-        if ((ackMode == AckMode.AUTO_ACK || ackMode == AckMode.MANUAL_ACK) && commitInterval != null) {
+        if ((ackMode == AckMode.AUTO_ACK || ackMode == AckMode.MANUAL_ACK) && !commitInterval.isZero()) {
             Flux<CommitEvent> periodicCommitFlux = Flux.interval(receiverOptions.commitInterval())
                              .map(i -> commitEvent);
             fluxList.add(periodicCommitFlux);
@@ -606,23 +607,27 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
         public void run() {
             try {
                 if (consumer != null) {
-                    try {
-                        consumer.poll(0);
-                    } catch (WakeupException e) {
-                        // ignore
-                    }
                     Collection<TopicPartition> manualAssignment = receiverOptions.assignment();
                     if (manualAssignment != null && !manualAssignment.isEmpty())
                         onPartitionsRevoked(manualAssignment);
-                    if (ackMode != AckMode.ATMOST_ONCE) {
-                        commitEvent.runIfRequired(true);
-                        commitEvent.waitFor(closeEndTimeNanos);
+                    int attempts = 3;
+                    for (int i = 0; i < attempts; i++) {
+                        try {
+                            if (ackMode != AckMode.ATMOST_ONCE) {
+                                commitEvent.runIfRequired(true);
+                                commitEvent.waitFor(closeEndTimeNanos);
+                            }
+                            consumer.close();
+                            break;
+                        } catch (WakeupException e) {
+                            if (i == attempts - 1)
+                                throw e;
+                        }
                     }
-                    consumer.close();
                 }
                 semaphore.release();
             } catch (Exception e) {
-                log.error("Unexpected exception", e);
+                log.error("Unexpected exception during close", e);
                 fail(e, false);
             }
         }

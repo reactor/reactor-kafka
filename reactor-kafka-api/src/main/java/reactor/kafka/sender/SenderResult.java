@@ -21,11 +21,14 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.RecordMetadata;
 
 /**
- * Response metadata for an outbound record that was acknowledged by Kafka.
- * This response also includes the correlation metadata provided in {@link SenderRecord}
+ * Result metadata for an outbound record that was acknowledged by Kafka.
+ * This result also includes the correlation metadata provided in {@link SenderRecord}
  * that was not sent to Kafka, but enables matching this response to its corresponding
- * request. Results are published when the send is acknowledged based on the acknowledgement
- * mode configured using the option {@link ProducerConfig#ACKS_CONFIG}.
+ * request.
+ * <p>
+ * Results are published when the send is acknowledged based on the acknowledgement
+ * mode configured using the option {@link ProducerConfig#ACKS_CONFIG}. If acks is not zero,
+ * sends are retried if {@link ProducerConfig#RETRIES_CONFIG} is configured.
  */
 public interface SenderResult<T> {
 
@@ -39,13 +42,14 @@ public interface SenderResult<T> {
     /**
      * Returns the exception associated with a send failure. This is set to null for
      * successful responses.
-     * @return send exception from Kafka {@link Producer} if send failed.
+     * @return send exception from Kafka {@link Producer} if send did not succeed even after
+     * the configured retry attempts.
      */
     Exception exception();
 
     /**
      * Returns the correlation metadata associated with this instance to enable this
-     * response to be matched with the corresponding {@link SenderRecord} that was sent to Kafka.
+     * result to be matched with the corresponding {@link SenderRecord} that was sent to Kafka.
      * @return correlation metadata
      */
     T correlationMetadata();

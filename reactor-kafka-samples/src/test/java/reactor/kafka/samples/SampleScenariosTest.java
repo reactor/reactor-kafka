@@ -18,11 +18,14 @@ package reactor.kafka.samples;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -32,6 +35,8 @@ import org.apache.kafka.common.TopicPartition;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import reactor.core.Cancellation;
 import reactor.core.publisher.Mono;
@@ -51,6 +56,7 @@ import reactor.kafka.samples.SampleScenarios.Person;
 import reactor.kafka.util.TestUtils;
 
 public class SampleScenariosTest extends AbstractKafkaTest {
+    private static final Logger log = LoggerFactory.getLogger(SampleScenariosTest.class.getName());
 
     private String bootstrapServers;
     private List<Cancellation> cancellations = new ArrayList<>();
@@ -71,7 +77,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
     public void kafkaSink() throws Exception {
         List<Person> expected = new ArrayList<>();
         List<Person> received = new ArrayList<>();
-        subscribeToDestTopic(topic, received);
+        subscribeToDestTopic("test-group", topic, received);
         KafkaSink sink = new KafkaSink(bootstrapServers, topic);
         sink.source(createTestSource(10, expected));
         sink.runScenario();
@@ -109,7 +115,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
             }
         };
         cancellations.add(flow.flux().subscribe());
-        subscribeToDestTopic(destTopic, received);
+        subscribeToDestTopic("test-group", destTopic, received);
         sendMessages(sourceTopic, 20, expected);
         for (Person p : expected)
             p.email(flow.transform(p).value().email());
@@ -129,7 +135,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
             }
         };
         cancellations.add(flow.flux().subscribe());
-        subscribeToDestTopic(destTopic, received);
+        subscribeToDestTopic("test-group", destTopic, received);
         sendMessages(sourceTopic, 20, expected);
         for (Person p : expected)
             p.email(flow.transform(p).value().email());
@@ -153,14 +159,14 @@ public class SampleScenariosTest extends AbstractKafkaTest {
             }
         };
         cancellations.add(flow.flux().subscribe());
-        subscribeToDestTopic(destTopic1, received1);
-        subscribeToDestTopic(destTopic2, received2);
+        subscribeToDestTopic("group1", destTopic1, received1);
+        subscribeToDestTopic("group2", destTopic2, received2);
         sendMessages(sourceTopic, 20, expected1);
         for (Person p : expected1) {
             Person p2 = new Person(p.id(), p.firstName(), p.lastName());
-            p2.email(flow.process2(p).value().email());
+            p2.email(flow.process2(p, false).value().email());
             expected2.add(p2);
-            p.email(flow.process1(p).value().email());
+            p.email(flow.process1(p, false).value().email());
         }
         waitForMessages(expected1, received1);
         waitForMessages(expected2, received2);
@@ -169,7 +175,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
     @Test
     public void partition() throws Exception {
         List<Person> expected = new ArrayList<>();
-        List<Person> received = new ArrayList<>();
+        Queue<Person> received = new ConcurrentLinkedQueue<Person>();
         Map<Integer, List<Person>> partitionMap = new HashMap<>();
         for (int i = 0; i < partitions; i++)
             partitionMap.put(i, new ArrayList<>());
@@ -192,14 +198,20 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         checkMessageOrder(partitionMap);
     }
 
-    private void subscribeToDestTopic(String topic, List<Person> received) {
+    private void subscribeToDestTopic(String groupId, String topic, List<Person> received) {
         KafkaSource source = new KafkaSource(bootstrapServers, topic);
         ReceiverOptions<Integer, Person> receiverOptions = source.receiverOptions()
                 .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
-                .consumerProperty(ConsumerConfig.GROUP_ID_CONFIG, "test-group");
+                .consumerProperty(ConsumerConfig.GROUP_ID_CONFIG, groupId)
+                .addAssignListener(p -> log.debug("Group {} assigned {}", groupId, p))
+                .addRevokeListener(p -> log.debug("Group {} revoked {}", groupId, p));
         Cancellation c = Receiver.create(receiverOptions.subscription(Collections.singleton(topic)))
                                  .receive()
-                                 .subscribe(m -> received.add(m.record().value()));
+                                 .subscribe(m -> {
+                                         Person p = m.record().value();
+                                         received.add(p);
+                                         log.debug("Thread {} Received: {} ", Thread.currentThread().getName(), p);
+                                     });
         cancellations.add(c);
     }
     private CommittableSource createTestSource(int count, List<Person> expected) {
@@ -213,9 +225,11 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         sink.source(createTestSource(count, expected));
         sink.runScenario();
     }
-    private void waitForMessages(List<Person> expected, List<Person> received) throws Exception {
-        TestUtils.waitUntil("One or more messages not received, received=", () -> received.size(), r -> r.size() == expected.size(), received, Duration.ofMillis(receiveTimeoutMillis));
+    private void waitForMessages(Collection<Person> expected, Collection<Person> received) throws Exception {
+        TestUtils.waitUntil("One or more messages not received, expected=" + expected.size() + ", received=",
+                    () -> received.size(), r -> r.size() == expected.size(), received, Duration.ofMillis(receiveTimeoutMillis));
         assertEquals(new HashSet<>(expected), new HashSet<>(received));
+        assertEquals(expected.size(), received.size());
     }
     private void checkMessageOrder(Map<Integer, List<Person>> received) throws Exception {
         for (List<Person> list : received.values()) {

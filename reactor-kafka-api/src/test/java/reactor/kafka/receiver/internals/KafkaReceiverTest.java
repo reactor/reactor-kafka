@@ -129,6 +129,7 @@ public class KafkaReceiverTest {
         Flux<ReceiverRecord<Integer, String>> flux = receiver.receive();
         assertEquals(0, consumerFactory.consumersInUse().size());
         Cancellation c = flux.subscribe();
+        TestUtils.waitUntil("Consumer not created using factory", null, f -> f.consumersInUse().size() > 0, consumerFactory, Duration.ofMillis(500));
         assertEquals(Arrays.asList(consumer), consumerFactory.consumersInUse());
         assertFalse("Consumer closed", consumer.closed());
         c.dispose();
@@ -201,12 +202,14 @@ public class KafkaReceiverTest {
 
         for (TopicPartition partition : cluster.partitions(topic))
             receiveStartOffsets.put(partition, (long) cluster.log(partition).size());
-        CountDownLatch latch = asyncReceive(10);
+        CountDownLatch latch = new CountDownLatch(10);
+        Cancellation cancellation = asyncReceive(latch);
         assertTrue("Assign callback not invoked", assignSemaphore.tryAcquire(1, TimeUnit.SECONDS));
 
         sendMessages(topic, 10, 20);
         assertTrue("Messages not received", latch.await(1, TimeUnit.SECONDS));
         verifyMessages(10);
+        cancellation.dispose();
     }
 
     /**
@@ -229,12 +232,14 @@ public class KafkaReceiverTest {
             receiveStartOffsets.put(partition, startOffset);
             receiveCount += cluster.log(partition).size() - startOffset;
         }
-        CountDownLatch latch = asyncReceive(receiveCount);
+        CountDownLatch latch = new CountDownLatch(receiveCount);
+        Cancellation cancellation = asyncReceive(latch);
         assertTrue("Assign callback not invoked", assignSemaphore.tryAcquire(1, TimeUnit.SECONDS));
 
         sendMessages(topic, 10, 20);
         assertTrue("Messages not received", latch.await(1, TimeUnit.SECONDS));
         verifyMessages(receiveCount);
+        cancellation.dispose();
     }
 
     /**
@@ -623,7 +628,7 @@ public class KafkaReceiverTest {
     public void manualCommitClose() throws Exception {
         receiverOptions = receiverOptions
                 .commitBatchSize(0)
-                .commitInterval(Duration.ofMillis(Long.MAX_VALUE))
+                .commitInterval(Duration.ZERO)
                 .subscription(Collections.singletonList(topic));
         sendMessages(topic, 0, 20);
         receiveAndVerify(20, r -> {
@@ -633,6 +638,42 @@ public class KafkaReceiverTest {
         receivedMessages.removeIf(r -> r.offset() >= 5);
         consumerFactory.addConsumer(new MockConsumer(cluster, true));
         receiveAndVerify(10, r -> { });
+    }
+
+    /**
+     * Tests that all acknowledged records are committed on close
+     */
+    @Test
+    public void autoCommitClose() throws Exception {
+        receiverOptions = receiverOptions
+                .commitBatchSize(100)
+                .commitInterval(Duration.ofMillis(Long.MAX_VALUE))
+                .subscription(Collections.singletonList(topic));
+        sendMessages(topic, 0, 20);
+        receiveAndVerify(20, r -> {
+                if (r.offset().offset() < 5)
+                    r.offset().acknowledge();
+            });
+        receivedMessages.removeIf(r -> r.offset() >= 5);
+        consumerFactory.addConsumer(new MockConsumer(cluster, true));
+        receiveAndVerify(10, r -> { });
+    }
+
+    /**
+     * Tests that commits are disabled completely if periodic commits by batch size
+     * and periodic commits by interval are both disabled.
+     */
+    @Test
+    public void autoCommitDisable() throws Exception {
+        receiverOptions = receiverOptions
+                .commitBatchSize(0)
+                .commitInterval(Duration.ZERO)
+                .subscription(Collections.singletonList(topic));
+        sendMessages(topic, 0, 20);
+        receiveAndVerify(20, r -> { });
+        receivedMessages.clear();
+        consumerFactory.addConsumer(new MockConsumer(cluster, true));
+        receiveAndVerify(20, r -> { });
     }
 
     /**
@@ -750,10 +791,11 @@ public class KafkaReceiverTest {
         Map<String, Set<Integer>> threadMap = new ConcurrentHashMap<>();
 
         receiverOptions = receiverOptions.subscription(Collections.singletonList(topic));
-        new KafkaReceiver<>(consumerFactory, receiverOptions)
+        List<Cancellation> groupCancels = new ArrayList<>();
+        Cancellation cancellation = new KafkaReceiver<>(consumerFactory, receiverOptions)
             .receive()
             .groupBy(m -> m.offset().topicPartition().partition())
-            .subscribe(partitionFlux -> partitionFlux.take(countPerPartition).publishOn(scheduler, 1).subscribe(record -> {
+            .subscribe(partitionFlux -> groupCancels.add(partitionFlux.take(countPerPartition).publishOn(scheduler, 1).subscribe(record -> {
                     String thread = Thread.currentThread().getName();
                     int partition = record.record().partition();
                     Set<Integer> partitionSet = threadMap.get(thread);
@@ -764,7 +806,7 @@ public class KafkaReceiverTest {
                     partitionSet.add(partition);
                     receivedMessages.add(record.record());
                     latch[partition].countDown();
-                }));
+                })));
 
         try {
             sendMessagesToPartition(topic, 0, 0, countPerPartition);
@@ -781,6 +823,9 @@ public class KafkaReceiverTest {
             assertTrue("Threads not allocated elastically " + threadMap, threadMap.size() > 1 && threadMap.size() < partitions);
             verifyMessages(countPerPartition * partitions);
         } finally {
+            for (Cancellation groupCancel : groupCancels)
+                groupCancel.dispose();
+            cancellation.dispose();
             scheduler.shutdown();
         }
     }
@@ -808,28 +853,29 @@ public class KafkaReceiverTest {
         AtomicInteger maxInProgress = new AtomicInteger();
 
         receiverOptions = receiverOptions.subscription(Collections.singletonList(topic));
-        new KafkaReceiver<>(consumerFactory, receiverOptions)
+        List<Cancellation> groupCancels = new ArrayList<>();
+        Cancellation cancellation = new KafkaReceiver<>(consumerFactory, receiverOptions)
             .receive()
             .groupBy(m -> m.offset().topicPartition())
-                     .subscribe(partitionFlux -> partitionFlux.publishOn(scheduler, 1).subscribe(record -> {
-                             int partition = record.record().partition();
-                             String thread = Thread.currentThread().getName();
-                             Set<Integer> partitionSet = threadMap.get(thread);
-                             if (partitionSet == null) {
-                                 partitionSet = new HashSet<Integer>();
-                                 threadMap.put(thread, partitionSet);
-                             }
-                             partitionSet.add(partition);
-                             receivedMessages.add(record.record());
-                             receiveCounts.put(partition, receiveCounts.get(partition) + 1);
-                             latch.countDown();
-                             synchronized (KafkaReceiverTest.this) {
-                                 if (receiveCounts.get(partition) == countPerPartition)
-                                     inProgress.remove(partition);
-                                 else if (inProgress.add(partition))
-                                     maxInProgress.incrementAndGet();
-                             }
-                         }));
+            .subscribe(partitionFlux -> groupCancels.add(partitionFlux.publishOn(scheduler, 1).subscribe(record -> {
+                    int partition = record.record().partition();
+                    String thread = Thread.currentThread().getName();
+                    Set<Integer> partitionSet = threadMap.get(thread);
+                    if (partitionSet == null) {
+                        partitionSet = new HashSet<Integer>();
+                        threadMap.put(thread, partitionSet);
+                    }
+                    partitionSet.add(partition);
+                    receivedMessages.add(record.record());
+                    receiveCounts.put(partition, receiveCounts.get(partition) + 1);
+                    latch.countDown();
+                    synchronized (KafkaReceiverTest.this) {
+                        if (receiveCounts.get(partition) == countPerPartition)
+                            inProgress.remove(partition);
+                        else if (inProgress.add(partition))
+                            maxInProgress.incrementAndGet();
+                    }
+                })));
 
         try {
             sendMessages(topic, 0, countPerPartition * partitions);
@@ -842,6 +888,9 @@ public class KafkaReceiverTest {
             assertEquals(partitions, maxInProgress.get());
         } finally {
             scheduler.shutdown();
+            for (Cancellation groupCancel : groupCancels)
+                groupCancel.dispose();
+            cancellation.dispose();
         }
     }
 
@@ -1259,16 +1308,14 @@ public class KafkaReceiverTest {
         assertEquals(committedOffset, lastCommitted == -1 ? null : lastCommitted + 1);
     }
 
-    private CountDownLatch asyncReceive(int receiveCount) {
+    private Cancellation asyncReceive(CountDownLatch latch) {
         KafkaReceiver<Integer, String> receiver = new KafkaReceiver<>(consumerFactory, receiverOptions);
-        CountDownLatch latch = new CountDownLatch(10);
-        receiver.receive()
+        return receiver.receive()
                 .doOnNext(r -> {
                         receivedMessages.add(r.record());
                         latch.countDown();
                     })
                 .subscribe();
-        return latch;
     }
 
     private TopicPartition topicPartition(ConsumerRecord<?, ?> record) {

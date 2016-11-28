@@ -17,7 +17,6 @@ keeping application logic simple.
 
 [[end-to-end-reactive]]
 === End-to-end Reactive Pipeline
-
 The value proposition for Reactor Kafka is the efficient utilization of resources in applications with multiple
 external interactions where Kafka is one of the external systems. End-to-end reactive pipelines benefit from
 non-blocking back-pressure and efficient use of threads, enabling a large number of concurrent requests to be
@@ -26,33 +25,31 @@ low overheads that can fully utilize the allocated resources and deliver low-lat
 
 [[comparison]]
 === Comparisons with other Kafka APIs
-
 Reactor Kafka is not intended to replace any of the existing Kafka APIs. Instead, it is aimed at providing
 an alternative API for reactive event-driven applications.
 
 ==== Kafka Producer and Consumer APIs
-
 For non-reactive applications, the core producer and consumer APIs provide a low latency interface to publish
 messages to Kafka and consume messages from Kafka. Applications using Kafka as a message bus using this API
 may consider switching to Reactor Kafka if the application is implemented in a functional style.
 
 ==== Kafka Connect API
-http://kafka.apache.org/documentation#connect[Kafka Connect] provides a simple interface to migrate messages from an external data system (eg. a database) to
-one or more Kafka topics. Using existing connectors, this migration can be performed without writing any new code.
-Applications using the connector API may consider using Reactor Kafka if a reactive API is available for
-the external data system and transformations are required for the data.
-A reactive pipeline that transforms data from a database using other I/O
+http://kafka.apache.org/documentation#connect[Kafka Connect] provides a simple interface to migrate messages
+from an external data system (eg. a database) to one or more Kafka topics. Using existing connectors,
+this migration can be performed without writing any new code. Applications using the connector API may
+consider using Reactor Kafka if a reactive API is available for the external data system and transformations
+are required for the data.  A reactive pipeline that transforms data from a database using other I/O
 and publishes the transformed data to Kafka benefits from end-to-end non-blocking back-pressure without requiring
 complex logic in the application.
 
 ==== Kafka Streams API
 
-http://kafka.apache.org/documentation#streams[Kafka Streams] provides lightweight APIs to build stream processing applications that process data stored in Kafka
-using standard streaming concepts and transformation primitives. Using a simple threading model, the streams API
-avoids the need for back-pressure. This model works well in cases where transformations do not involve external
-interactions. Reactor Kafka is useful for streams applications which process data from Kafka and use external
-interactions (eg. get additional data for records from a database) for transformations. In this case, Reactor
-can provide end-to-end non-blocking back-pressure combined with better utilization of resources if all external
-interactions use the reactive model.
+http://kafka.apache.org/documentation#streams[Kafka Streams] provides lightweight APIs to build stream processing
+applications that process data stored in Kafka using standard streaming concepts and transformation primitives.
+Using a simple threading model, the streams API avoids the need for back-pressure. This model works well in cases
+where transformations do not involve external interactions. Reactor Kafka is useful for streams applications
+which process data from Kafka and use external interactions (eg. get additional data for records from a database)
+for transformations. In this case, Reactor can provide end-to-end non-blocking back-pressure combined with
+better utilization of resources if all external interactions use the reactive model.
 
 

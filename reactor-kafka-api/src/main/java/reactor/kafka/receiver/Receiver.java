@@ -53,11 +53,12 @@ public interface Receiver<K, V> {
      * Starts a Kafka consumer that consumes records from the subscriptions or partition
      * assignments configured for this receiver. Records are consumed from Kafka and delivered
      * on the returned Flux when requests are made on the Flux. The Kafka consumer is closed
-     * after when the returned Flux terminates.
+     * when the returned Flux terminates.
      * <p>
      * Every record must be acknowledged using {@link ReceiverOffset#acknowledge()} in order
-     * to commit the offset corresponding to the record. Records may also be committed manually
-     * using {@link ReceiverOffset#commit()}.
+     * to commit the offset corresponding to the record. Acknowledged records are committed
+     * based on the configured commit interval and commit batch size in {@link ReceiverOptions}.
+     * Records may also be committed manually using {@link ReceiverOffset#commit()}.
      *
      * @return Flux of inbound records that are committed only after acknowledgement
      */
@@ -87,9 +88,9 @@ public interface Receiver<K, V> {
 
     /**
      * Invokes the specified function on the Kafka {@link Consumer} associated with this Receiver.
-     * The function is scheduled when the returned {@link Mono} is subscribed to. It is executed
-     * on the thread used for other consumer operations to ensure that consumer is never
-     * accessed concurrently from multiple threads.
+     * The function is scheduled when the returned {@link Mono} is subscribed to. The function is
+     * executed on the thread used for other consumer operations to ensure that @link Consumer}
+     * is never accessed concurrently from multiple threads.
      * <p>
      * Example usage:
      * <pre>
@@ -98,7 +99,7 @@ public interface Receiver<K, V> {
      *           .doOnSuccess(partitions -> System.out.println("Partitions " + partitions));
      * }
      * </pre>
-     * Functions that are directly supported through the reactive receiver interface
+     * Functions that are directly supported through the reactive {@link Receiver} interface
      * like <code>poll</code> and <code>commit</code> should not be invoked from <code>function</code>.
      * The methods supported by <code>doOnConsumer</code> are:
      * <ul>

@@ -134,11 +134,14 @@ public class KafkaSenderTest {
      */
     @Test
     public void sendNoResponseFailure() {
-        sender = new KafkaSender<>(producerFactory, SenderOptions.create());
+        int maxInflight = 2;
+        SenderOptions<Integer, String> options = SenderOptions.create();
+        sender = new KafkaSender<>(producerFactory, options.maxInFlight(maxInflight));
         OutgoingRecords outgoing = outgoingRecords.append("nonexistent", 10);
         StepVerifier.create(sender.send(outgoing.producerRecords()))
                     .expectError(InvalidTopicException.class)
                     .verify();
+        assertEquals(maxInflight, outgoing.onNextCount.get());
     }
 
     /**
@@ -158,7 +161,9 @@ public class KafkaSenderTest {
      */
     @Test
     public void sendWithResponseFailure() {
-        sender = new KafkaSender<>(producerFactory, SenderOptions.create());
+        int maxInflight = 2;
+        SenderOptions<Integer, String> options = SenderOptions.create();
+        sender = new KafkaSender<>(producerFactory, options.maxInFlight(maxInflight));
         OutgoingRecords outgoing = outgoingRecords.append("nonexistent", 10);
         StepVerifier.create(sender.send(outgoing.senderRecords(), true))
                     .recordWith(() -> sendResponses)
@@ -166,6 +171,24 @@ public class KafkaSenderTest {
                     .expectError(InvalidTopicException.class)
                     .verify();
         outgoing.verify(sendResponses);
+        assertEquals(10, outgoing.onNextCount.get());
+    }
+
+    /**
+     * Tests {@link Sender#send(org.reactivestreams.Publisher, boolean) error path without delayError.
+     */
+    @Test
+    public void sendWithResponseFailOnError() {
+        int maxInflight = 2;
+        SenderOptions<Integer, String> options = SenderOptions.create();
+        sender = new KafkaSender<>(producerFactory, options.maxInFlight(maxInflight));
+        OutgoingRecords outgoing = outgoingRecords.append("nonexistent", 10);
+        StepVerifier.create(sender.send(outgoing.senderRecords(), false))
+                    .recordWith(() -> sendResponses)
+                    .expectNextCount(1)
+                    .expectError(InvalidTopicException.class)
+                    .verify();
+        assertEquals(maxInflight, outgoing.onNextCount.get());
     }
 
     /**
@@ -465,6 +488,7 @@ public class KafkaSenderTest {
         final List<SenderRecord<Integer, String, Integer>> senderRecords = new ArrayList<>();
         final Map<TopicPartition, List<SenderResult<Integer>>> senderResponses = new HashMap<>();
         final Map<Integer, TopicPartition> recordPartitions = new HashMap<>();
+        AtomicInteger onNextCount = new AtomicInteger();
 
         public OutgoingRecords(MockCluster cluster) {
             this.cluster = cluster;
@@ -498,11 +522,13 @@ public class KafkaSenderTest {
             List<ProducerRecord<Integer, String>> list = new ArrayList<>();
             for (SenderRecord<Integer, String, Integer> record : senderRecords)
                 list.add(record.record());
-            return Flux.fromIterable(list);
+            return Flux.fromIterable(list)
+                       .doOnNext(r -> onNextCount.incrementAndGet());
         }
 
         public Flux<SenderRecord<Integer, String, Integer>> senderRecords() {
-            return Flux.fromIterable(senderRecords);
+            return Flux.fromIterable(senderRecords)
+                       .doOnNext(r -> onNextCount.incrementAndGet());
         }
 
         public void verify(List<SenderResult<Integer>> responses) {

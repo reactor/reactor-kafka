@@ -181,7 +181,7 @@ public class ReceiverTest extends AbstractKafkaTest {
 
     @Test
     public void manualAssignmentWithCommit() throws Exception {
-        receiverOptions = receiverOptions.commitInterval(null)
+        receiverOptions = receiverOptions.commitInterval(Duration.ZERO)
                 .commitBatchSize(0)
                 .assignment(getTopicPartitions());
         Flux<ConsumerRecord<Integer, String>> kafkaFlux =
@@ -202,7 +202,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         Collection<TopicPartition> topicPartitions = getTopicPartitions();
         Map<TopicPartition, ReceiverOffset> assignedPartitions = new HashMap<>();
         receiverOptions = receiverOptions
-                .commitInterval(null)
+                .commitInterval(Duration.ZERO)
                 .commitBatchSize(0)
                 .assignment(topicPartitions)
                 .addAssignListener(partitions -> {
@@ -303,29 +303,6 @@ public class ReceiverTest extends AbstractKafkaTest {
     }
 
     @Test
-    public void atleastOnceCommitIntervalOrCount() throws Exception {
-        receiverOptions.closeTimeout(Duration.ofMillis(1000));
-        receiverOptions.commitBatchSize(10);
-        receiverOptions.commitInterval(Duration.ofMillis(1000));
-        Receiver<Integer, String> receiver = createReceiver();
-        Flux<ReceiverRecord<Integer, String>> fluxWithAck = receiver.receive().doOnNext(record -> record.offset().acknowledge());
-        sendReceive(fluxWithAck.map(r -> r.record()), 0, 100, 0, 100);
-
-        restartAndCheck(receiver, 100, 100, receiverOptions.commitBatchSize());
-        expectedMessages.forEach(list -> list.clear());
-        cancelSubscriptions(true);
-
-        receiverOptions.commitBatchSize(1000);
-        receiverOptions.commitInterval(Duration.ofMillis(100));
-        receiver = createReceiver();
-        fluxWithAck = receiver.receive().doOnNext(record -> record.offset().acknowledge());
-        sendReceive(fluxWithAck.map(r -> r.record()), 200, 100, 200, 100);
-
-        Thread.sleep(1000);
-        restartAndCheck(receiver, 300, 100, 0);
-    }
-
-    @Test
     public void atleastOnceClose() throws Exception {
         receiverOptions = receiverOptions.closeTimeout(Duration.ofMillis(1000))
                                          .commitBatchSize(10)
@@ -351,7 +328,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         CountDownLatch commitLatch = new CountDownLatch(count);
         long[] committedOffsets = new long[partitions];
         receiverOptions = receiverOptions
-                .commitInterval(null)
+                .commitInterval(Duration.ZERO)
                 .commitBatchSize(0)
                 .addAssignListener(this::seekToBeginning)
                 .subscription(Collections.singletonList(topic));
@@ -375,7 +352,7 @@ public class ReceiverTest extends AbstractKafkaTest {
 
         AtomicBoolean commitSuccess = new AtomicBoolean();
         Semaphore commitErrorSemaphore = new Semaphore(0);
-        receiverOptions = receiverOptions.commitInterval(null).commitBatchSize(0);
+        receiverOptions = receiverOptions.commitInterval(Duration.ZERO).commitBatchSize(0);
         Receiver<Integer, String> receiver = createReceiver();
         Flux<ConsumerRecord<Integer, String>> kafkaFlux = receiver.receive()
                          .doOnNext(record -> {
@@ -403,7 +380,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         long[] committedOffsets = new long[partitions];
         for (int i = 0; i < committedOffsets.length; i++)
             committedOffsets[i] = 0;
-        receiverOptions = receiverOptions.commitInterval(null).commitBatchSize(0);
+        receiverOptions = receiverOptions.commitInterval(Duration.ZERO).commitBatchSize(0);
         Receiver<Integer, String> receiver = createReceiver();
         Flux<ConsumerRecord<Integer, String>> kafkaFlux = receiver.receive()
                          .doOnNext(record -> {
@@ -429,7 +406,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         for (int i = 0; i < committedOffsets.length; i++)
             committedOffsets[i] = -1;
         List<ReceiverOffset> uncommitted = new ArrayList<>();
-        receiverOptions = receiverOptions.commitInterval(null).commitBatchSize(0);
+        receiverOptions = receiverOptions.commitInterval(Duration.ZERO).commitBatchSize(0);
         Receiver<Integer, String> receiver = createReceiver();
         Flux<ConsumerRecord<Integer, String>> kafkaFlux = receiver.receive()
                          .doOnNext(record -> {
@@ -468,7 +445,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         int failureCount = 2;
         Semaphore commitSuccessSemaphore = new Semaphore(0);
         Semaphore commitFailureSemaphore = new Semaphore(0);
-        receiverOptions = receiverOptions.commitInterval(null).commitBatchSize(0);
+        receiverOptions = receiverOptions.commitInterval(Duration.ZERO).commitBatchSize(0);
         Receiver<Integer, String> receiver = createReceiver();
         TestableReceiver testableReceiver = new TestableReceiver(receiver);
         Flux<ConsumerRecord<Integer, String>> flux = testableReceiver
@@ -580,7 +557,7 @@ public class ReceiverTest extends AbstractKafkaTest {
 
         // Receive from partition 0 and send to partition 1
         Flux<ReceiverRecord<Integer, String>> flux0 = Receiver.create(receiverOptions
-                        .commitInterval(null)
+                        .commitInterval(Duration.ZERO)
                         .commitBatchSize(0)
                         .addAssignListener(this::seekToBeginning)
                         .assignment(Collections.singletonList(new TopicPartition(topic, 0)))
@@ -629,7 +606,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         AtomicInteger commitFailures = new AtomicInteger();
         Semaphore commitSemaphore = new Semaphore(0);
         receiverOptions = receiverOptions
-                .commitInterval(null)
+                .commitInterval(Duration.ZERO)
                 .commitBatchSize(0)
                 .addRevokeListener(partitions -> revoked.addAndGet(partitions.size()))
                 .addAssignListener(this::seekToBeginning)

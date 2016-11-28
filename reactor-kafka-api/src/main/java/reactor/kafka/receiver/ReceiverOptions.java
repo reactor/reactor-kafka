@@ -105,7 +105,7 @@ public class ReceiverOptions<K, V> {
     }
 
     /**
-     * Returns the {@link KafkaConsumer} configuration property for the specified option name.
+     * Returns the {@link KafkaConsumer} configuration property value for the specified option name.
      * @return Kafka consumer configuration option value
      */
     public Object consumerProperty(String name) {
@@ -159,7 +159,7 @@ public class ReceiverOptions<K, V> {
     }
 
     /**
-     * Adds a listener for partition assignment. Applications can use this listener to seek
+     * Adds a listener for partition assignments. Applications can use this listener to seek
      * to different offsets of the assigned partitions using any of the seek methods in
      * {@link ReceiverPartition}. When group management is used, assign listeners are invoked
      * after every rebalance operation. With manual partition assignment using {@link ReceiverOptions#assignment()},
@@ -310,8 +310,7 @@ public class ReceiverOptions<K, V> {
     }
 
     /**
-     * Returns the configured commit interval for automatic commits for automatic
-     * commits of acknowledged records.
+     * Returns the configured commit interval for automatic commits of acknowledged records.
      * @return commit interval duration
      */
     public Duration commitInterval() {
@@ -322,25 +321,21 @@ public class ReceiverOptions<K, V> {
      * Configures commit interval for automatic commits. At least one commit operation is
      * attempted within this interval if messages are consumed and acknowledged.
      * <p>
-     * If <code>commitInterval</code> is null or zero, periodic commits based on time intervals
+     * If <code>commitInterval</code> is zero, periodic commits based on time intervals
      * are disabled. If commit batch size is configured, offsets are committed when the number
-     * of acknowledged offsets reaches the batch size. If commit batch size is zero, it
+     * of acknowledged offsets reaches the batch size. If commit batch size is also zero, it
      * is the responsibility of the application to explicitly commit records using
      * {@link ReceiverOffset#commit()} if required.
+     * <p>
+     * If commit interval and commit batch size are configured, a commit operation is scheduled
+     * when either the interval or batch size is reached.
      *
      * @return options instance with new commit interval
      */
     public ReceiverOptions<K, V> commitInterval(Duration commitInterval) {
-        if (commitInterval != null) {
-            long millis = commitInterval.toMillis();
-            if (millis < 0)
-                throw new IllegalArgumentException("Commit interval must be >= 0");
-            else if (millis == 0)
-                this.commitInterval = null;
-            else
-                this.commitInterval = commitInterval;
-        } else
-            this.commitInterval = null;
+        if (commitInterval == null || commitInterval.isNegative())
+            throw new IllegalArgumentException("Commit interval must be >= 0");
+        this.commitInterval = commitInterval;
         return this;
     }
 
@@ -360,6 +355,9 @@ public class ReceiverOptions<K, V> {
      * interval. If commit interval is null, no automatic commits are performed and it is the
      * responsibility of the application to commit offsets explicitly using {@link ReceiverOffset#commit()}
      * if required.
+     * <p>
+     * If commit batch size and commit interval are configured, a commit operation is scheduled
+     * when either the batch size or interval is reached.
      * @return options instance with new commit batch size
      */
     public ReceiverOptions<K, V> commitBatchSize(int commitBatchSize) {
