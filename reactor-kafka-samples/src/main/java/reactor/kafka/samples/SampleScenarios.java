@@ -36,6 +36,7 @@ import org.slf4j.LoggerFactory;
 
 import reactor.core.Cancellation;
 import reactor.core.publisher.BlockingSink;
+import reactor.core.publisher.BlockingSink.Emission;
 import reactor.core.publisher.EmitterProcessor;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -129,7 +130,7 @@ public class SampleScenarios {
             return Receiver.create(receiverOptions(Collections.singletonList(topic)).commitInterval(Duration.ZERO))
                            .receive()
                            .publishOn(Schedulers.newSingle("sample", true))
-                           .flatMap(m -> storeInDB(m.record().value())
+                           .concatMap(m -> storeInDB(m.record().value())
                                           .doOnSuccess(r -> m.offset().commit().block()))
                            .retry();
         }
@@ -226,7 +227,10 @@ public class SampleScenarios {
             Flux<?> inFlux = Receiver.create(receiverOptions(Collections.singleton(sourceTopic)))
                                      .receiveAutoAck()
                                      .concatMap(r -> r)
-                                     .doOnNext(m -> incoming.emit(m.value()));
+                                     .doOnNext(m -> {
+                                             Emission emission = incoming.emit(m.value());
+                                             log.debug("Emit {} {}", m.value().id(), emission);
+                                         });
             Flux<SenderResult<Integer>> stream1 = sender.send(processor.publishOn(scheduler1).map(p -> SenderRecord.create(process1(p, true), p.id())), false);
             Flux<SenderResult<Integer>> stream2 = sender.send(processor.publishOn(scheduler2).map(p -> SenderRecord.create(process2(p, true), p.id())), false);
             return Flux.merge(stream1, stream2)

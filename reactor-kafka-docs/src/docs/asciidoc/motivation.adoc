@@ -13,7 +13,7 @@ asynchronous produce or consume APIs to be incorporated into the application log
 
 Reactor Kafka API benefits from non-blocking back-pressure provided by Reactor. For example, in a pipeline, where
 messages received from an external source (e.g. an HTTP proxy) are published to Kafka, back-pressure can be applied easily to the
-whole pipeline, limiting the number of messages in-flight and controlling memory usage. Records flow through
+whole pipeline, limiting the number of messages in-flight and controlling memory usage. Messages flow through
 the pipeline as they are available, with Reactor taking care of limiting the flow rate to avoid overflow,
 keeping application logic simple.
 
@@ -49,9 +49,9 @@ this migration can be performed without writing any new code.
 Applications using the connector API may consider using Reactor Kafka if a reactive API is available for
 the external data system and transformations are required for the data. When transformations involve
 other I/O (e.g. to obtain additional information from another database), a reactive pipeline
-benefits from end-to-end non-blocking back-pressure provided by Reactor. Records from/to different Kafka
+benefits from end-to-end non-blocking back-pressure provided by Reactor. Messages from/to different Kafka
 partitions can be processed in parallel, improving throughput by avoiding blocking for I/O.
-The pull model in Reactor controls the pace of records flowing through the pipeline, enabling efflcient
+The pull model in Reactor controls the pace of messages flowing through the pipeline, enabling efficient
 use of threads and memory without the need for overflow handling in the application.
 
 ==== Kafka Streams API

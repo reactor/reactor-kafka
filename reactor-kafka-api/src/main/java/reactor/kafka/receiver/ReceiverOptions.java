@@ -50,6 +50,7 @@ public class ReceiverOptions<K, V> {
     private Duration closeTimeout;
     private Duration commitInterval;
     private int commitBatchSize;
+    private int atmostOnceCommitAheadSize;
     private int maxCommitAttempts;
     private Collection<String> subscribeTopics;
     private Collection<TopicPartition> assignTopicPartitions;
@@ -319,7 +320,7 @@ public class ReceiverOptions<K, V> {
 
     /**
      * Configures commit interval for automatic commits. At least one commit operation is
-     * attempted within this interval if messages are consumed and acknowledged.
+     * attempted within this interval if records are consumed and acknowledged.
      * <p>
      * If <code>commitInterval</code> is zero, periodic commits based on time intervals
      * are disabled. If commit batch size is configured, offsets are committed when the number
@@ -364,6 +365,38 @@ public class ReceiverOptions<K, V> {
         if (commitBatchSize < 0)
             throw new IllegalArgumentException("Commit batch size must be >= 0");
         this.commitBatchSize = commitBatchSize;
+        return this;
+    }
+
+
+    /**
+     * Returns the maximum difference between the offset committed for at-most-once
+     * delivery and the offset of the last record dispatched. The maximum number
+     * of records that may be lost per-partition if the application fails is
+     * <code>commitAheadSize + 1</code>
+     * @return commit ahead size for at-most-once delivery
+     */
+    public int atmostOnceCommitAheadSize() {
+        return atmostOnceCommitAheadSize;
+    }
+
+    /**
+     * Configures commit ahead size per partition for at-most-once delivery. Before dispatching
+     * each record, an offset ahead by this size may be committed. The maximum number
+     * of records that may be lost if the application fails is <code>commitAheadSize + 1</code>.
+     * A high commit ahead size reduces the cost of commits in at-most-once delivery by
+     * reducing the number of commits and avoiding blocking before dispatch if the offset
+     * corresponding to the record was already committed.
+     * <p>
+     * If <code>commitAheadSize</code> is zero (default), offsets are committed synchronously before
+     * each record is dispatched for {@link Receiver#receiveAtmostOnce()}. Otherwise, commits are
+     * performed ahead of dispatch and record dispatch is blocked only if commits haven't completed.
+     * @return options instance with new commit ahead size
+     */
+    public ReceiverOptions<K, V> atmostOnceCommitAheadSize(int commitAheadSize) {
+        if (commitAheadSize < 0)
+            throw new IllegalArgumentException("Commit ahead size must be >= 0");
+        this.atmostOnceCommitAheadSize = commitAheadSize;
         return this;
     }
 
@@ -453,6 +486,11 @@ public class ReceiverOptions<K, V> {
             }
 
             @Override
+            public ReceiverOptions<K, V> atmostOnceCommitAheadSize(int commitAheadSize) {
+                throw new java.lang.UnsupportedOperationException("Cannot modify immutable options");
+            }
+
+            @Override
             public ReceiverOptions<K, V> maxCommitAttempts(int maxRetries) {
                 throw new java.lang.UnsupportedOperationException("Cannot modify immutable options");
             }
@@ -470,6 +508,7 @@ public class ReceiverOptions<K, V> {
         options.closeTimeout = closeTimeout;
         options.commitInterval = commitInterval;
         options.commitBatchSize = commitBatchSize;
+        options.atmostOnceCommitAheadSize = atmostOnceCommitAheadSize;
         options.maxCommitAttempts = maxCommitAttempts;
         return options;
     }

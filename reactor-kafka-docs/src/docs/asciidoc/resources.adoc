@@ -25,4 +25,5 @@ Reactor Kafka is open source and the code and documentation are available at htt
 
 * https://spring.io/blog/2016/04/19/understanding-reactive-types[Understanding Reactive types]
 
+* https://github.com/reactor/lite-rx-api-hands-on[Lite Rx API Hands-on]
 

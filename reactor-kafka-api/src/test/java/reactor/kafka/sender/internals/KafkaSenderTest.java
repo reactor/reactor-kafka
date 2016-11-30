@@ -137,6 +137,7 @@ public class KafkaSenderTest {
         int maxInflight = 2;
         SenderOptions<Integer, String> options = SenderOptions.create();
         sender = new KafkaSender<>(producerFactory, options.maxInFlight(maxInflight));
+        producer.enableInFlightCheck();
         OutgoingRecords outgoing = outgoingRecords.append("nonexistent", 10);
         StepVerifier.create(sender.send(outgoing.producerRecords()))
                     .expectError(InvalidTopicException.class)
@@ -164,6 +165,7 @@ public class KafkaSenderTest {
         int maxInflight = 2;
         SenderOptions<Integer, String> options = SenderOptions.create();
         sender = new KafkaSender<>(producerFactory, options.maxInFlight(maxInflight));
+        producer.enableInFlightCheck();
         OutgoingRecords outgoing = outgoingRecords.append("nonexistent", 10);
         StepVerifier.create(sender.send(outgoing.senderRecords(), true))
                     .recordWith(() -> sendResponses)
@@ -182,6 +184,7 @@ public class KafkaSenderTest {
         int maxInflight = 2;
         SenderOptions<Integer, String> options = SenderOptions.create();
         sender = new KafkaSender<>(producerFactory, options.maxInFlight(maxInflight));
+        producer.enableInFlightCheck();
         OutgoingRecords outgoing = outgoingRecords.append("nonexistent", 10);
         StepVerifier.create(sender.send(outgoing.senderRecords(), false))
                     .recordWith(() -> sendResponses)
@@ -270,6 +273,7 @@ public class KafkaSenderTest {
         int maxInFlight = 2;
         SenderOptions<Integer, String> senderOptions = SenderOptions.<Integer, String>create()
                 .maxInFlight(maxInFlight);
+        producer.enableInFlightCheck();
         sender = new KafkaSender<>(producerFactory, senderOptions);
         sendAndVerifyResponses(sender, topic, 10);
     }
@@ -283,6 +287,7 @@ public class KafkaSenderTest {
         int maxInFlight = 2;
         SenderOptions<Integer, String> senderOptions = SenderOptions.<Integer, String>create()
                 .maxInFlight(maxInFlight);
+        producer.enableInFlightCheck();
         sender = new KafkaSender<>(producerFactory, senderOptions);
         sendNoResponseAndVerify(sender, topic, 10);
     }
@@ -330,6 +335,7 @@ public class KafkaSenderTest {
         SenderOptions<Integer, String> senderOptions = SenderOptions.<Integer, String>create()
                 .maxInFlight(1);
         sender = new KafkaSender<>(producerFactory, senderOptions);
+        producer.enableInFlightCheck();
         OutgoingRecords outgoing = outgoingRecords.append(topic, 10);
 
         AtomicInteger responseCount = new AtomicInteger();

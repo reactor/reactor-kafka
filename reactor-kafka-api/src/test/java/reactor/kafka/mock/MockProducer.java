@@ -18,10 +18,8 @@ package reactor.kafka.mock;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
@@ -29,6 +27,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.Producer;
@@ -48,15 +47,16 @@ public class MockProducer implements Producer<Integer, String> {
 
     private final ScheduledExecutorService executor;
     private final MockCluster cluster;
-    private final Set<ProducerRecord<Integer, String>> inflightSends;
+    private final AtomicInteger inFlightCount;
     private SenderOptions<Integer, String> senderOptions;
     private long sendDelayMs;
     private boolean closed;
+    private boolean inFlightCheckEnabled;
 
     public MockProducer(MockCluster cluster) {
         executor = Executors.newSingleThreadScheduledExecutor();
         this.cluster = cluster;
-        inflightSends = new HashSet<>();
+        inFlightCount = new AtomicInteger();
     }
 
     public void configure(SenderOptions<Integer, String> senderOptions) {
@@ -75,6 +75,12 @@ public class MockProducer implements Producer<Integer, String> {
         }
     }
 
+    // Inflight counts are per-send flux. Checks should be enabled only in tests
+    // with a single send flow.
+    public void enableInFlightCheck() {
+        this.inFlightCheckEnabled = true;
+    }
+
     @Override
     public Future<RecordMetadata> send(ProducerRecord<Integer, String> record) {
         return send(record, null);
@@ -82,9 +88,10 @@ public class MockProducer implements Producer<Integer, String> {
 
     @Override
     public Future<RecordMetadata> send(ProducerRecord<Integer, String> record, Callback callback) {
-        inflightSends.add(record);
-        if (inflightSends.size() > senderOptions.maxInFlight())
-            throw new IllegalStateException("Max inflight limit reached: " + inflightSends.size());
+        if (inFlightCount.incrementAndGet() > senderOptions.maxInFlight()) {
+            if (inFlightCheckEnabled)
+                throw new IllegalStateException("Max inflight limit reached: " + inFlightCount);
+        }
         return executor.schedule(() -> doSend(record, callback), sendDelayMs, TimeUnit.MILLISECONDS);
     }
 
@@ -136,7 +143,7 @@ public class MockProducer implements Producer<Integer, String> {
     public RecordMetadata doSend(ProducerRecord<Integer, String> record, Callback callback) {
         List<PartitionInfo> partitionInfo = cluster.cluster().availablePartitionsForTopic(record.topic());
         TopicPartition topicPartition = new TopicPartition(record.topic(), record.partition());
-        inflightSends.remove(record);
+        inFlightCount.decrementAndGet();
         if (partitionInfo == null) {
             InvalidTopicException e = new InvalidTopicException("Topic not found: " + record.topic());
             callback.onCompletion(null, e);

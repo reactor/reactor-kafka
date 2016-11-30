@@ -80,8 +80,13 @@ public interface Receiver<K, V> {
      * Returns a {@link Flux} of consumer records that are committed before the record is dispatched
      * to provide atmost-once delivery semantics. The offset of each record dispatched on the
      * returned Flux is committed synchronously to ensure that the record is not re-delivered
-     * if the application fails. This mode is expensive since each method is committed individually
-     * and records are not delivered until the commit operation succeeds.
+     * if the application fails.
+     * <p>
+     * This mode is expensive since each method is committed individually and records are
+     * not delivered until the commit operation succeeds. The cost of commits may be reduced by
+     * configuring {@link ReceiverOptions#atmostOnceCommitAheadSize()}. The maximum number of records that
+     * may be lost on each partition if the consuming application crashes is <code>commitAheadSize + 1</code>.
+     *
      * @return Flux of consumer records whose offsets have been committed prior to dispatch
      */
     Flux<ConsumerRecord<K, V>> receiveAtmostOnce();
@@ -89,7 +94,7 @@ public interface Receiver<K, V> {
     /**
      * Invokes the specified function on the Kafka {@link Consumer} associated with this Receiver.
      * The function is scheduled when the returned {@link Mono} is subscribed to. The function is
-     * executed on the thread used for other consumer operations to ensure that @link Consumer}
+     * executed on the thread used for other consumer operations to ensure that {@link Consumer}
      * is never accessed concurrently from multiple threads.
      * <p>
      * Example usage:

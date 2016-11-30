@@ -110,9 +110,9 @@ Message 19 sent successfully, topic-partition=demo-topic-0 offset=6 timestamp=13
 
 The sample producer sends 20 messages to Kafka topic `demo-topic` using the default partitioner. The partition
 and offset of each published message is output to console. As shown in the sample output above, the order of
-results may be different from the order of records published. Results are delivered in order for each partition,
+results may be different from the order of messages published. Results are delivered in order for each partition,
 but results from different partitions may be interleaved. In the sample the message index is included as
-correlation metadata to match each result to its corresponding record.
+correlation metadata to match each result to its corresponding message.
 
 ===== Sample Consumer
 
@@ -149,4 +149,29 @@ The sample consumer consumes messages on topic `demo-topic` and prints the messa
 published by the Producer sample should appear on the console. As shown in the output above, messages are consumed
 in order for each partition, but messages from different partitions may be interleaved.
 
+
+==== Building Reactor Kafka Applications
+
+To build your own application using the Reactor Kafka API, you need to include a dependency to Reactor Kafka.
+
+For gradle:
+
+[source]
+--------
+dependencies {
+    compile "io.projectreactor:reactor-kafka:1.0.0.RELEASE"
+}
+--------
+
+
+For maven:
+
+[source]
+--------
+<dependency>
+    <groupId>io.projectreactor</groupId>	
+    <artifactId>reactor-kafka</artifactId>
+    <version>1.0.0.RELEASE</version>
+</dependency>
+--------
 

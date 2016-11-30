@@ -293,6 +293,46 @@ public class KafkaReceiverTest {
     }
 
     /**
+     * Tests {@link Receiver#receiveAtmostOnce()} with commit-ahead.
+     */
+    @Test
+    public void atmostOnceCommitAheadSize() {
+        int commitAhead = 5;
+        receiverOptions = receiverOptions
+                .atmostOnceCommitAheadSize(commitAhead)
+                .subscription(Collections.singleton(topic));
+        sendMessages(topic, 0, 50);
+        Map<TopicPartition, Long> consumedOffsets = new HashMap<>();
+        Flux<ConsumerRecord<Integer, String>> inboundFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
+                .receiveAtmostOnce()
+                .filter(r -> {
+                        long committed = cluster.committedOffset(groupId, topicPartition(r));
+                        return committed >= r.offset() && committed <= r.offset() + commitAhead + 1;
+                    })
+                .doOnNext(r -> consumedOffsets.put(new TopicPartition(r.topic(), r.partition()), r.offset()));
+        int consumeCount = 17;
+        StepVerifier.create(inboundFlux, consumeCount)
+            .recordWith(() -> receivedMessages)
+            .expectNextCount(consumeCount)
+            .thenCancel()
+            .verify();
+        verifyMessages(consumeCount);
+        for (int i = 0; i < cluster.partitions(topic).size(); i++) {
+            TopicPartition topicPartition = new TopicPartition(topic, i);
+            long consumed = consumedOffsets.get(topicPartition);
+            consumerFactory.addConsumer(new MockConsumer(cluster, true));
+            receiverOptions = receiverOptions.assignment(Collections.singleton(topicPartition));
+            inboundFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
+                    .receiveAtmostOnce();
+            StepVerifier.create(inboundFlux, 1)
+                .expectNextMatches(r -> r.offset() > consumed && r.offset() <= consumed + commitAhead + 1)
+                .thenCancel()
+                .verify();
+        }
+
+    }
+
+    /**
      * Tests that transient commit failures are retried with {@link Receiver#receiveAtmostOnce()}.
      */
     @Test

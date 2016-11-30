@@ -9,7 +9,7 @@ https://github.com/reactor/reactor-kafka/tree/master/reactor-kafka-samples[sampl
 
 See <<api-guide-sender,Sender API>> for details on the Sender API for sending outbound records
 to Kafka. The following code segment creates a simple pipeline that sends records to Kafka and
-processes the responses. The outbound flow is triggered when the returned flux is subscribe to.
+processes the responses. The outbound flow is triggered when the returned Flux is subscribed to.
 
 [source,java]
 --------
@@ -20,15 +20,16 @@ Sender.create(SenderOptions.<Integer, String>create(producerProps).maxInFlight(5
 --------
 
 <1> Create a sender with maximum 512 messages in-flight.
-<2> Send a sequence of sender records with delayError=false
+<2> Send a sequence of sender records with delayError=false to fail on error
 <3> Process send result when onNext is triggered
 
 [[sample-consumer]]
-=== Consuming records from Kafka
+=== Replaying records from Kafka topics
 
 See <<api-guide-receiver,Receiver API>> for details on the Receiver API for consuming records
-from Kafka topics. The following code segment creates a flux that replays all records on a topic
-and commits offsets after processing the messages using at-least-once semantics.
+from Kafka topics. The following code segment creates a Flux that replays all records on a topic
+and commits offsets after processing the messages. Manual acknowledgement provides
+at-least-once delivery semantics.
 
 
 [source,java]
@@ -46,9 +47,9 @@ Receiver.create(options)
             });
 --------
 <1> Start consuming from first available offset on each partition if committed offsets are not available
-<2> Commit when 10 messages have been acknowledged
+<2> Commit every 10 acknowledged messages
 <3> Topics to consume from
-<4> Process consumer record from kafka
+<4> Process consumer record from Kafka
 <5> Acknowledge that record has been consumed
 
 
@@ -95,7 +96,7 @@ receiverOptions = receiverOptions
 Receiver.create(receiverOptions)
         .receive()
         .publishOn(Schedulers.newSingle("sample", true))
-        .flatMap(m -> sink.store(transform(m.record()))                    // <4>
+        .concatMap(m -> sink.store(transform(m.record()))                  // <4>
                           .doOnSuccess(r -> m.offset().commit().block())); // <5>
 --------
 <1> Disable periodic commits
@@ -134,7 +135,7 @@ The code segment below demonstrates a flow with at-most once delivery. Producer 
 does not perform any retries. Messages that cannot be delivered to Kafka on the first attempt
 are dropped. `Receiver` commits offsets before delivery to the application to ensure that if the consumer
 restarts, messages are not redelivered. With replication factor 1 for topic partitions,
-this code demonstrates at-most-once delivery.
+this code can be used for at-most-once delivery.
 
 [source,java]
 --------
@@ -152,6 +153,40 @@ Sender.create(senderOptions)
 <1> Send with acks=0 completes when message is buffered locally, before it is delivered to Kafka broker
 <2> No retries in producer
 <3> At-most-once receive
+
+[[fan-out]]
+=== Fan-out with Multiple Streams
+
+The code segment below demonstrates fan-out with the same records processed in multiple independent
+streams. Each stream is processed on a different thread and which transforms the input record
+and stores the output in a Kafka topic.
+
+Reactor's https://projectreactor.io/core/docs/api/reactor/core/publisher/EmitterProcessor.html[EmitterProcessor]
+is used to broadcast the input records from Kafka to multiple subscribers.
+
+[source,java]
+--------
+
+EmitterProcessor<Person> processor = EmitterProcessor.create();         // <1>
+BlockingSink<Person> incoming = processor.connectSink();                // <2>
+inputRecords = Receiver.create(receiverOptions)
+                       .receive()
+                       .doOnNext(m -> incoming.emit(m.value()));        // <3>
+
+outputRecords1 = processor.publishOn(scheduler1).map(p -> process1(p)); // <4>
+outputRecords2 = processor.publishOn(scheduler2).map(p -> process2(p)); // <5>
+
+Flux.merge(sender.send(outputRecords1, false), sender.send(outputRecords2, false))
+    .doOnSubscribe(s -> inputRecords.subscribe())
+    .subscribe();                                                       // <6>
+--------
+<1> Create publish/subscribe EmitterProcessor for fan-out of Kafka inbound records
+<2> Create BlockingSink to which records are emitted
+<3> Receive from Kafka and emit to BlockingSink
+<4> Consume records on a scheduler, process and generate output records to send to Kafka
+<5> Add another processor for the same input data on a different scheduler
+<6> Merge the streams and subscribe to start the flow
+
 
 [[concurrent-ordered]]
 === Concurrent Processing with Partition-Based Ordering

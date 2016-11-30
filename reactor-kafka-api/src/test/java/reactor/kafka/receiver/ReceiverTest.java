@@ -686,28 +686,35 @@ public class ReceiverTest extends AbstractKafkaTest {
     }
 
     @Test
-    public void multiConsumer() throws Exception {
+    public void multiConsumerGroup() throws Exception {
         int count = 100;
         CountDownLatch latch = new CountDownLatch(count);
         @SuppressWarnings({"unchecked"})
         Flux<ReceiverRecord<Integer, String>>[] kafkaFlux = (Flux<ReceiverRecord<Integer, String>>[]) new Flux<?>[partitions];
-        AtomicInteger[] receiveCount = new AtomicInteger[partitions];
+        AtomicInteger assigned = new AtomicInteger();
         for (int i = 0; i < partitions; i++) {
             final int id = i;
-            receiveCount[i] = new AtomicInteger();
+            log.info("Start consumer {}", id);
             receiverOptions = receiverOptions
                     .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
-                    .addAssignListener(this::onPartitionsAssigned)
+                    .addAssignListener(p -> {
+                            log.info("Assigned {} {} {}", Thread.currentThread().getName(), id, p);
+                            assigned.incrementAndGet();
+                        })
+                    .addRevokeListener(p -> log.info("Revoked {} {} {}", Thread.currentThread().getName(), id, p))
                     .subscription(Collections.singletonList(topic));
             kafkaFlux[i] = Receiver.create(receiverOptions).receive()
                     .publishOn(consumerScheduler)
                     .doOnNext(record -> {
-                            receiveCount[id].incrementAndGet();
                             onReceive(record.record());
                             latch.countDown();
                         })
                     .doOnError(e -> log.error("KafkaFlux exception", e));
             subscribeCancellations.add(kafkaFlux[i].subscribe());
+            TestUtils.waitUntil("Assigment not complete for " + i, () -> assigned, a -> a.get() >= id + 1, assigned, Duration.ofSeconds(30));
+            assigned.set(0);
+            receiverOptions.clearAssignListeners();
+            receiverOptions.clearRevokeListeners();
         }
         sendMessages(0, count);
         waitForMessages(latch);

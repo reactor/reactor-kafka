@@ -27,6 +27,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -97,6 +98,7 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
     private final AtomicBoolean isActive;
     private final AtomicBoolean isClosed;
     private AckMode ackMode;
+    private AtmostOnceOffsets atmostOnceOffsets;
     private EmitterProcessor<Event<?>> eventEmitter;
     private BlockingSink<Event<?>> eventSubmission;
     private EmitterProcessor<ConsumerRecords<K, V>> recordEmitter;
@@ -160,10 +162,22 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
     @Override
     public Flux<ConsumerRecord<K, V>> receiveAtmostOnce() {
         this.ackMode = AckMode.ATMOST_ONCE;
+        atmostOnceOffsets = new AtmostOnceOffsets();
         Flux<ConsumerRecord<K, V>> flux = createConsumerFlux()
                 .concatMap(consumerRecords -> Flux.fromIterable(consumerRecords));
         return withDoOnRequest(flux)
-                .doOnNext(r -> new CommittableOffset(r).commit().block());
+                .doOnNext(r -> {
+                        long offset = r.offset();
+                        TopicPartition partition = new TopicPartition(r.topic(), r.partition());
+                        long committedOffset = atmostOnceOffsets.committedOffset(partition);
+                        atmostOnceOffsets.onDispatch(partition, offset);
+                        long commitAheadSize = receiverOptions.atmostOnceCommitAheadSize();
+                        CommittableOffset committable = new CommittableOffset(partition, offset + commitAheadSize);
+                        if (offset >= committedOffset)
+                            committable.commit().block();
+                        else if (committedOffset - offset >= commitAheadSize / 2)
+                            committable.commit().subscribe();
+                    });
     }
 
     @Override
@@ -343,6 +357,7 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
                     }
                     consumerFlux = null;
                     consumerProxy = null;
+                    atmostOnceOffsets = null;
                     isClosed.set(true);
                 }
             }
@@ -470,9 +485,11 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
                             try {
                                 consumer.commitSync(commitArgs.offsets());
                                 handleSuccess(commitArgs, commitArgs.offsets());
+                                atmostOnceOffsets.onCommit(commitArgs.offsets());
                             } catch (Exception e) {
                                 handleFailure(commitArgs, e);
                             }
+                            inProgress.decrementAndGet();
                         }
                     } else {
                         handleSuccess(commitArgs, commitArgs.offsets());
@@ -613,10 +630,12 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
                     int attempts = 3;
                     for (int i = 0; i < attempts; i++) {
                         try {
-                            if (ackMode != AckMode.ATMOST_ONCE) {
-                                commitEvent.runIfRequired(true);
-                                commitEvent.waitFor(closeEndTimeNanos);
-                            }
+                            boolean forceCommit = true;
+                            if (ackMode == AckMode.ATMOST_ONCE)
+                                forceCommit = atmostOnceOffsets.undoCommitAhead(committableBatch());
+                            commitEvent.runIfRequired(forceCommit);
+                            commitEvent.waitFor(closeEndTimeNanos);
+
                             consumer.close();
                             break;
                         } catch (WakeupException e) {
@@ -708,6 +727,43 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
         @Override
         public String toString() {
             return topicPartition + "@" + commitOffset;
+        }
+    }
+
+    private static class AtmostOnceOffsets {
+        private final Map<TopicPartition, Long> committedOffsets;
+        private final Map<TopicPartition, Long> dispatchedOffsets;
+
+        AtmostOnceOffsets() {
+            this.committedOffsets = new ConcurrentHashMap<TopicPartition, Long>();
+            this.dispatchedOffsets = new ConcurrentHashMap<TopicPartition, Long>();
+        }
+
+        void onCommit(Map<TopicPartition, OffsetAndMetadata> offsets) {
+            for (Map.Entry<TopicPartition, OffsetAndMetadata> entry : offsets.entrySet())
+                committedOffsets.put(entry.getKey(), entry.getValue().offset());
+        }
+
+        void onDispatch(TopicPartition topicPartition, long offset) {
+            dispatchedOffsets.put(topicPartition, offset);
+        }
+
+        long committedOffset(TopicPartition topicPartition) {
+            Long offset = committedOffsets.get(topicPartition);
+            return offset == null ? -1 : offset.longValue();
+        }
+
+        boolean undoCommitAhead(CommittableBatch committableBatch) {
+            boolean undoRequired = false;
+            for (Map.Entry<TopicPartition, Long> entry : committedOffsets.entrySet()) {
+                TopicPartition topicPartition = entry.getKey();
+                long offsetToCommit = dispatchedOffsets.get(entry.getKey()) + 1;
+                if (entry.getValue() > offsetToCommit) {
+                    committableBatch.updateOffset(topicPartition, offsetToCommit);
+                    undoRequired = true;
+                }
+            }
+            return undoRequired;
         }
     }
 }

@@ -34,9 +34,9 @@ public interface ReceiverRecord<K, V> {
 
     /**
      * Returns an acknowledgeable offset instance that should be acknowledged after this
-     * record record has been consumed. Acknowledged records are automatically committed
-     * based on the commit batch size and commit interval configured. Acknowledged records
-     * may be also committed using {@link ReceiverOffset#commit()}.
+     * record has been consumed. Acknowledged records are automatically committed
+     * based on the commit batch size and commit interval configured for the Receiver.
+     * Acknowledged records may be also committed using {@link ReceiverOffset#commit()}.
      *
      * @return offset to acknowledge after record is processed
      */
