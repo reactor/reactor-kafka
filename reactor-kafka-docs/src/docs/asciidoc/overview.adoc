@@ -5,7 +5,7 @@
 
 https://kafka.apache.org[Kafka] is a scalable, high-performance distributed messaging engine.
 Low latency, high throughput messaging capability combined with fault-tolerance have made Kafka a popular
-messaging service as well as a powerful streaming platform for processing of real-time streams of events.
+messaging service as well as a powerful streaming platform for processing real-time streams of events.
 
 Apache Kafka provides three main APIs:
 
@@ -17,13 +17,18 @@ Apache Kafka provides three main APIs:
 
 https://projectreactor.io[Reactor] is a highly optimized reactive library for building efficient, non-blocking
 applications on the JVM based on the https://github.com/reactive-streams/reactive-streams-jvm[Reactive Streams Specification].
-Reactor processors can sustain very high throughput message rates and operate with a very low memory footprint,
+Reactor based applications can sustain very high throughput message rates and operate with a very low memory footprint,
 making it suitable for building efficient event-driven applications using the microservices architecture.
+
+Reactor implements two publishers https://projectreactor.io/core/docs/api/reactor/core/publisher/Flux.html[Flux<T>] and
+https://projectreactor.io/core/docs/api/reactor/core/publisher/Mono.html[Mono<T>], both of which support non-blocking back-pressure.
+This enables exchange of data between threads with well-defined memory usage, avoiding unnecessary intermediate buffering or blocking.
 
 === Reactive API for Kafka
 
-link:index.html[Reactor Kafka] is a reactive API for Kafka based on Reactor. Messages can be published to Kafka and consumed from
-Kafka using functional APIs with non-blocking back-pressure with very low overheads. This enables applications
-using Reactor to use Kafka as a message bus or streaming platform and integrate with other systems to provide an end-to-end reactive pipeline.
+link:index.html[Reactor Kafka] is a reactive API for Kafka based on Reactor and the Kafka Producer/Consumer API.
+Reactor Kafka API enables records to be published to Kafka and consumed from Kafka using functional APIs
+with non-blocking back-pressure and very low overheads. This enables applications using Reactor to use
+Kafka as a message bus or streaming platform and integrate with other systems to provide an end-to-end reactive pipeline.
 
 

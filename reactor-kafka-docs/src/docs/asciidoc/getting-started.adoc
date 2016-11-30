@@ -2,12 +2,14 @@
 
 [[requirements]]
 === Requirements
+
 You need Java JRE installed (Java 8 or later).
 
 You need http://kafka.apache.org[Apache Kafka] installed (0.10.1.0 or later). Kafka can be downloaded
 from https://kafka.apache.org/downloads.html.
 
 === Quick Start
+
 This quick start tutorial sets up a single node Zookeeper and Kafka and runs the sample reactive producer and
 consumer. Instructions to set up multi-broker clusters are available http://kafka.apache.org/documentation#quickstart_multibroker[here].
 
@@ -19,7 +21,7 @@ Unzip the release and set KAFKA_DIR to the installation directory. For example,
 
 [source]
 --------
-> tar xfzC kafka_2.11-0.10.1.0.tgz /opt
+> tar -zxf kafka_2.11-0.10.1.0.tgz -C /opt
 > export KAFKA_DIR=/opt/kafka_2.11-0.10.1.0
 --------
 
@@ -84,10 +86,33 @@ Run sample producer:
 [source]
 --------
 > $KAFKA_DIR/bin/kafka-run-class.sh reactor.kafka.samples.SampleProducer
+Message 2 sent successfully, topic-partition=demo-topic-1 offset=0 timestamp=13:33:16:716 GMT 30 Nov 2016
+Message 3 sent successfully, topic-partition=demo-topic-1 offset=1 timestamp=13:33:16:716 GMT 30 Nov 2016
+Message 4 sent successfully, topic-partition=demo-topic-1 offset=2 timestamp=13:33:16:716 GMT 30 Nov 2016
+Message 6 sent successfully, topic-partition=demo-topic-1 offset=3 timestamp=13:33:16:716 GMT 30 Nov 2016
+Message 7 sent successfully, topic-partition=demo-topic-1 offset=4 timestamp=13:33:16:716 GMT 30 Nov 2016
+Message 10 sent successfully, topic-partition=demo-topic-1 offset=5 timestamp=13:33:16:716 GMT 30 Nov 2016
+Message 11 sent successfully, topic-partition=demo-topic-1 offset=6 timestamp=13:33:16:716 GMT 30 Nov 2016
+Message 12 sent successfully, topic-partition=demo-topic-1 offset=7 timestamp=13:33:16:717 GMT 30 Nov 2016
+Message 13 sent successfully, topic-partition=demo-topic-1 offset=8 timestamp=13:33:16:717 GMT 30 Nov 2016
+Message 14 sent successfully, topic-partition=demo-topic-1 offset=9 timestamp=13:33:16:717 GMT 30 Nov 2016
+Message 16 sent successfully, topic-partition=demo-topic-1 offset=10 timestamp=13:33:16:717 GMT 30 Nov 2016
+Message 17 sent successfully, topic-partition=demo-topic-1 offset=11 timestamp=13:33:16:717 GMT 30 Nov 2016
+Message 20 sent successfully, topic-partition=demo-topic-1 offset=12 timestamp=13:33:16:717 GMT 30 Nov 2016
+Message 1 sent successfully, topic-partition=demo-topic-0 offset=0 timestamp=13:33:16:712 GMT 30 Nov 2016
+Message 5 sent successfully, topic-partition=demo-topic-0 offset=1 timestamp=13:33:16:716 GMT 30 Nov 2016
+Message 8 sent successfully, topic-partition=demo-topic-0 offset=2 timestamp=13:33:16:716 GMT 30 Nov 2016
+Message 9 sent successfully, topic-partition=demo-topic-0 offset=3 timestamp=13:33:16:716 GMT 30 Nov 2016
+Message 15 sent successfully, topic-partition=demo-topic-0 offset=4 timestamp=13:33:16:717 GMT 30 Nov 2016
+Message 18 sent successfully, topic-partition=demo-topic-0 offset=5 timestamp=13:33:16:717 GMT 30 Nov 2016
+Message 19 sent successfully, topic-partition=demo-topic-0 offset=6 timestamp=13:33:16:717 GMT 30 Nov 2016
 --------
 
 The sample producer sends 20 messages to Kafka topic `demo-topic` using the default partitioner. The partition
-and offset of each published message is output to console.
+and offset of each published message is output to console. As shown in the sample output above, the order of
+results may be different from the order of records published. Results are delivered in order for each partition,
+but results from different partitions may be interleaved. In the sample the message index is included as
+correlation metadata to match each result to its corresponding record.
 
 ===== Sample Consumer
 
@@ -98,8 +123,30 @@ Run sample consumer:
 [source]
 --------
 > $KAFKA_DIR/bin/kafka-run-class.sh reactor.kafka.samples.SampleConsumer
+Received message: topic-partition=demo-topic-1 offset=0 timestamp=13:33:16:716 GMT 30 Nov 2016 key=2 value=Message_2
+Received message: topic-partition=demo-topic-1 offset=1 timestamp=13:33:16:716 GMT 30 Nov 2016 key=3 value=Message_3
+Received message: topic-partition=demo-topic-1 offset=2 timestamp=13:33:16:716 GMT 30 Nov 2016 key=4 value=Message_4
+Received message: topic-partition=demo-topic-1 offset=3 timestamp=13:33:16:716 GMT 30 Nov 2016 key=6 value=Message_6
+Received message: topic-partition=demo-topic-1 offset=4 timestamp=13:33:16:716 GMT 30 Nov 2016 key=7 value=Message_7
+Received message: topic-partition=demo-topic-1 offset=5 timestamp=13:33:16:716 GMT 30 Nov 2016 key=10 value=Message_10
+Received message: topic-partition=demo-topic-1 offset=6 timestamp=13:33:16:716 GMT 30 Nov 2016 key=11 value=Message_11
+Received message: topic-partition=demo-topic-1 offset=7 timestamp=13:33:16:717 GMT 30 Nov 2016 key=12 value=Message_12
+Received message: topic-partition=demo-topic-1 offset=8 timestamp=13:33:16:717 GMT 30 Nov 2016 key=13 value=Message_13
+Received message: topic-partition=demo-topic-1 offset=9 timestamp=13:33:16:717 GMT 30 Nov 2016 key=14 value=Message_14
+Received message: topic-partition=demo-topic-1 offset=10 timestamp=13:33:16:717 GMT 30 Nov 2016 key=16 value=Message_16
+Received message: topic-partition=demo-topic-1 offset=11 timestamp=13:33:16:717 GMT 30 Nov 2016 key=17 value=Message_17
+Received message: topic-partition=demo-topic-1 offset=12 timestamp=13:33:16:717 GMT 30 Nov 2016 key=20 value=Message_20
+Received message: topic-partition=demo-topic-0 offset=0 timestamp=13:33:16:712 GMT 30 Nov 2016 key=1 value=Message_1
+Received message: topic-partition=demo-topic-0 offset=1 timestamp=13:33:16:716 GMT 30 Nov 2016 key=5 value=Message_5
+Received message: topic-partition=demo-topic-0 offset=2 timestamp=13:33:16:716 GMT 30 Nov 2016 key=8 value=Message_8
+Received message: topic-partition=demo-topic-0 offset=3 timestamp=13:33:16:716 GMT 30 Nov 2016 key=9 value=Message_9
+Received message: topic-partition=demo-topic-0 offset=4 timestamp=13:33:16:717 GMT 30 Nov 2016 key=15 value=Message_15
+Received message: topic-partition=demo-topic-0 offset=5 timestamp=13:33:16:717 GMT 30 Nov 2016 key=18 value=Message_18
+Received message: topic-partition=demo-topic-0 offset=6 timestamp=13:33:16:717 GMT 30 Nov 2016 key=19 value=Message_19
 --------
 
 The sample consumer consumes messages on topic `demo-topic` and prints the message on the console. The 20 messages
-published by the Producer sample should appear on the console.
+published by the Producer sample should appear on the console. As shown in the output above, messages are consumed
+in order for each partition, but messages from different partitions may be interleaved.
+
 

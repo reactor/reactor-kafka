@@ -2,6 +2,7 @@
 
 [[support]]
 === Getting help
+
 If you are having trouble with Reactor Kafka, we'd like to help.
 
 Report bugs in Reactor Kafka at https://github.com/reactor/reactor-kafka/issues.
@@ -21,5 +22,7 @@ Reactor Kafka is open source and the code and documentation are available at htt
 * https://github.com/reactive-streams/reactive-streams-jvm[Reactive Streams Specification]
 
 * https://github.com/reactor/reactor-kafka[Reactor Kafka on github]
+
+* https://spring.io/blog/2016/04/19/understanding-reactive-types[Understanding Reactive types]
 
 

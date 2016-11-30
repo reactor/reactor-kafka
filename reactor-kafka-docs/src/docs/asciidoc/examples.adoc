@@ -25,6 +25,7 @@ Sender.create(SenderOptions.<Integer, String>create(producerProps).maxInFlight(5
 
 [[sample-consumer]]
 === Consuming records from Kafka
+
 See <<api-guide-receiver,Receiver API>> for details on the Receiver API for consuming records
 from Kafka topics. The following code segment creates a flux that replays all records on a topic
 and commits offsets after processing the messages using at-least-once semantics.
@@ -128,6 +129,7 @@ sender.send(Receiver.create(receiverOptions)
 
 [[at-most-once]]
 === At-most-once delivery
+
 The code segment below demonstrates a flow with at-most once delivery. Producer does not wait for acks and
 does not perform any retries. Messages that cannot be delivered to Kafka on the first attempt
 are dropped. `Receiver` commits offsets before delivery to the application to ensure that if the consumer
@@ -149,7 +151,7 @@ Sender.create(senderOptions)
 --------
 <1> Send with acks=0 completes when message is buffered locally, before it is delivered to Kafka broker
 <2> No retries in producer
-<3> At-most-once receive 
+<3> At-most-once receive
 
 [[concurrent-ordered]]
 === Concurrent Processing with Partition-Based Ordering
