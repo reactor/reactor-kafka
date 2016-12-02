@@ -26,9 +26,6 @@ plugins {
   id 'org.asciidoctor.convert' version '1.5.3'
 }
 
-description = 'Reactive interface for Apache Kafka'
-group = 'reactor.kafka'
-
 ext {
     gradleVersion = '3.1'
     gradleScriptDir = "${rootProject.projectDir}/gradle"
@@ -65,6 +62,8 @@ configurations.all {
 }
 
 subprojects {
+    group = 'io.projectreactor.kafka'
+
     repositories {
         mavenLocal()
         maven { url 'http://repo.spring.io/libs-release' }
@@ -78,6 +77,7 @@ subprojects {
     apply plugin: 'idea'
     apply plugin: 'checkstyle'
     apply plugin: 'java'
+
 
     sourceCompatibility = targetCompatibility = 1.8
 
@@ -129,9 +129,17 @@ subprojects {
 }
 
 project(':reactor-kafka-api') {
+    archivesBaseName = 'reactor-kafka'
+    description = 'Reactor Kafka: A reactive API for Apache Kafka'
+
+    artifacts {
+        archives sourcesJar
+        archives javadocJar
+    }
 }
 
 project(':reactor-kafka-tools') {
+    description = 'Tools for Reactor Kafka'
     dependencies {
         compile project(':reactor-kafka-api')
         compile "com.yammer.metrics:metrics-core:$metricsVersion"
@@ -144,9 +152,14 @@ project(':reactor-kafka-tools') {
     test {
         systemProperties System.properties
     }
+
+    artifacts {
+        archives sourcesJar
+    }
 }
 
 project(':reactor-kafka-samples') {
+    description = 'Samples for Reactor Kafka'
     dependencies {
         compile project(':reactor-kafka-api')
         compile "com.yammer.metrics:metrics-core:$metricsVersion"
@@ -157,9 +170,15 @@ project(':reactor-kafka-samples') {
     task classpath << {
         println sourceSets.main.runtimeClasspath.asPath
     }
+
+    artifacts {
+        archives sourcesJar
+        archives javadocJar
+    }
 }
 
 project(':reactor-kafka-docs') {
+    description = 'Documentation for Reactor Kafka'
     apply plugin: 'org.asciidoctor.convert'
 
     task api(type: Javadoc) {

@@ -116,7 +116,7 @@ public class SampleScenarios {
     /**
      * This sample demonstrates the use of Kafka as a source when messages are transferred from
      * a Kafka topic to an external sink. Kafka offsets are committed when records are successfully
-     * transferred. Unlimited retries on the source KafkaFlux ensure that the Kafka consumer is
+     * transferred. Unlimited retries on the source Kafka Flux ensure that the Kafka consumer is
      * restarted if there are any exceptions while processing records.
      */
     public static class KafkaSource extends AbstractScenario {
@@ -172,7 +172,7 @@ public class SampleScenarios {
     /**
      * This sample demonstrates a flow with at-most once delivery. A topic with replication factor one
      * combined with a producer with acks=0 and no retries ensures that messages that could not be sent
-     * to Kafka on the first attempt are dropped. On the consumer side, {@link KafkaFlux#atmostOnce()}
+     * to Kafka on the first attempt are dropped. On the consumer side, {@link Receiver#receiveAtmostOnce()}
      * commits offsets before delivery to the application to ensure that if the consumer restarts,
      * messages are not redelivered.
      */

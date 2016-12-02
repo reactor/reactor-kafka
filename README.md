@@ -1,13 +1,9 @@
-Reactive Kafka API
+Reactor Kafka API
 ===================
 
 You need to have [Gradle 2.0 or higher](http://www.gradle.org/installation) and [Java 8](http://www.oracle.com/technetwork/java/javase/downloads/index.html) installed.
 
-### First bootstrap and download the wrapper ###
-    cd reactor-kafka
-    gradle
-
-### Building a jar and running it ###
+### Building Reactor Kafka jars ###
     ./gradlew jar
 
 ### Running unit tests ###
@@ -34,4 +30,11 @@ See [reactor-kafka-samples/src/main/java/reactor/kafka/samples/SampleConsumer.ja
 1. Update BOOTSTRAP_SERVERS and TOPIC in SampleConsumer.java if required
 2.  Run reactor.kafka.samples.SampleConsumer (eg. from IDE as a Java application))
 
+### Community / Support ###
+
+* [GitHub Issues](https://github.com/reactor/reactor-kafka/issues)
+
+### License ###
+
+Reactor Kafka is [Apache 2.0 licensed](http://www.apache.org/licenses/LICENSE-2.0.html).
 
