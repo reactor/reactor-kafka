@@ -6,7 +6,8 @@
 You need Java JRE installed (Java 8 or later).
 
 You need http://kafka.apache.org[Apache Kafka] installed (0.10.1.0 or later). Kafka can be downloaded
-from https://kafka.apache.org/downloads.html.
+from https://kafka.apache.org/downloads.html. Note that the Apache Kafka client library used with Reactor Kafka
+should be the same as or lower than the version of Kafka brokers.
 
 === Quick Start
 
@@ -159,7 +160,7 @@ For gradle:
 [source]
 --------
 dependencies {
-    compile "io.projectreactor:reactor-kafka:1.0.0.RELEASE"
+    compile "io.projectreactor:reactor-kafka:1.0.0.M1"
 }
 --------
 
@@ -171,7 +172,7 @@ For maven:
 <dependency>
     <groupId>io.projectreactor</groupId>	
     <artifactId>reactor-kafka</artifactId>
-    <version>1.0.0.RELEASE</version>
+    <version>1.0.0.M1</version>
 </dependency>
 --------
 

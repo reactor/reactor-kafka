@@ -11,7 +11,7 @@ asynchronous produce or consume APIs to be incorporated into the application log
 [[back-pressure]]
 === Non-blocking Back-pressure
 
-Reactor Kafka API benefits from non-blocking back-pressure provided by Reactor. For example, in a pipeline, where
+The Reactor Kafka API benefits from non-blocking back-pressure provided by Reactor. For example, in a pipeline, where
 messages received from an external source (e.g. an HTTP proxy) are published to Kafka, back-pressure can be applied easily to the
 whole pipeline, limiting the number of messages in-flight and controlling memory usage. Messages flow through
 the pipeline as they are available, with Reactor taking care of limiting the flow rate to avoid overflow,

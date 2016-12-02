@@ -54,7 +54,7 @@ Sender<Integer, String> sender = Sender.create(senderOptions);
 --------
 
 The Sender is now ready to send messages to Kafka.
-The underlying `KafkaProducer` instance is created lazily when the first request is ready to be sent.
+The underlying `KafkaProducer` instance is created lazily when the first message is ready to be sent.
 At this point, a `Sender` instance has been created, but no connections to Kafka have been made yet.
 
 Let's now create a sequence of messages to send to Kafka. Each outbound message to be sent to Kafka
@@ -269,7 +269,7 @@ https://kafka.apache.org/0101/javadoc/org/apache/kafka/clients/consumer/Consumer
 returned by `KafkaConsumer` and a committable `ReceiverOffset` instance. The offset must be acknowledged
 after the message is processed since unacknowledged offsets will not be committed.
 If commit interval or commit batch size are configured, acknowledged offsets will be committed periodically.
-Offsets may also be committed manually using `ReceiverOffset#commit()` if finer grain control of commit
+Offsets may also be committed manually using `ReceiverOffset#commit()` if finer grained control of commit
 operations is required.
 
 

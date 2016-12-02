@@ -27,3 +27,5 @@ Reactor Kafka is open source and the code and documentation are available at htt
 
 * https://github.com/reactor/lite-rx-api-hands-on[Lite Rx API Hands-on]
 
+* https://www.infoq.com/articles/reactor-by-example[Reactor by Example]
+
