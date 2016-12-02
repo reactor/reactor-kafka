@@ -3,6 +3,10 @@ Reactor Kafka API
 
 You need to have [Gradle 2.0 or higher](http://www.gradle.org/installation) and [Java 8](http://www.oracle.com/technetwork/java/javase/downloads/index.html) installed.
 
+### Bootstrap and download the wrapper ###
+    cd reactor-kafka
+    gradle wrapper
+
 ### Building Reactor Kafka jars ###
     ./gradlew jar
 

@@ -147,7 +147,7 @@ receiverOptions = receiverOptions
 Sender.create(senderOptions)
       .send(Receiver.create(receiverOptions)
                     .receiveAtmostOnce()                   // <3>
-                    .map(cr -> SenderRecord.create(transform(cr.record().value()), cr.offset())),
+                    .map(cr -> SenderRecord.create(transform(cr.value()), cr.offset())),
             true);
 --------
 <1> Send with acks=0 completes when message is buffered locally, before it is delivered to Kafka broker

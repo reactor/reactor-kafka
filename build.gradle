@@ -54,7 +54,7 @@ ext {
 }
 
 apply from: "$gradleScriptDir/setup.gradle"
-apply plugin: 'propdeps'
+apply from: "$gradleScriptDir/doc.gradle"
 
 configurations.all {
   // check for snapshot updates every time
@@ -75,9 +75,9 @@ subprojects {
     apply plugin: 'maven'
     apply plugin: 'eclipse'
     apply plugin: 'idea'
+    apply plugin: 'propdeps'
     apply plugin: 'checkstyle'
     apply plugin: 'java'
-
 
     sourceCompatibility = targetCompatibility = 1.8
 
@@ -100,15 +100,6 @@ subprojects {
     }
     test.dependsOn('checkstyleMain', 'checkstyleTest')
 
-    task srcJar(type: Jar) {
-        classifier = 'sources'
-        from sourceSets.main.allJava
-    }
-
-    artifacts {
-        archives srcJar
-    }
-
     dependencies {
         compile "org.apache.kafka:kafka-clients:$kafkaVersion"
         compile "io.projectreactor:reactor-core:$reactorVersion"
@@ -125,7 +116,6 @@ subprojects {
         testCompile "org.slf4j:slf4j-api:$slf4jVersion"
         testCompile "org.slf4j:slf4j-log4j12:$slf4jVersion"
     }
-
 }
 
 project(':reactor-kafka-api') {
@@ -139,6 +129,7 @@ project(':reactor-kafka-api') {
 }
 
 project(':reactor-kafka-tools') {
+    archivesBaseName = 'reactor-kafka-tools'
     description = 'Tools for Reactor Kafka'
     dependencies {
         compile project(':reactor-kafka-api')
@@ -153,12 +144,17 @@ project(':reactor-kafka-tools') {
         systemProperties System.properties
     }
 
+    javadoc {
+        enabled = false
+    }
+
     artifacts {
         archives sourcesJar
     }
 }
 
 project(':reactor-kafka-samples') {
+    archivesBaseName = 'reactor-kafka-samples'
     description = 'Samples for Reactor Kafka'
     dependencies {
         compile project(':reactor-kafka-api')
@@ -171,65 +167,12 @@ project(':reactor-kafka-samples') {
         println sourceSets.main.runtimeClasspath.asPath
     }
 
+    javadoc {
+        enabled = false
+    }
+
     artifacts {
         archives sourcesJar
-        archives javadocJar
     }
 }
 
-project(':reactor-kafka-docs') {
-    description = 'Documentation for Reactor Kafka'
-    apply plugin: 'org.asciidoctor.convert'
-
-    task api(type: Javadoc) {
-        dependsOn jar
-        group = "Reactor Kafka Javadoc"
-
-        description = "Generates aggregated Javadoc API documentation."
-        title = "Reactor Kafka ${version}"
-
-        if (JavaVersion.current().isJava8Compatible()) {
-            compileTestJava.options.compilerArgs += "-parameters"
-            tasks.withType(Javadoc) {
-                options.addStringOption('Xdoclint:none', '-quiet')
-            }
-        }
-
-        options.memberLevel = org.gradle.external.javadoc.JavadocMemberLevel.PROTECTED
-        options.author = false
-        options.header = "Reactor Kafka"
-        options.overview = "src/api/overview.html"
-        options.links(rootProject.ext.javadocLinks)
-
-        maxMemory = "1024m"
-        destinationDir = new File(buildDir, "api")
-        source project(':reactor-kafka-api').sourceSets.main.allJava
-        exclude "**/internals/**"
-        doFirst {
-            classpath = files(rootProject.subprojects.collect { it.sourceSets.main.compileClasspath })
-        }
-    }
-    asciidoctor {
-        sources {
-            include "index.asciidoc"
-        }
-        outputDir file("$buildDir/asciidoc")
-        backends = ['html5', 'pdf']
-        logDocuments = true
-        options = [
-            doctype: 'book'
-        ]
-        attributes docinfo: '',
-            toc2: '',
-            'compat-mode': '',
-            stylesdir: "stylesheets/",
-            stylesheet: 'golo.css',
-            appversion: "$version",
-            'source-highlighter': 'prettify'
-
-        doLast {
-          file("$outputDir/pdf/index.pdf").
-              renameTo("$outputDir/pdf/reactor-kafka-reference-guide-${version}.pdf")
-        }
-    }
-}

@@ -13,6 +13,8 @@ Reactor Kafka is open source and the code and documentation are available at htt
 [[resources]]
 === Resources
 
+* https://github.com/reactor/reactor-kafka[Reactor Kafka on github]
+
 * http://kafka.apache.org/documentation.html[Apache Kafka]
 
 * http://projectreactor.io/[Project Reactor]
@@ -20,8 +22,6 @@ Reactor Kafka is open source and the code and documentation are available at htt
 * https://github.com/reactor/reactor-core[Reactor Core]
 
 * https://github.com/reactive-streams/reactive-streams-jvm[Reactive Streams Specification]
-
-* https://github.com/reactor/reactor-kafka[Reactor Kafka on github]
 
 * https://spring.io/blog/2016/04/19/understanding-reactive-types[Understanding Reactive types]
 

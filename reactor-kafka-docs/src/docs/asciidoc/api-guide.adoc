@@ -21,13 +21,13 @@ to transport messages to Kafka.
 
 A Sender is created with an instance of sender configuration options `reactor.kafka.sender.SenderOptions`.
 Changes made to `SenderOptions` after the creation of `Sender` will not be used by the Sender.
-The properties of `SenderOptions` such as a list of bootstrap Kafka brokers and serializers are passed down
+The properties of SenderOptions such as a list of bootstrap Kafka brokers and serializers are passed down
 to the underlying `KafkaProducer`. The properties may be configured on the SenderOptions instance at creation time
 or by using the setter `SenderOptions#producerProperty`. Other configuration options for the reactive Sender like
 the maximum number of in-flight messages can also be configured before the Sender instance is created.
 
 The generic types of `SenderOptions<K, V>` and `Sender<K, V>` are the key and value types of producer records
-published using the Sender and corresponding serializers must be set on the sender options before
+published using the Sender and corresponding serializers must be set on the SenderOptions instance before
 the Sender is created.
 
 
@@ -60,7 +60,7 @@ At this point, a `Sender` instance has been created, but no connections to Kafka
 Let's now create a sequence of messages to send to Kafka. Each outbound message to be sent to Kafka
 is represented as a `SenderRecord`.  A `SenderRecord` consists of a Kafka
 https://kafka.apache.org/0101/javadoc/org/apache/kafka/clients/producer/ProducerRecord.html[ProducerRecord]
-and correlation metadata for matching send results to requests. `ProducerRecord` consists of a key/value pair
+and correlation metadata for matching send results to records. `ProducerRecord` consists of a key/value pair
 to send to Kafka and the name of the Kafka topic to send the message to. Producer records may also
 optionally specify a partition to send the message to or use the configured partitioner to choose a partition.
 The additional correlation metadata included in `SenderRecord` is not sent to Kafka, but is included in the
@@ -84,7 +84,7 @@ correlation metadata in each `SenderRecord`. The outbound Flux can now be sent t
 `Sender` created earlier.
 
 The code segment below sends the records to Kafka and prints out the response metadata received from Kafka
-and the correlation metadata for each record.  The final subscribe() in the code block
+and the correlation metadata for each record.  The final `subscribe()` in the code block
 requests upstream to send the records to Kafka and the response metadata received from Kafka flow downstream.
 As each result is received, the record metadata from Kafka along with the correlation metadata identifying the
 record is printed out to console by the `onNext` handler. The response from Kafka includes the partition to which
@@ -226,13 +226,13 @@ since the underlying `KafkaConsumer` cannot be accessed concurrently by multiple
 
 A receiver is created with an instance of receiver configuration options `reactor.kafka.receiver.ReceiverOptions`.
 Changes made to `ReceiverOptions` after the creation of the receiver instance will not be used by the `Receiver`.
-The properties of `ReceiverOptions` such as a list of bootstrap Kafka brokers and de-serializers are passed down
+The properties of ReceiverOptions such as a list of bootstrap Kafka brokers and de-serializers are passed down
 to the underlying `KafkaConsumer`. These properties may be configured on the ReceiverOptions instance at creation time
 or by using the setter `ReceiverOptions#consumerProperty`. Other configuration options for the reactive
 Receiver including subscription topics must be added to options before the Receiver instance is created.
 
 The generic types of `ReceiverOptions<K, V>` and `Receiver<K, V>` are the key and value types of consumer records
-consumed using the receiver and corresponding de-serializers must be set on the receiver options before
+consumed using the receiver and corresponding de-serializers must be set on the ReceiverOptions instance before
 the Receiver is created.
 
 [source,java]
@@ -439,10 +439,10 @@ if automatic commits are enabled.
 ==== Controlling start offsets for consuming records
 
 By default, receivers start consuming records from the last committed offset of each assigned partition.
-If a committed offset is not available, the offset reset strategy configured for the `KafkaConsumer` is
-used to set the start offset to the earliest or latest offset on the partition. Applications can override
-offsets by seeking to new offsets in an assignment listener. Methods are provided on `ReceiverPartition`
-to seek to the earliest, latest or a specific offset in the partition.
+If a committed offset is not available, the offset reset strategy `ConsumerConfig#AUTO_OFFSET_RESET_CONFIG`
+configured for the `KafkaConsumer` is used to set the start offset to the earliest or latest offset on the partition.
+Applications can override offsets by seeking to new offsets in an assignment listener. Methods are provided on
+`ReceiverPartition` to seek to the earliest, latest or a specific offset in the partition.
 
 
 [source,java]

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2016 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2016 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,31 +20,33 @@ task wrapper(type: Wrapper, description: "Create a Gradle self-download wrapper"
 }
 
 configure(subprojects) { subproject ->
-    if(subproject.name == 'docs') return
 
     apply plugin: 'propdeps-maven'
     apply plugin: 'maven'
 
     install {
         repositories.mavenInstaller {
-            customizePom(pom, rootProject)
+            customizePom(pom, subproject)
         }
     }
 
     jar {
         manifest.attributes["Created-By"] = "${System.getProperty("java.version")} (${System.getProperty("java.specification.vendor")})"
-        manifest.attributes["Implementation-Title"] = rootProject.name
-        manifest.attributes["Implementation-Version"] = rootProject.version
+        manifest.attributes["Implementation-Title"] = subproject.name
+        manifest.attributes["Implementation-Version"] = subproject.version
+        from '../NOTICE'
     }
 
     task sourcesJar(type: Jar) {
         classifier = 'sources'
         from sourceSets.main.allSource
+        from '../NOTICE'
     }
 
     task javadocJar(type: Jar) {
         classifier = 'javadoc'
         from javadoc
+        from '../NOTICE'
     }
 }
 
