@@ -809,7 +809,7 @@ public class ReceiverTest extends AbstractKafkaTest {
     @Test
     public void resumeAfterFailure() throws Exception {
         int count = 20;
-        CountDownLatch receiveLatch = new CountDownLatch(count);
+        CountDownLatch receiveLatch = new CountDownLatch(count + 1);
         receiverOptions = receiverOptions.consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
                                          .addAssignListener(this::onPartitionsAssigned)
                                          .subscription(Collections.singletonList(topic));
@@ -817,6 +817,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         Consumer<ReceiverRecord<Integer, String>> onNext = record -> {
             receiveLatch.countDown();
             onReceive(record.record());
+            log.info("onNext {}", record.record().value());
             if (receiveLatch.getCount() == 10)
                 throw new RuntimeException("Test exception");
             record.offset().acknowledge();

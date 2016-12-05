@@ -21,12 +21,16 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.regex.Pattern;
 
 import static org.junit.Assert.fail;
 
 import org.powermock.api.support.membermodification.MemberModifier;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class TestUtils {
+    private static final Logger log = LoggerFactory.getLogger(TestUtils.class.getName());
 
     public static void sleep(long millis) {
         try {
@@ -58,6 +62,19 @@ public class TestUtils {
     public static void waitForLatch(String errorPrefix, CountDownLatch latch, Duration duration) throws InterruptedException {
         if (!latch.await(duration.toMillis(), TimeUnit.MILLISECONDS))
             fail(errorPrefix + ", remaining=" + latch.getCount());
+    }
+
+    public static void printStackTrace(String threadNamePattern) {
+        Thread[] threads = new Thread[1000];
+        int count = Thread.currentThread().getThreadGroup().enumerate(threads);
+        Pattern pattern = Pattern.compile(threadNamePattern);
+        for (int i = 0; i < count && i < threads.length; i++) {
+            Thread thread = threads[i];
+            if (pattern.matcher(thread.getName()).matches()) {
+                StackTraceElement[] stackTrace = thread.getStackTrace();
+                log.warn("Stack trace of thread {}: {}", thread.getName(), stackTrace);
+            }
+        }
     }
 
     @SuppressWarnings("unchecked")

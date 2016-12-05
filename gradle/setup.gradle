@@ -23,7 +23,6 @@ configure(subprojects) { subproject ->
 
     apply plugin: 'propdeps-maven'
     apply plugin: 'maven'
-
     install {
         repositories.mavenInstaller {
             customizePom(pom, subproject)
@@ -31,6 +30,7 @@ configure(subprojects) { subproject ->
     }
 
     jar {
+        onlyIf {subproject.name != 'reactor-kafka-docs'}
         manifest.attributes["Created-By"] = "${System.getProperty("java.version")} (${System.getProperty("java.specification.vendor")})"
         manifest.attributes["Implementation-Title"] = subproject.name
         manifest.attributes["Implementation-Version"] = subproject.version

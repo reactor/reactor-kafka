@@ -202,7 +202,10 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         ReceiverOptions<Integer, Person> receiverOptions = source.receiverOptions()
                 .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
                 .consumerProperty(ConsumerConfig.GROUP_ID_CONFIG, groupId)
-                .addAssignListener(p -> log.debug("Group {} assigned {}", groupId, p))
+                .addAssignListener(partitions -> {
+                        log.debug("Group {} assigned {}", groupId, partitions);
+                        partitions.forEach(p -> log.debug("Group {} partition {} position {}", groupId, p, p.position()));
+                    })
                 .addRevokeListener(p -> log.debug("Group {} revoked {}", groupId, p));
         Cancellation c = Receiver.create(receiverOptions.subscription(Collections.singleton(topic)))
                                  .receive()
@@ -225,8 +228,13 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         sink.runScenario();
     }
     private void waitForMessages(Collection<Person> expected, Collection<Person> received) throws Exception {
-        TestUtils.waitUntil("One or more messages not received, expected=" + expected.size() + ", received=",
-                    () -> received.size(), r -> r.size() == expected.size(), received, Duration.ofMillis(receiveTimeoutMillis));
+        try {
+            TestUtils.waitUntil("One or more messages not received, expected=" + expected.size() + ", received=",
+                        () -> received.size(), r -> r.size() == expected.size(), received, Duration.ofMillis(receiveTimeoutMillis));
+        } catch (Error e) {
+            TestUtils.printStackTrace(".*group.*");
+            throw e;
+        }
         assertEquals(new HashSet<>(expected), new HashSet<>(received));
         assertEquals(expected.size(), received.size());
     }

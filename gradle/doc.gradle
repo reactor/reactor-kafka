@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-configure(subprojects) { project ->
-    if(project.name != 'reactor-kafka-api') return
+configure(subprojects) { subproject ->
+    if (subproject.name != 'reactor-kafka-api') return
 
     apply plugin: "java"
 
@@ -24,7 +24,7 @@ configure(subprojects) { project ->
         group = "Reactor Kafka Javadoc"
 
         description = "Generates Javadoc API documentation."
-        title = "Reactor Kafka $project.version"
+        title = "Reactor Kafka $subproject.version"
 
         if (JavaVersion.current().isJava8Compatible()) {
             compileTestJava.options.compilerArgs += "-parameters"
@@ -42,15 +42,17 @@ configure(subprojects) { project ->
 
         maxMemory = "1024m"
         destinationDir = new File(buildDir, "docs/javadoc")
-        source project.sourceSets.main.allJava
+        source subproject.sourceSets.main.allJava
         exclude "**/internals/**"
         doFirst {
-          classpath = files(project.sourceSets.main.compileClasspath)
+          classpath = files(subproject.sourceSets.main.compileClasspath)
         }
     }
 }
 
-configure(rootProject) {
+configure(subprojects) { subproject ->
+    if (subproject.name != 'reactor-kafka-docs') return
+
     apply plugin: 'org.asciidoctor.convert'
     asciidoctor {
         sourceDir "$rootDir/reactor-kafka-docs/src/docs/asciidoc"
@@ -68,11 +70,15 @@ configure(rootProject) {
                 'compat-mode': '',
                 stylesdir: "stylesheets/",
                 stylesheet: 'golo.css',
-                appversion: "$project.version",
+                appversion: "$subproject.version",
                 'source-highlighter': 'coderay'
 
         doLast {
             file("$outputDir/pdf/index.pdf").renameTo("$outputDir/pdf/reactor-kafka-reference-guide-${version}.pdf")
         }
+    }
+    task docsZip(type: Zip, dependsOn: asciidoctor) {
+       from("$buildDir/asciidoc/pdf/reactor-kafka-reference-guide-${version}.pdf") { into("docs/") }
+       from("$buildDir/asciidoc/html5/index.html") { into("docs/") }
     }
 }
