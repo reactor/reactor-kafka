@@ -1,5 +1,7 @@
-Reactor Kafka API
+Reactor Kafka
 ===================
+
+[![Travis CI](https://travis-ci.org/reactor/reactor-core.svg?branch=master)](https://travis-ci.org/reactor/reactor-kafka)
 
 You need to have [Gradle 2.0 or higher](http://www.gradle.org/installation) and [Java 8](http://www.oracle.com/technetwork/java/javase/downloads/index.html) installed.
 
