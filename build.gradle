@@ -14,12 +14,12 @@
 
 buildscript {
   repositories {
-        maven { url "http://repo.spring.io/plugins-release" }
+	maven { url "http://repo.spring.io/plugins-release" }
   }
   dependencies {
-        classpath 'org.asciidoctor:asciidoctorj-pdf:1.5.0-alpha.11',
-                  'org.springframework.build.gradle:propdeps-plugin:0.0.7',
-                  'io.spring.gradle:spring-io-plugin:0.0.4.RELEASE'
+	classpath 'org.asciidoctor:asciidoctorj-pdf:1.5.0-alpha.11',
+			'org.springframework.build.gradle:propdeps-plugin:0.0.7',
+			'io.spring.gradle:spring-io-plugin:0.0.4.RELEASE'
   }
 }
 plugins {
@@ -27,30 +27,31 @@ plugins {
 }
 
 ext {
-    gradleVersion = '3.1'
-    gradleScriptDir = "${rootProject.projectDir}/gradle"
+  gradleVersion = '3.1'
+  gradleScriptDir = "${rootProject.projectDir}/gradle"
 
-    defaultKafkaVersion = "0.10.1.0"
-    def getKafkaVersion = project.hasProperty('kafkaVersion') ? project.property('kafkaVersion') : "${defaultKafkaVersion}"
+  defaultKafkaVersion = "0.10.1.0"
+  def getKafkaVersion = project.hasProperty('kafkaVersion') ?
+		  project.property('kafkaVersion') : "${defaultKafkaVersion}"
 
-    kafkaVersion = getKafkaVersion
-    scalaVersion = '2.11'
-    reactorVersion = '3.0.3.RELEASE'
-    metricsVersion = '2.2.0'
+  kafkaVersion = getKafkaVersion
+  scalaVersion = '2.11'
+  reactorVersion = '3.0.3.RELEASE'
+  metricsVersion = '2.2.0'
 
-    argparseVersion = '0.5.0'
-    joptVersion = '4.9'
+  argparseVersion = '0.5.0'
+  joptVersion = '4.9'
 
-    slf4jVersion = '1.7.21'
-    junitVersion = '4.12'
-    zkVersion = "3.4.9"
-    springKafkaVersion = '1.1.1.RELEASE'
-    powermockVersion = '1.6.4'
+  slf4jVersion = '1.7.21'
+  junitVersion = '4.12'
+  zkVersion = "3.4.9"
+  springKafkaVersion = '1.1.1.RELEASE'
+  powermockVersion = '1.6.4'
 
-    javadocLinks = ["http://docs.oracle.com/javase/8/docs/api/",
-                    "https://kafka.apache.org/0101/javadoc",
-                    "http://www.reactive-streams.org/reactive-streams-1.0.0-javadoc/",
-                    "http://projectreactor.io/core/docs/api/"] as String[]
+  javadocLinks = ["http://docs.oracle.com/javase/8/docs/api/",
+				  "https://kafka.apache.org/0101/javadoc",
+				  "http://www.reactive-streams.org/reactive-streams-1.0.0-javadoc/",
+				  "http://projectreactor.io/core/docs/api/"] as String[]
 
 }
 
@@ -63,155 +64,158 @@ configurations.all {
 }
 
 subprojects {
-    group = 'io.projectreactor.kafka'
+  group = 'io.projectreactor.kafka'
 
-    repositories {
-        mavenLocal()
-        maven { url 'http://repo.spring.io/libs-release' }
-        maven { url 'http://repo.spring.io/libs-snapshot' }
-        maven { url 'https://repository.apache.org/content/groups/staging' }
-        jcenter()
-        mavenCentral()
-    }
-    apply plugin: 'maven'
-    apply plugin: 'eclipse'
-    apply plugin: 'idea'
-    apply plugin: 'jacoco'
-    apply plugin: 'propdeps'
-    apply plugin: 'checkstyle'
-    apply plugin: 'java'
+  repositories {
+	mavenLocal()
+	maven { url 'http://repo.spring.io/libs-release' }
+	maven { url 'http://repo.spring.io/libs-snapshot' }
+	maven { url 'https://repository.apache.org/content/groups/staging' }
+	jcenter()
+	mavenCentral()
+  }
+  apply plugin: 'maven'
+  apply plugin: 'eclipse'
+  apply plugin: 'idea'
+  apply plugin: 'jacoco'
+  apply plugin: 'propdeps'
+  apply plugin: 'checkstyle'
+  apply plugin: 'java'
 
+  jacoco {
+	toolVersion = '0.7.7.201606060606'
+  }
+
+  jacocoTestReport {
+	reports {
+	  xml.enabled = true
+	  html.enabled = true
+	}
+  }
+
+  sourceCompatibility = targetCompatibility = 1.8
+
+  eclipse.project.natures += 'org.springframework.ide.eclipse.core.springnature'
+
+  [compileJava, compileTestJava]*.options*.compilerArgs = ['-Xlint:all,-options']
+
+  test {
+	maxHeapSize = "1024m"
+	testLogging {
+	  events "passed", "skipped", "failed"
+	  //showStandardStreams = true
+	  exceptionFormat = 'full'
+	}
 	jacoco {
-	  toolVersion = '0.7.7.201606060606'
+	  includes = ['reactor.kafka.sender', 'reactor.kafka.receiver']
 	}
+  }
 
-	jacocoTestReport {
-	  reports {
-		xml.enabled = true
-		html.enabled = true
-	  }
+  checkstyle {
+	configFile = new File(rootDir, "checkstyle/checkstyle.xml")
+	configProperties = [suppressionsXml: "$rootDir/checkstyle/suppressions.xml"]
+  }
+  test.dependsOn('checkstyleMain', 'checkstyleTest')
+
+  dependencies {
+	compile "org.apache.kafka:kafka-clients:$kafkaVersion"
+	compile "io.projectreactor:reactor-core:$reactorVersion"
+
+	testCompile "org.apache.kafka:kafka-clients:$kafkaVersion:test"
+	testCompile "junit:junit:$junitVersion"
+
+	testCompile "io.projectreactor.addons:reactor-test:$reactorVersion"
+	testCompile "org.apache.zookeeper:zookeeper:$zkVersion"
+	testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion"
+	testCompile "org.apache.kafka:kafka-clients:$kafkaVersion:test"
+	testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion:test"
+	testCompile("org.springframework.kafka:spring-kafka-test:$springKafkaVersion") {
+	  exclude group: 'org.apache.kafka'
+	  exclude group: 'org.apache.zookeeper'
 	}
-
-    sourceCompatibility = targetCompatibility = 1.8
-
-    eclipse.project.natures += 'org.springframework.ide.eclipse.core.springnature'
-
-    [compileJava, compileTestJava]*.options*.compilerArgs = ['-Xlint:all,-options']
-
-    test {
-        maxHeapSize = "1024m"
-        testLogging {
-          events "passed", "skipped", "failed"
-          //showStandardStreams = true
-          exceptionFormat = 'full'
-        }
-	  	jacoco {
-		  includes = ['reactor.kafka.sender', 'reactor.kafka.receiver']
-		}
-    }
-
-    checkstyle {
-        configFile = new File(rootDir, "checkstyle/checkstyle.xml")
-        configProperties = [suppressionsXml: "$rootDir/checkstyle/suppressions.xml"]
-    }
-    test.dependsOn('checkstyleMain', 'checkstyleTest')
-
-    dependencies {
-        compile "org.apache.kafka:kafka-clients:$kafkaVersion"
-        compile "io.projectreactor:reactor-core:$reactorVersion"
-
-        testCompile "org.apache.kafka:kafka-clients:$kafkaVersion:test"
-        testCompile "junit:junit:$junitVersion"
-
-        testCompile "io.projectreactor.addons:reactor-test:$reactorVersion"
-        testCompile "org.apache.zookeeper:zookeeper:$zkVersion"
-        testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion"
-        testCompile "org.apache.kafka:kafka-clients:$kafkaVersion:test"
-        testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion:test"
-        testCompile("org.springframework.kafka:spring-kafka-test:$springKafkaVersion") {
-            exclude group: 'org.apache.kafka'
-            exclude group: 'org.apache.zookeeper'
-        }
-        testCompile "org.powermock:powermock-module-junit4:$powermockVersion"
-        testCompile "org.powermock:powermock-core:$powermockVersion"
-        testCompile "org.powermock:powermock-api-mockito:$powermockVersion"
-        testCompile "org.slf4j:slf4j-api:$slf4jVersion"
-        testCompile "org.slf4j:slf4j-log4j12:$slf4jVersion"
-    }
+	testCompile "org.powermock:powermock-module-junit4:$powermockVersion"
+	testCompile "org.powermock:powermock-core:$powermockVersion"
+	testCompile "org.powermock:powermock-api-mockito:$powermockVersion"
+	testCompile "org.slf4j:slf4j-api:$slf4jVersion"
+	testCompile "org.slf4j:slf4j-log4j12:$slf4jVersion"
+  }
 }
 
 project(':reactor-kafka-api') {
-    archivesBaseName = 'reactor-kafka'
-    description = 'Reactor Kafka: A reactive API for Apache Kafka'
+  archivesBaseName = 'reactor-kafka'
+  description = 'Reactor Kafka: A reactive API for Apache Kafka'
 
-    artifacts {
-        archives sourcesJar
-        archives javadocJar
-    }
+  artifacts {
+	archives sourcesJar
+	archives javadocJar
+  }
 }
 
 project(':reactor-kafka-tools') {
-    archivesBaseName = 'reactor-kafka-tools'
-    description = 'Tools for Reactor Kafka'
-    dependencies {
-        compile project(':reactor-kafka-api')
-        compile "com.yammer.metrics:metrics-core:$metricsVersion"
-        compile "net.sf.jopt-simple:jopt-simple:$joptVersion"
-        compile "net.sourceforge.argparse4j:argparse4j:$argparseVersion"
+  archivesBaseName = 'reactor-kafka-tools'
+  description = 'Tools for Reactor Kafka'
+  dependencies {
+	compile project(':reactor-kafka-api')
+	compile "com.yammer.metrics:metrics-core:$metricsVersion"
+	compile "net.sf.jopt-simple:jopt-simple:$joptVersion"
+	compile "net.sourceforge.argparse4j:argparse4j:$argparseVersion"
 
-        testCompile project(':reactor-kafka-api').sourceSets.test.output
-    }
+	testCompile project(':reactor-kafka-api').sourceSets.test.output
+  }
 
-    test {
-        systemProperties System.properties
-    }
+  test {
+	systemProperties System.properties
+	jacoco {
+	  enabled = false
+	}
+  }
 
-    javadoc {
-        enabled = false
-    }
+  javadoc {
+	enabled = false
+  }
 
-    artifacts {
-        archives sourcesJar
-    }
+  artifacts {
+	archives sourcesJar
+  }
 }
 
 project(':reactor-kafka-samples') {
-    archivesBaseName = 'reactor-kafka-samples'
-    description = 'Samples for Reactor Kafka'
-    dependencies {
-        compile project(':reactor-kafka-api')
-        compile "com.yammer.metrics:metrics-core:$metricsVersion"
+  archivesBaseName = 'reactor-kafka-samples'
+  description = 'Samples for Reactor Kafka'
+  dependencies {
+	compile project(':reactor-kafka-api')
+	compile "com.yammer.metrics:metrics-core:$metricsVersion"
 
-        testCompile project(':reactor-kafka-api').sourceSets.test.output
-    }
+	testCompile project(':reactor-kafka-api').sourceSets.test.output
+  }
 
-    task classpath << {
-        println sourceSets.main.runtimeClasspath.asPath
-    }
+  task classpath << {
+	println sourceSets.main.runtimeClasspath.asPath
+  }
 
-    javadoc {
-        enabled = false
-    }
-  
-    artifacts {
-        archives sourcesJar
-    }
+  javadoc {
+	enabled = false
+  }
+
+  artifacts {
+	archives sourcesJar
+  }
 }
 
 project(':reactor-kafka-docs') {
-    archivesBaseName = 'reactor-kafka-docs'
-    description = 'Documentation for Reactor Kafka'
+  archivesBaseName = 'reactor-kafka-docs'
+  description = 'Documentation for Reactor Kafka'
 
-    artifacts {
-        archives docsZip
-    }
+  artifacts {
+	archives docsZip
+  }
 
-	test{
-	  jacoco {
-		enabled = false
-	  }
+  test {
+	jacoco {
+	  enabled = false
 	}
+  }
 
-    // Only docs.zip is required, don't generate empty jar file
-    configurations.archives.artifacts.removeAll { it.archiveTask.is jar }
+  // Only docs.zip is required, don't generate empty jar file
+  configurations.archives.artifacts.removeAll { it.archiveTask.is jar }
 }
