@@ -192,7 +192,7 @@ project(':reactor-kafka-samples') {
     javadoc {
         enabled = false
     }
-
+  
     artifacts {
         archives sourcesJar
     }
@@ -205,6 +205,13 @@ project(':reactor-kafka-docs') {
     artifacts {
         archives docsZip
     }
+
+	test{
+	  jacoco {
+		enabled = false
+	  }
+	}
+
     // Only docs.zip is required, don't generate empty jar file
     configurations.archives.artifacts.removeAll { it.archiveTask.is jar }
 }
