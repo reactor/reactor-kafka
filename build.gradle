@@ -87,11 +87,13 @@ subprojects {
   }
 
   jacocoTestReport {
+	dependsOn test
 	reports {
 	  xml.enabled = true
 	  html.enabled = true
 	}
   }
+  check.dependsOn jacocoTestReport
 
   sourceCompatibility = targetCompatibility = 1.8
 
@@ -105,9 +107,6 @@ subprojects {
 	  events "passed", "skipped", "failed"
 	  //showStandardStreams = true
 	  exceptionFormat = 'full'
-	}
-	jacoco {
-	  includes = ['reactor.kafka.sender', 'reactor.kafka.receiver']
 	}
   }
 
