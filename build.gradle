@@ -14,12 +14,12 @@
 
 buildscript {
   repositories {
-	maven { url "http://repo.spring.io/plugins-release" }
+    maven { url "http://repo.spring.io/plugins-release" }
   }
   dependencies {
-	classpath 'org.asciidoctor:asciidoctorj-pdf:1.5.0-alpha.11',
-			'org.springframework.build.gradle:propdeps-plugin:0.0.7',
-			'io.spring.gradle:spring-io-plugin:0.0.4.RELEASE'
+    classpath 'org.asciidoctor:asciidoctorj-pdf:1.5.0-alpha.11',
+            'org.springframework.build.gradle:propdeps-plugin:0.0.7',
+            'io.spring.gradle:spring-io-plugin:0.0.4.RELEASE'
   }
 }
 plugins {
@@ -32,7 +32,7 @@ ext {
 
   defaultKafkaVersion = "0.10.1.0"
   def getKafkaVersion = project.hasProperty('kafkaVersion') ?
-		  project.property('kafkaVersion') : "${defaultKafkaVersion}"
+          project.property('kafkaVersion') : "${defaultKafkaVersion}"
 
   kafkaVersion = getKafkaVersion
   scalaVersion = '2.11'
@@ -49,9 +49,9 @@ ext {
   powermockVersion = '1.6.4'
 
   javadocLinks = ["http://docs.oracle.com/javase/8/docs/api/",
-				  "https://kafka.apache.org/0101/javadoc",
-				  "http://www.reactive-streams.org/reactive-streams-1.0.0-javadoc/",
-				  "http://projectreactor.io/core/docs/api/"] as String[]
+                  "https://kafka.apache.org/0101/javadoc",
+                  "http://www.reactive-streams.org/reactive-streams-1.0.0-javadoc/",
+                  "http://projectreactor.io/core/docs/api/"] as String[]
 
 }
 
@@ -63,54 +63,30 @@ configurations.all {
   resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
 }
 
+allprojects {
+  apply plugin: 'jacoco'
+  jacoco {
+    toolVersion = '0.7.7.201606060606'
+  }
+}
 
 subprojects {
   group = 'io.projectreactor.kafka'
 
   repositories {
-	mavenLocal()
-	maven { url 'http://repo.spring.io/libs-release' }
-	maven { url 'http://repo.spring.io/libs-snapshot' }
-	maven { url 'https://repository.apache.org/content/groups/staging' }
-	jcenter()
-	mavenCentral()
+    mavenLocal()
+    maven { url 'http://repo.spring.io/libs-release' }
+    maven { url 'http://repo.spring.io/libs-snapshot' }
+    maven { url 'https://repository.apache.org/content/groups/staging' }
+    jcenter()
+    mavenCentral()
   }
   apply plugin: 'maven'
   apply plugin: 'eclipse'
   apply plugin: 'idea'
-  apply plugin: 'jacoco'
   apply plugin: 'propdeps'
   apply plugin: 'checkstyle'
   apply plugin: 'java'
-
-  jacoco {
-	toolVersion = '0.7.7.201606060606'
-	reportsDir = file("$rootProject.buildDir/reports/jacoco")
-  }
-
-  // aggregates jacoco results from all subprojects and core project and generate a report
-  task jacocoRootTestReport(type: JacocoReport) {
-	dependsOn test
-	sourceSets sourceSets.main
-
-	def jacocoTestFiles = ["$buildDir/jacoco/test.exec"]
-	subprojects.each { p ->
-	  def coverageFileLocation = "$p.buildDir/jacoco/test.exec"
-	  if (new File(coverageFileLocation).exists()) {
-		jacocoTestFiles << coverageFileLocation
-	  }
-	}
-
-	logger.info('Aggregating next JaCoCo Coverage Files: {}', jacocoTestFiles)
-	executionData files(jacocoTestFiles)
-
-	reports {
-	  xml.enabled true
-	  html.enabled true
-	}
-  }
-
-  check.dependsOn jacocoRootTestReport
 
   sourceCompatibility = targetCompatibility = 1.8
 
@@ -119,51 +95,92 @@ subprojects {
   [compileJava, compileTestJava]*.options*.compilerArgs = ['-Xlint:all,-options']
 
   test {
-	maxHeapSize = "1024m"
-	testLogging {
-	  events "passed", "skipped", "failed"
-	  //showStandardStreams = true
-	  exceptionFormat = 'full'
-	}
+    maxHeapSize = "1024m"
+    testLogging {
+      events "passed", "skipped", "failed"
+      //showStandardStreams = true
+      exceptionFormat = 'full'
+    }
+    jacoco {
+      includes = ['reactor/kafka/sender/**', 'reactor/kafka/receiver/**']
+    }
   }
 
   checkstyle {
-	configFile = new File(rootDir, "checkstyle/checkstyle.xml")
-	configProperties = [suppressionsXml: "$rootDir/checkstyle/suppressions.xml"]
+    configFile = new File(rootDir, "checkstyle/checkstyle.xml")
+    configProperties = [suppressionsXml: "$rootDir/checkstyle/suppressions.xml"]
   }
   test.dependsOn('checkstyleMain', 'checkstyleTest')
 
+  jacocoTestReport {
+    dependsOn test
+    sourceSets sourceSets.main
+    reports {
+      html.enabled = true
+      xml.enabled = true
+    }
+  }
+  jacocoTestReport.dependsOn test
+
   dependencies {
-	compile "org.apache.kafka:kafka-clients:$kafkaVersion"
-	compile "io.projectreactor:reactor-core:$reactorVersion"
+    compile "org.apache.kafka:kafka-clients:$kafkaVersion"
+    compile "io.projectreactor:reactor-core:$reactorVersion"
 
-	testCompile "org.apache.kafka:kafka-clients:$kafkaVersion:test"
-	testCompile "junit:junit:$junitVersion"
+    testCompile "org.apache.kafka:kafka-clients:$kafkaVersion:test"
+    testCompile "junit:junit:$junitVersion"
 
-	testCompile "io.projectreactor.addons:reactor-test:$reactorVersion"
-	testCompile "org.apache.zookeeper:zookeeper:$zkVersion"
-	testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion"
-	testCompile "org.apache.kafka:kafka-clients:$kafkaVersion:test"
-	testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion:test"
-	testCompile("org.springframework.kafka:spring-kafka-test:$springKafkaVersion") {
-	  exclude group: 'org.apache.kafka'
-	  exclude group: 'org.apache.zookeeper'
-	}
-	testCompile "org.powermock:powermock-module-junit4:$powermockVersion"
-	testCompile "org.powermock:powermock-core:$powermockVersion"
-	testCompile "org.powermock:powermock-api-mockito:$powermockVersion"
-	testCompile "org.slf4j:slf4j-api:$slf4jVersion"
-	testCompile "org.slf4j:slf4j-log4j12:$slf4jVersion"
+    testCompile "io.projectreactor.addons:reactor-test:$reactorVersion"
+    testCompile "org.apache.zookeeper:zookeeper:$zkVersion"
+    testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion"
+    testCompile "org.apache.kafka:kafka-clients:$kafkaVersion:test"
+    testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion:test"
+    testCompile("org.springframework.kafka:spring-kafka-test:$springKafkaVersion") {
+      exclude group: 'org.apache.kafka'
+      exclude group: 'org.apache.zookeeper'
+    }
+    testCompile "org.powermock:powermock-module-junit4:$powermockVersion"
+    testCompile "org.powermock:powermock-core:$powermockVersion"
+    testCompile "org.powermock:powermock-api-mockito:$powermockVersion"
+    testCompile "org.slf4j:slf4j-api:$slf4jVersion"
+    testCompile "org.slf4j:slf4j-log4j12:$slf4jVersion"
   }
 }
+
+// aggregates jacoco results from all subprojects and core project and generate a report
+task jacocoRootTestReport(type: JacocoReport) {
+    onlyIf = { true }
+
+    def jacocoProjects = []
+    def jacocoTestFiles = []
+    subprojects.each { p ->
+      def coverageFileLocation = "$p.buildDir/jacoco/test.exec"
+      if (new File(coverageFileLocation).exists()) {
+        jacocoTestFiles << coverageFileLocation
+        jacocoProjects << p
+      }
+    }
+
+    logger.info('Aggregating next JaCoCo Coverage Files: {}', jacocoTestFiles)
+    executionData files(jacocoTestFiles)
+    sourceDirectories = files(jacocoProjects.sourceSets.main.allSource.srcDirs)
+    classDirectories =  files(jacocoProjects.sourceSets.main.output)
+
+    reports {
+      xml.enabled true
+      html.enabled true
+    }
+}
+jacocoRootTestReport.dependsOn subprojects.test
+check.dependsOn jacocoRootTestReport
+
 
 project(':reactor-kafka-api') {
   archivesBaseName = 'reactor-kafka'
   description = 'Reactor Kafka: A reactive API for Apache Kafka'
 
   artifacts {
-	archives sourcesJar
-	archives javadocJar
+    archives sourcesJar
+    archives javadocJar
   }
 }
 
@@ -171,27 +188,27 @@ project(':reactor-kafka-tools') {
   archivesBaseName = 'reactor-kafka-tools'
   description = 'Tools for Reactor Kafka'
   dependencies {
-	compile project(':reactor-kafka-api')
-	compile "com.yammer.metrics:metrics-core:$metricsVersion"
-	compile "net.sf.jopt-simple:jopt-simple:$joptVersion"
-	compile "net.sourceforge.argparse4j:argparse4j:$argparseVersion"
+    compile project(':reactor-kafka-api')
+    compile "com.yammer.metrics:metrics-core:$metricsVersion"
+    compile "net.sf.jopt-simple:jopt-simple:$joptVersion"
+    compile "net.sourceforge.argparse4j:argparse4j:$argparseVersion"
 
-	testCompile project(':reactor-kafka-api').sourceSets.test.output
+    testCompile project(':reactor-kafka-api').sourceSets.test.output
   }
 
   test {
-	systemProperties System.properties
-	jacoco {
-	  enabled = false
-	}
+    systemProperties System.properties
+    jacoco {
+      enabled = false
+    }
   }
 
   javadoc {
-	enabled = false
+    enabled = false
   }
 
   artifacts {
-	archives sourcesJar
+    archives sourcesJar
   }
 }
 
@@ -199,28 +216,28 @@ project(':reactor-kafka-samples') {
   archivesBaseName = 'reactor-kafka-samples'
   description = 'Samples for Reactor Kafka'
   dependencies {
-	compile project(':reactor-kafka-api')
-	compile "com.yammer.metrics:metrics-core:$metricsVersion"
+    compile project(':reactor-kafka-api')
+    compile "com.yammer.metrics:metrics-core:$metricsVersion"
 
-	testCompile project(':reactor-kafka-api').sourceSets.test.output
+    testCompile project(':reactor-kafka-api').sourceSets.test.output
   }
 
   task classpath << {
-	println sourceSets.main.runtimeClasspath.asPath
+    println sourceSets.main.runtimeClasspath.asPath
   }
 
   test {
-	jacoco {
-	  enabled = false
-	}
+    jacoco {
+      enabled = false
+    }
   }
 
   javadoc {
-	enabled = false
+    enabled = false
   }
 
   artifacts {
-	archives sourcesJar
+    archives sourcesJar
   }
 }
 
@@ -229,13 +246,13 @@ project(':reactor-kafka-docs') {
   description = 'Documentation for Reactor Kafka'
 
   artifacts {
-	archives docsZip
+    archives docsZip
   }
 
   test {
-	jacoco {
-	  enabled = false
-	}
+    jacoco {
+      enabled = false
+    }
   }
 
   // Only docs.zip is required, don't generate empty jar file
