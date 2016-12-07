@@ -125,9 +125,6 @@ subprojects {
 	  //showStandardStreams = true
 	  exceptionFormat = 'full'
 	}
-	jacoco {
-	  includes = ['reactor.kafka.sender', 'reactor.kafka.receiver']
-	}
   }
 
   checkstyle {
@@ -210,6 +207,12 @@ project(':reactor-kafka-samples') {
 
   task classpath << {
 	println sourceSets.main.runtimeClasspath.asPath
+  }
+
+  test {
+	jacoco {
+	  enabled = false
+	}
   }
 
   javadoc {
