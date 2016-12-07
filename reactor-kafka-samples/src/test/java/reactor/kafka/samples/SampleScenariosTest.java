@@ -204,7 +204,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
                 .consumerProperty(ConsumerConfig.GROUP_ID_CONFIG, groupId)
                 .addAssignListener(partitions -> {
                         log.debug("Group {} assigned {}", groupId, partitions);
-                        partitions.forEach(p -> log.debug("Group {} partition {} position {}", groupId, p, p.position()));
+                        partitions.forEach(p -> log.trace("Group {} partition {} position {}", groupId, p, p.position()));
                     })
                 .addRevokeListener(p -> log.debug("Group {} revoked {}", groupId, p));
         Cancellation c = Receiver.create(receiverOptions.subscription(Collections.singleton(topic)))

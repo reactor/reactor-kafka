@@ -146,34 +146,6 @@ subprojects {
   }
 }
 
-// aggregates jacoco results from all subprojects and core project and generate a report
-task jacocoRootTestReport(type: JacocoReport) {
-    onlyIf = { true }
-
-    def jacocoProjects = []
-    def jacocoTestFiles = []
-    subprojects.each { p ->
-      def coverageFileLocation = "$p.buildDir/jacoco/test.exec"
-      if (new File(coverageFileLocation).exists()) {
-        jacocoTestFiles << coverageFileLocation
-        jacocoProjects << p
-      }
-    }
-
-    logger.info('Aggregating next JaCoCo Coverage Files: {}', jacocoTestFiles)
-    executionData files(jacocoTestFiles)
-    sourceDirectories = files(jacocoProjects.sourceSets.main.allSource.srcDirs)
-    classDirectories =  files(jacocoProjects.sourceSets.main.output)
-
-    reports {
-      xml.enabled true
-      html.enabled true
-    }
-}
-jacocoRootTestReport.dependsOn subprojects.test
-check.dependsOn jacocoRootTestReport
-
-
 project(':reactor-kafka-api') {
   archivesBaseName = 'reactor-kafka'
   description = 'Reactor Kafka: A reactive API for Apache Kafka'
@@ -258,3 +230,27 @@ project(':reactor-kafka-docs') {
   // Only docs.zip is required, don't generate empty jar file
   configurations.archives.artifacts.removeAll { it.archiveTask.is jar }
 }
+
+// aggregates jacoco results from subprojects with jacoco enabled and generates a report
+task jacocoRootTestReport(type: JacocoReport) {
+
+  def jacocoProjects = subprojects.findAll { it.test.jacoco.enabled }
+
+  logger.info('Aggregating JaCoCo Coverage from projects : {}', jacocoProjects)
+  executionData = files(jacocoProjects.jacocoTestReport.executionData)
+  sourceDirectories = files(jacocoProjects.sourceSets.main.allSource.srcDirs)
+  classDirectories =  files(jacocoProjects.sourceSets.main.output)
+
+  reports {
+    xml.enabled true
+    html.enabled true
+  }
+
+  onlyIf = { true }
+  doFirst {
+    executionData = files(executionData.findAll { it.exists() })
+  }
+}
+jacocoRootTestReport.dependsOn subprojects.test
+check.dependsOn jacocoRootTestReport
+

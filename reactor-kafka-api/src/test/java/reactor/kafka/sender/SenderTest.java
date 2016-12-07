@@ -398,7 +398,7 @@ public class SenderTest extends AbstractKafkaTest {
                            int restartIndex = count - 1;
                            try {
                                if (i == failureIndex) {
-                                   Thread.sleep(requestTimeoutMillis / 2); // give some time for previous messages to be sent
+                                   Thread.sleep(requestTimeoutMillis);     // give some time for previous messages to be sent
                                    shutdownKafkaBroker();
                                } else if (i == restartIndex) {
                                    Thread.sleep(requestTimeoutMillis);     // wait for previous request to timeout

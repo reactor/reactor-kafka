@@ -402,7 +402,6 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
                 isClosed.set(false);
                 consumer = consumerFactory.createConsumer(receiverOptions);
                 kafkaSubscribeOrAssign.accept(consumerFlux);
-                consumer.poll(0); // wait for assignment
             } catch (Exception e) {
                 if (isActive.get()) {
                     log.error("Unexpected exception", e);

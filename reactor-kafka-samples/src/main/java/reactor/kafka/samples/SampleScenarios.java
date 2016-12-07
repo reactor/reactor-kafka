@@ -25,6 +25,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -110,7 +112,7 @@ public class SampleScenarios {
                     .doOnError(e-> log.error("Send failed, terminating.", e))
                     .doOnNext(r -> {
                             int id = r.correlationMetadata();
-                            log.info("Successfully stored person with id {} in Kafka", id);
+                            log.trace("Successfully stored person with id {} in Kafka", id);
                             source.commit(id);
                         });
         }
@@ -236,8 +238,15 @@ public class SampleScenarios {
                                          });
             Flux<SenderResult<Integer>> stream1 = sender.send(processor.publishOn(scheduler1).map(p -> SenderRecord.create(process1(p, true), p.id())), false);
             Flux<SenderResult<Integer>> stream2 = sender.send(processor.publishOn(scheduler2).map(p -> SenderRecord.create(process2(p, true), p.id())), false);
+            AtomicReference<Cancellation> cancelRef = new AtomicReference<>();
+            Consumer<AtomicReference<Cancellation>> cancel = cr -> {
+                Cancellation c = cr.getAndSet(null);
+                if (c != null)
+                    c.dispose();
+            };
             return Flux.merge(stream1, stream2)
-                       .doOnSubscribe(s -> inFlux.subscribe());
+                       .doOnSubscribe(s -> cancelRef.set(inFlux.subscribe()))
+                       .doOnCancel(() -> cancel.accept(cancelRef));
         }
         public ProducerRecord<Integer, Person> process1(Person p, boolean debug) {
             if (debug)
