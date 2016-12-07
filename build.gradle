@@ -84,6 +84,7 @@ subprojects {
 
   jacoco {
 	toolVersion = '0.7.7.201606060606'
+	reportsDir = file("$rootProject.buildDir/reports/jacoco")
   }
 
   jacocoTestReport {
@@ -91,6 +92,8 @@ subprojects {
 	reports {
 	  xml.enabled = true
 	  html.enabled = true
+	  html.destination "$rootProject.buildDir/reports/jacoco"
+	  xml.destination "$rootProject.buildDir/reports/jacoco"
 	}
   }
   check.dependsOn jacocoTestReport
@@ -107,6 +110,10 @@ subprojects {
 	  events "passed", "skipped", "failed"
 	  //showStandardStreams = true
 	  exceptionFormat = 'full'
+	}
+	jacoco {
+	  includes = ['reactor.kafka.sender', 'reactor.kafka.receiver']
+	  destPath = file("$rootProject.buildDir/jacoco")
 	}
   }
 
