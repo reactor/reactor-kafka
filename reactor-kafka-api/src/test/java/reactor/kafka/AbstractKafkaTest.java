@@ -48,9 +48,9 @@ public class AbstractKafkaTest {
     protected String topic = "testtopic";
     protected int partitions = 4;
     protected long receiveTimeoutMillis = 30000;
-    protected final long requestTimeoutMillis = 2000;
-    protected final long sessionTimeoutMillis = 10000;
-    protected final long heartbeatIntervalMillis = 2500;
+    protected final long requestTimeoutMillis = 3000;
+    protected final long sessionTimeoutMillis = 12000;
+    protected final long heartbeatIntervalMillis = 3000;
     protected final int brokerId = 0;
 
     @Rule
