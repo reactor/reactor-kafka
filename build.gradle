@@ -92,8 +92,6 @@ subprojects {
 	reports {
 	  xml.enabled = true
 	  html.enabled = true
-	  html.destination "$rootProject.buildDir/reports/jacoco"
-	  xml.destination "$rootProject.buildDir/reports/jacoco"
 	}
   }
   check.dependsOn jacocoTestReport
@@ -113,7 +111,7 @@ subprojects {
 	}
 	jacoco {
 	  includes = ['reactor.kafka.sender', 'reactor.kafka.receiver']
-	  destPath = file("$rootProject.buildDir/jacoco")
+	  destinationFile = file("$rootProject.buildDir/jacoco/test.exec")
 	}
   }
 
