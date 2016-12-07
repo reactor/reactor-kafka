@@ -1,7 +1,7 @@
 Reactor Kafka
 ===================
 
-[![Travis CI](https://img.shields.io/travis/reactor/reactor-kafka)](https://travis-ci.org/reactor/reactor-kafka)
+[![Travis CI](https://img.shields.io/travis/reactor/reactor-kafka.svg)](https://travis-ci.org/reactor/reactor-kafka)
 [![Coverage](https://img.shields.io/codecov/c/github/reactor/reactor-kafka.svg)](https://travis-ci.org/reactor/reactor-kafka)
 
 You need to have [Gradle 2.0 or higher](http://www.gradle.org/installation) and [Java 8](http://www.oracle.com/technetwork/java/javase/downloads/index.html) installed.
