@@ -63,6 +63,7 @@ configurations.all {
   resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
 }
 
+
 subprojects {
   group = 'io.projectreactor.kafka'
 
@@ -87,14 +88,29 @@ subprojects {
 	reportsDir = file("$rootProject.buildDir/reports/jacoco")
   }
 
-  jacocoTestReport {
+  // aggregates jacoco results from all subprojects and core project and generate a report
+  task jacocoRootTestReport(type: JacocoReport) {
 	dependsOn test
+	sourceSets sourceSets.main
+
+	def jacocoTestFiles = ["$buildDir/jacoco/test.exec"]
+	subprojects.each { p ->
+	  def coverageFileLocation = "$p.buildDir/jacoco/test.exec"
+	  if (new File(coverageFileLocation).exists()) {
+		jacocoTestFiles << coverageFileLocation
+	  }
+	}
+
+	logger.info('Aggregating next JaCoCo Coverage Files: {}', jacocoTestFiles)
+	executionData files(jacocoTestFiles)
+
 	reports {
-	  xml.enabled = true
-	  html.enabled = true
+	  xml.enabled true
+	  html.enabled true
 	}
   }
-  check.dependsOn jacocoTestReport
+
+  check.dependsOn jacocoRootTestReport
 
   sourceCompatibility = targetCompatibility = 1.8
 
@@ -111,7 +127,6 @@ subprojects {
 	}
 	jacoco {
 	  includes = ['reactor.kafka.sender', 'reactor.kafka.receiver']
-	  destinationFile = file("$rootProject.buildDir/jacoco/test.exec")
 	}
   }
 
