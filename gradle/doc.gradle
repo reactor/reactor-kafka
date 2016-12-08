@@ -55,7 +55,7 @@ configure(subprojects) { subproject ->
 
     apply plugin: 'org.asciidoctor.convert'
     asciidoctor {
-        sourceDir "$rootDir/reactor-kafka-docs/src/docs/asciidoc"
+        sourceDir "${subproject.projectDir}/src/docs/asciidoc"
         sources {
             include "index.asciidoc"
         }
@@ -80,6 +80,6 @@ configure(subprojects) { subproject ->
     task docsZip(type: Zip, dependsOn: asciidoctor) {
        from("$buildDir/asciidoc/pdf/reactor-kafka-reference-guide-${version}.pdf") { into("docs/") }
        from("$buildDir/asciidoc/html5/index.html") { into("docs/") }
-       from("$rootDir/reactor-kafka-docs/src/docs/asciidoc/images") { into("images/") }
+       from("$buildDir/asciidoc/html5/images") { into("images/") }
     }
 }
