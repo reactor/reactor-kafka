@@ -88,6 +88,13 @@ def customizePom(def pom, def gradleProject) {
                 connection = 'scm:git:git://github.com/reactor/reactor-kafka'
                 developerConnection = 'scm:git:git://github.com/reactor/reactor-kafka'
             }
+            developers {
+                developer {
+                    id = 'rsivaram'
+                    name = 'Rajini Sivaram'
+                    email = 'rsivaram@pivotal.io'
+                }
+            }
             issueManagement {
                 system = "GitHub Issues"
                 url = "https://github.com/reactor/reactor-kafka/issues"

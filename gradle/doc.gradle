@@ -15,7 +15,7 @@
  */
 
 configure(subprojects) { subproject ->
-    if (subproject.name != 'reactor-kafka-api') return
+    if (subproject.name == 'reactor-kafka-docs') return
 
     apply plugin: "java"
 

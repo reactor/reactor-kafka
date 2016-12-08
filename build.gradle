@@ -178,12 +178,9 @@ project(':reactor-kafka-tools') {
     }
   }
 
-  javadoc {
-    enabled = false
-  }
-
   artifacts {
     archives sourcesJar
+    archives javadocJar
   }
 }
 
@@ -207,12 +204,9 @@ project(':reactor-kafka-samples') {
     }
   }
 
-  javadoc {
-    enabled = false
-  }
-
   artifacts {
     archives sourcesJar
+    archives javadocJar
   }
 }
 
