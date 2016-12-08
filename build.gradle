@@ -70,7 +70,7 @@ allprojects {
   }
 }
 
-subprojects {
+configure(subprojects) { subproject ->
   group = 'io.projectreactor.kafka'
 
   repositories {
@@ -81,7 +81,10 @@ subprojects {
     jcenter()
     mavenCentral()
   }
-  apply plugin: 'maven'
+
+  if (subproject.name != 'reactor-kafka-docs') {
+    apply plugin: 'maven'
+  }
   apply plugin: 'eclipse'
   apply plugin: 'idea'
   apply plugin: 'propdeps'
