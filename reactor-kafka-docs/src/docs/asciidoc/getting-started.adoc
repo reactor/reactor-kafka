@@ -160,7 +160,7 @@ For gradle:
 [source]
 --------
 dependencies {
-    compile "io.projectreactor.kafka:reactor-kafka:1.0.0.M1"
+    compile "io.projectreactor.kafka:reactor-kafka:1.0.0.BUILD_SNAPSHOT"
 }
 --------
 
@@ -172,7 +172,7 @@ For maven:
 <dependency>
     <groupId>io.projectreactor.kafka</groupId>
     <artifactId>reactor-kafka</artifactId>
-    <version>1.0.0.M1</version>
+    <version>1.0.0.BUILD_SNAPSHOT</version>
 </dependency>
 --------
 
