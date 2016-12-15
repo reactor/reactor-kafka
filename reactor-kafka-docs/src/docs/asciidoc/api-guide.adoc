@@ -69,7 +69,7 @@ The additional correlation metadata included in `SenderRecord` is not sent to Ka
 `SendResult` generated for the record when the send operation completes or fails. Since results of sends to
 different partitions may be interleaved, the correlation metadata enables results to be matched to their corresponding record.
 
-A https://projectreactor.io/core/docs/api/reactor/core/publisher/Flux.html[Flux<SenderRecord>] of records
+A https://projectreactor.io/docs/core/release/api/reactor/core/publisher/Flux.html[Flux<SenderRecord>] of records
 is created for sending to Kafka. For beginners, https://github.com/reactor/lite-rx-api-hands-on[Lite Rx API Hands-on]
 provides a hands-on tutorial on using the Reactor classes `Flux` and `Mono`.
 

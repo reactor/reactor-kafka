@@ -161,7 +161,7 @@ The code segment below demonstrates fan-out with the same records processed in m
 streams. Each stream is processed on a different thread and which transforms the input record
 and stores the output in a Kafka topic.
 
-Reactor's https://projectreactor.io/core/docs/api/reactor/core/publisher/EmitterProcessor.html[EmitterProcessor]
+Reactor's https://projectreactor.io/docs/core/release/api/reactor/core/publisher/EmitterProcessor.html[EmitterProcessor]
 is used to broadcast the input records from Kafka to multiple subscribers.
 
 [source,java]

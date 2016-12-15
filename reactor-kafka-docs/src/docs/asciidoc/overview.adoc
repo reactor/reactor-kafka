@@ -20,8 +20,8 @@ applications on the JVM based on the https://github.com/reactive-streams/reactiv
 Reactor based applications can sustain very high throughput message rates and operate with a very low memory footprint,
 making it suitable for building efficient event-driven applications using the microservices architecture.
 
-Reactor implements two publishers https://projectreactor.io/core/docs/api/reactor/core/publisher/Flux.html[Flux<T>] and
-https://projectreactor.io/core/docs/api/reactor/core/publisher/Mono.html[Mono<T>], both of which support non-blocking back-pressure.
+Reactor implements two publishers https://projectreactor.io/docs/core/release/api/reactor/core/publisher/Flux.html[Flux<T>] and
+https://projectreactor.io/docs/core/release/api/reactor/core/publisher/Mono.html[Mono<T>], both of which support non-blocking back-pressure.
 This enables exchange of data between threads with well-defined memory usage, avoiding unnecessary intermediate buffering or blocking.
 
 === Reactive API for Kafka
