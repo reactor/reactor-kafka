@@ -641,6 +641,68 @@ public class KafkaReceiverTest {
     }
 
     /**
+     * Tests manual commits for {@link Receiver#receive()} with asynchronous commits
+     * when there are no polls due to back-pressure.
+     */
+    @Test
+    public void manualCommitAsyncNoPoll() throws Exception {
+        int count = 10;
+        receiverOptions = receiverOptions
+                .commitBatchSize(0)
+                .commitInterval(Duration.ofMillis(Long.MAX_VALUE))
+                .subscription(Collections.singletonList(topic));
+
+        sendMessages(topic, 0, count + 10);
+
+        Semaphore commitSemaphore = new Semaphore(0);
+        Flux<ReceiverRecord<Integer, String>> inboundFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
+                .receive()
+                .doOnNext(record -> {
+                        receivedMessages.add(record.record());
+                        record.offset().commit().doOnSuccess(v -> commitSemaphore.release()).subscribe();
+                    });
+        StepVerifier.create(inboundFlux, 1)
+                    .consumeNextWith(record -> {
+                            try {
+                                assertTrue("Commit did not complete", commitSemaphore.tryAcquire(5, TimeUnit.SECONDS));
+                            } catch (InterruptedException e) {
+                                fail("Interrupted");
+                            }
+                        })
+                    .thenCancel()
+                    .verify();
+
+        verifyCommits(groupId, topic, 19);
+    }
+
+    /**
+     * Tests manual commits for {@link Receiver#receive()} with synchronous commits
+     * using {@link Mono#block()} when there are no polls due to back-pressure.
+     */
+    @Test
+    public void manualCommitBlockNoPoll() throws Exception {
+        int count = 10;
+        receiverOptions = receiverOptions
+                .commitBatchSize(0)
+                .commitInterval(Duration.ofMillis(Long.MAX_VALUE))
+                .subscription(Collections.singletonList(topic));
+
+        sendMessages(topic, 0, count + 10);
+
+        Flux<ReceiverRecord<Integer, String>> inboundFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
+                .receive();
+        StepVerifier.create(inboundFlux, 1)
+                    .consumeNextWith(record -> {
+                            receivedMessages.add(record.record());
+                            record.offset().commit().block();
+                        })
+                    .thenCancel()
+                    .verify();
+
+        verifyCommits(groupId, topic, 19);
+    }
+
+    /**
      * Tests manual commits for {@link Receiver#receive()} with synchronous commits
      * after message processing.
      */
@@ -1328,8 +1390,10 @@ public class KafkaReceiverTest {
         for (Map.Entry<TopicPartition, List<ConsumerRecord<Integer, String>>> entry: receivedByPartition().entrySet()) {
             Long committedOffset = cluster.committedOffset(groupId, entry.getKey());
             List<ConsumerRecord<Integer, String>> list = entry.getValue();
-            assertFalse("No records received on " + entry.getKey(), list.isEmpty());
-            assertEquals(list.get(list.size() - 1).offset() + 1, committedOffset.longValue());
+            if (committedOffset != null) {
+                assertFalse("No records received on " + entry.getKey(), list.isEmpty());
+                assertEquals(list.get(list.size() - 1).offset() + 1, committedOffset.longValue());
+            }
         }
         consumerFactory.addConsumer(new MockConsumer(cluster, true));
         receiveAndVerify(remaining, r -> { });

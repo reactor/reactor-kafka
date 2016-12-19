@@ -415,6 +415,7 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
 
         private final AtomicBoolean isPending = new AtomicBoolean();
         private final long pollTimeoutMs;
+        private final AtomicBoolean partitionsPaused = new AtomicBoolean();
         PollEvent() {
             super(EventType.POLL);
             pollTimeoutMs = receiverOptions.pollTimeout().toMillis();
@@ -427,6 +428,13 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
                     // Ensure that commits are not queued behind polls since number of poll events is
                     // chosen by reactor.
                     commitEvent.runIfRequired(false);
+                    if (requestsPending.get()  > 0) {
+                        if (partitionsPaused.getAndSet(false))
+                            consumer.resume(consumer.assignment());
+                    } else {
+                        if (!partitionsPaused.getAndSet(true))
+                            consumer.pause(consumer.assignment());
+                    }
 
                     ConsumerRecords<K, V> records = consumer.poll(pollTimeoutMs);
                     if (records.count() > 0) {
@@ -437,7 +445,7 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
                     if (isActive.get()) {
                         isPending.compareAndSet(true, false);
                         int count = ackMode == AckMode.AUTO_ACK && records.count() > 0 ? 1 : records.count();
-                        if (requestsPending.addAndGet(0 - count) > 0)
+                        if (requestsPending.addAndGet(0 - count) > 0 || commitEvent.inProgress.get() > 0)
                             scheduleIfRequired();
                     }
                 }
@@ -479,6 +487,7 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
                                     else
                                         handleFailure(commitArgs, exception);
                                 });
+                            emit(pollEvent);
                         } else {
                             try {
                                 consumer.commitSync(commitArgs.offsets());

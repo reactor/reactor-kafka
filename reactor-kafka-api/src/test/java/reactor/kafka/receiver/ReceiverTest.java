@@ -386,7 +386,6 @@ public class ReceiverTest extends AbstractKafkaTest {
                                  assertEquals(committedOffsets[record.record().partition()], record.record().offset());
                                  record.offset().commit()
                                        .doOnSuccess(i -> onCommit(record, commitLatch, committedOffsets))
-                                       .subscribe()
                                        .block();
                              })
                          .doOnError(e -> log.error("KafkaFlux exception", e))
@@ -396,6 +395,55 @@ public class ReceiverTest extends AbstractKafkaTest {
         checkCommitCallbacks(commitLatch, committedOffsets);
     }
 
+    @Test
+    public void manualCommitSyncNoPoll() throws Exception {
+        CountDownLatch commitLatch = new CountDownLatch(1);
+        long[] committedOffsets = new long[partitions];
+        for (int i = 0; i < committedOffsets.length; i++)
+            committedOffsets[i] = 0;
+        receiverOptions = receiverOptions.commitInterval(Duration.ZERO).commitBatchSize(0)
+                                 .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        Receiver<Integer, String> receiver = createReceiver();
+        Flux<ReceiverRecord<Integer, String>> inboundFlux = receiver.receive()
+                .doOnNext(record -> onReceive(record.record()));
+
+        sendMessages(0, 10);
+        StepVerifier.create(inboundFlux, 1)
+                    .consumeNextWith(record -> {
+                            assertEquals(committedOffsets[record.record().partition()], record.record().offset());
+                            record.offset().commit()
+                                  .doOnSuccess(i -> onCommit(record, commitLatch, committedOffsets))
+                                  .block();
+                        })
+                    .thenCancel()
+                    .verify();
+        checkCommitCallbacks(commitLatch, committedOffsets);
+    }
+
+    @Test
+    public void manualCommitAsyncNoPoll() throws Exception {
+        CountDownLatch commitLatch = new CountDownLatch(1);
+        long[] committedOffsets = new long[partitions];
+        for (int i = 0; i < committedOffsets.length; i++)
+            committedOffsets[i] = 0;
+        receiverOptions = receiverOptions.commitInterval(Duration.ZERO).commitBatchSize(0)
+                                 .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        Receiver<Integer, String> receiver = createReceiver();
+        Flux<ReceiverRecord<Integer, String>> inboundFlux = receiver.receive()
+                .doOnNext(record -> onReceive(record.record()));
+
+        sendMessages(0, 10);
+        StepVerifier.create(inboundFlux, 1)
+                    .consumeNextWith(record -> {
+                            assertEquals(committedOffsets[record.record().partition()], record.record().offset());
+                            record.offset().commit()
+                                  .doOnSuccess(i -> onCommit(record, commitLatch, committedOffsets))
+                                  .subscribe();
+                        })
+                    .thenCancel()
+                    .verify();
+        checkCommitCallbacks(commitLatch, committedOffsets);
+    }
     @Test
     public void manualCommitBatch() throws Exception {
         int count = 20;
