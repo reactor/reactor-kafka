@@ -676,7 +676,7 @@ public class ReceiverTest extends AbstractKafkaTest {
             .thenRequest(1)
             .consumeNextWith(r -> TestUtils.sleep(sessionTimeoutMillis + 1000))
             .thenRequest(count - 2)
-            .expectNextCount(count - 1)
+            .expectNextCount(count - 2)
             .expectComplete()
             .verify();
         assertTrue("Commits did not succeed", commitSemaphore.tryAcquire(count, requestTimeoutMillis * count, TimeUnit.MILLISECONDS));

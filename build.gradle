@@ -36,7 +36,7 @@ ext {
 
   kafkaVersion = getKafkaVersion
   scalaVersion = '2.11'
-  reactorVersion = '3.0.3.RELEASE'
+  reactorVersion = '3.0.4.RELEASE'
   metricsVersion = '2.2.0'
 
   argparseVersion = '0.5.0'
