@@ -39,7 +39,7 @@ import org.apache.kafka.common.serialization.Serializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import reactor.core.Cancellation;
+import reactor.core.Disposable;
 import reactor.core.publisher.BlockingSink;
 import reactor.core.publisher.BlockingSink.Emission;
 import reactor.core.publisher.EmitterProcessor;
@@ -238,9 +238,9 @@ public class SampleScenarios {
                                          });
             Flux<SenderResult<Integer>> stream1 = sender.send(processor.publishOn(scheduler1).map(p -> SenderRecord.create(process1(p, true), p.id())), false);
             Flux<SenderResult<Integer>> stream2 = sender.send(processor.publishOn(scheduler2).map(p -> SenderRecord.create(process2(p, true), p.id())), false);
-            AtomicReference<Cancellation> cancelRef = new AtomicReference<>();
-            Consumer<AtomicReference<Cancellation>> cancel = cr -> {
-                Cancellation c = cr.getAndSet(null);
+            AtomicReference<Disposable> cancelRef = new AtomicReference<>();
+            Consumer<AtomicReference<Disposable>> cancel = cr -> {
+                Disposable c = cr.getAndSet(null);
                 if (c != null)
                     c.dispose();
             };
@@ -421,7 +421,7 @@ public class SampleScenarios {
         String groupId = "sample-group";
         CommittableSource source;
         Sender<Integer, Person> sender;
-        List<Cancellation> cancellations = new ArrayList<>();
+        List<Disposable> disposables = new ArrayList<>();
 
         AbstractScenario(String bootstrapServers) {
             this.bootstrapServers = bootstrapServers;
@@ -436,8 +436,8 @@ public class SampleScenarios {
         public void close() {
             if (sender != null)
                 sender.close();
-            for (Cancellation cancellation : cancellations)
-                cancellation.dispose();
+            for (Disposable disposable : disposables)
+                disposable.dispose();
         }
 
         public SenderOptions<Integer, Person> senderOptions() {

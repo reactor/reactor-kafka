@@ -43,7 +43,7 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import reactor.core.Cancellation;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Hooks;
 import reactor.core.publisher.Mono;
@@ -74,7 +74,7 @@ public class ReceiverTest extends AbstractKafkaTest {
 
     private Scheduler consumerScheduler;
     private Semaphore assignSemaphore = new Semaphore(0);
-    private List<Cancellation> subscribeCancellations = new ArrayList<>();
+    private List<Disposable> subscribeDisposables = new ArrayList<>();
 
     @Before
     public void setUp() throws Exception {
@@ -87,7 +87,7 @@ public class ReceiverTest extends AbstractKafkaTest {
     public void tearDown() {
         cancelSubscriptions(true);
         kafkaSender.close();
-        consumerScheduler.shutdown();
+        consumerScheduler.dispose();
         Schedulers.shutdownNow();
     }
 
@@ -219,7 +219,7 @@ public class ReceiverTest extends AbstractKafkaTest {
                         }
                         revokeSemaphore.release();
                     });
-        Cancellation cancellation =
+        Disposable disposable =
                 Receiver.create(receiverOptions)
                         .receive()
                         .doOnNext(m -> {
@@ -234,7 +234,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         waitForMessages(receiveLatch);
         assertTrue("Partitions not revoked", revokeSemaphore.tryAcquire(5000, TimeUnit.MILLISECONDS));
 
-        cancellation.dispose();
+        disposable.dispose();
     }
 
     @Test
@@ -612,7 +612,7 @@ public class ReceiverTest extends AbstractKafkaTest {
                 .receive()
                 .doOnNext(cr -> receiveLatch0.countDown())
                 .publishOn(consumerScheduler);
-        Cancellation cancellation0 = kafkaSender.send(flux0.map(cr -> SenderRecord.create(new ProducerRecord<>(topic, 1, cr.record().key(), cr.record().value()), cr.offset())), false)
+        Disposable disposable0 = kafkaSender.send(flux0.map(cr -> SenderRecord.create(new ProducerRecord<>(topic, 1, cr.record().key(), cr.record().value()), cr.offset())), false)
                     .doOnNext(sendResult -> {
                             sendResult.correlationMetadata()
                                       .commit()
@@ -622,7 +622,7 @@ public class ReceiverTest extends AbstractKafkaTest {
                         })
                     .doOnError(e -> log.error("KafkaFlux exception", e))
                     .subscribe();
-        subscribeCancellations.add(cancellation0);
+        subscribeDisposables.add(disposable0);
 
         // Send messages to partition 0
         kafkaSender.send(Flux.range(0, count)
@@ -720,9 +720,9 @@ public class ReceiverTest extends AbstractKafkaTest {
                             .receiveAutoAck()
                             .concatMap(r -> r);
 
-            Cancellation cancellation = sendAndWaitForMessages(kafkaFlux, count);
+            Disposable disposable = sendAndWaitForMessages(kafkaFlux, count);
             assertTrue("No partitions assigned", seekablePartitions.size() > 0);
-            cancellation.dispose();
+            disposable.dispose();
             try {
                 seekablePartitions.iterator().next().seekToBeginning();
                 fail("Consumer not closed");
@@ -757,7 +757,7 @@ public class ReceiverTest extends AbstractKafkaTest {
                             latch.countDown();
                         })
                     .doOnError(e -> log.error("KafkaFlux exception", e));
-            subscribeCancellations.add(kafkaFlux[i].subscribe());
+            subscribeDisposables.add(kafkaFlux[i].subscribe());
             TestUtils.waitUntil("Assigment not complete for " + i, () -> assigned, a -> a.get() >= id + 1, assigned, Duration.ofSeconds(30));
             assigned.set(0);
             receiverOptions.clearAssignListeners();
@@ -792,9 +792,9 @@ public class ReceiverTest extends AbstractKafkaTest {
         //Hooks.onOperator(p -> p.ifParallelFlux().log("reactor.", Level.INFO, true,
         //        SignalType.ON_NEXT));
 
-        Cancellation cancellation =
+        Disposable disposable =
             kafkaFlux.groupBy(m -> m.offset().topicPartition())
-                     .subscribe(partitionFlux -> subscribeCancellations.add(partitionFlux.publishOn(scheduler).subscribe(record -> {
+                     .subscribe(partitionFlux -> subscribeDisposables.add(partitionFlux.publishOn(scheduler).subscribe(record -> {
                              int partition = record.record().partition();
                              String current = Thread.currentThread().getName() + ":" + record.offset();
                              String inProgress = inProgressMap.putIfAbsent(partition, current);
@@ -810,7 +810,7 @@ public class ReceiverTest extends AbstractKafkaTest {
                              record.offset().acknowledge();
                              inProgressMap.remove(partition);
                          })));
-        subscribeCancellations.add(cancellation);
+        subscribeDisposables.add(disposable);
 
         try {
             waitFoPartitionAssignment();
@@ -822,7 +822,7 @@ public class ReceiverTest extends AbstractKafkaTest {
 
             Hooks.resetOnOperator();
         } finally {
-            scheduler.shutdown();
+            scheduler.dispose();
         }
     }
 
@@ -879,12 +879,12 @@ public class ReceiverTest extends AbstractKafkaTest {
         waitForMessages(receiveLatch);
     }
 
-    private Cancellation sendAndWaitForMessages(Flux<ConsumerRecord<Integer, String>> kafkaFlux, int count) throws Exception {
+    private Disposable sendAndWaitForMessages(Flux<ConsumerRecord<Integer, String>> kafkaFlux, int count) throws Exception {
         CountDownLatch receiveLatch = new CountDownLatch(count);
-        Cancellation cancellation = subscribe(kafkaFlux, receiveLatch);
+        Disposable disposable = subscribe(kafkaFlux, receiveLatch);
         sendMessages(0, count);
         waitForMessages(receiveLatch);
-        return cancellation;
+        return disposable;
     }
 
     public Receiver<Integer, String> createReceiver() {
@@ -899,8 +899,8 @@ public class ReceiverTest extends AbstractKafkaTest {
         return new TestableReceiver(receiver, kafkaFlux);
     }
 
-    private Cancellation subscribe(Flux<ConsumerRecord<Integer, String>> kafkaFlux, CountDownLatch latch) throws Exception {
-        Cancellation cancellation =
+    private Disposable subscribe(Flux<ConsumerRecord<Integer, String>> kafkaFlux, CountDownLatch latch) throws Exception {
+        Disposable disposable =
                 kafkaFlux
                         .doOnNext(record -> {
                                 onReceive(record);
@@ -909,9 +909,9 @@ public class ReceiverTest extends AbstractKafkaTest {
                         .doOnError(e -> log.error("KafkaFlux exception", e))
                         .publishOn(consumerScheduler)
                         .subscribe();
-        subscribeCancellations.add(cancellation);
+        subscribeDisposables.add(disposable);
         waitFoPartitionAssignment();
-        return cancellation;
+        return disposable;
     }
 
     private void waitFoPartitionAssignment() throws InterruptedException {
@@ -979,10 +979,10 @@ public class ReceiverTest extends AbstractKafkaTest {
     }
 
     private void sendMessages(int startIndex, int count) throws Exception {
-        Cancellation cancellation = kafkaSender.send(Flux.range(startIndex, count)
+        Disposable disposable = kafkaSender.send(Flux.range(startIndex, count)
                                                             .map(i -> createProducerRecord(i, true)))
                                                .subscribe();
-        subscribeCancellations.add(cancellation);
+        subscribeDisposables.add(disposable);
     }
 
     private void sendMessagesSync(int startIndex, int count) throws Exception {
@@ -1041,13 +1041,13 @@ public class ReceiverTest extends AbstractKafkaTest {
 
     private void cancelSubscriptions(boolean failOnError) {
         try {
-            for (Cancellation cancellation : subscribeCancellations)
-                cancellation.dispose();
+            for (Disposable disposable : subscribeDisposables)
+                disposable.dispose();
         } catch (Exception e) {
             // ignore since the scheduler was shutdown for the first consumer
             if (failOnError)
                 throw e;
         }
-        subscribeCancellations.clear();
+        subscribeDisposables.clear();
     }
 }

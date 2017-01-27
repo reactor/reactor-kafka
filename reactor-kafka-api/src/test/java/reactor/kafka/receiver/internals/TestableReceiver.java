@@ -63,7 +63,7 @@ public class TestableReceiver {
 
     public void terminate() throws Exception {
         Scheduler scheduler = TestUtils.getField(kafkaReceiver, "eventScheduler");
-        scheduler.shutdown();
+        scheduler.dispose();
     }
 
     public Map<TopicPartition, Long> fluxOffsetMap() {

@@ -50,7 +50,7 @@ import net.sourceforge.argparse4j.ArgumentParsers;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
-import reactor.core.Cancellation;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
 import reactor.kafka.sender.Sender;
@@ -384,10 +384,10 @@ public class ProducerPerformance {
 
             CountDownLatch latch = new CountDownLatch(numRecords);
             Flux<?> flux = senderFlux(latch);
-            Cancellation cancellation = flux.subscribe();
+            Disposable disposable = flux.subscribe();
             latch.await();
             stats.complete();
-            cancellation.dispose();
+            disposable.dispose();
             sender.close();
 
             return stats;

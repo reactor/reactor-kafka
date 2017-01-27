@@ -47,7 +47,7 @@ import org.apache.kafka.common.protocol.ProtoUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import reactor.core.Cancellation;
+import reactor.core.Disposable;
 import reactor.core.publisher.BlockingSink;
 import reactor.core.publisher.BlockingSink.Emission;
 import reactor.core.publisher.EmitterProcessor;
@@ -89,7 +89,7 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
     private final ConsumerFactory consumerFactory;
     private final ReceiverOptions<K, V> receiverOptions;
     private final List<Flux<? extends Event<?>>> fluxList;
-    private final List<Cancellation> cancellations;
+    private final List<Disposable> subscribeDisposables;
     private final AtomicLong requestsPending;
     private final AtomicBoolean needsHeartbeat;
     private final AtomicInteger consecutiveCommitFailures;
@@ -121,7 +121,7 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
 
     public KafkaReceiver(ConsumerFactory consumerFactory, ReceiverOptions<K, V> receiverOptions) {
         fluxList = new ArrayList<>();
-        cancellations = new ArrayList<>();
+        subscribeDisposables = new ArrayList<>();
         requestsPending = new AtomicLong();
         needsHeartbeat = new AtomicBoolean();
         consecutiveCommitFailures = new AtomicInteger();
@@ -306,7 +306,7 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
         eventFlux = Flux.merge(fluxList)
                         .publishOn(eventScheduler);
 
-        cancellations.add(eventFlux.subscribe(event -> doEvent(event)));
+        subscribeDisposables.add(eventFlux.subscribe(event -> doEvent(event)));
     }
 
     private void fail(Throwable e, boolean async) {
@@ -335,10 +335,10 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
                 log.warn("Cancel exception: " + e);
             } finally {
                 fluxList.clear();
-                eventScheduler.shutdown();
+                eventScheduler.dispose();
                 try {
-                    for (Cancellation cancellation : cancellations)
-                        cancellation.dispose();
+                    for (Disposable disposable : subscribeDisposables)
+                        disposable.dispose();
                 } finally {
                     // If the consumer was not closed within the specified timeout
                     // try to close again. This is not safe, so ignore exceptions and

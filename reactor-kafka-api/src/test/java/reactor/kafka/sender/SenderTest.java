@@ -277,7 +277,7 @@ public class SenderTest extends AbstractKafkaTest {
 
         assertTrue("Missing responses " + latch.getCount(), latch.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
         waitForMessages(consumer, count * fluxCount, false);
-        scheduler.shutdown();
+        scheduler.dispose();
     }
 
     /**

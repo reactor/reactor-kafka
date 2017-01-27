@@ -37,7 +37,7 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import reactor.core.Cancellation;
+import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 import reactor.kafka.AbstractKafkaTest;
 import reactor.kafka.receiver.ReceiverOptions;
@@ -58,7 +58,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
     private static final Logger log = LoggerFactory.getLogger(SampleScenariosTest.class.getName());
 
     private String bootstrapServers;
-    private List<Cancellation> cancellations = new ArrayList<>();
+    private List<Disposable> disposables = new ArrayList<>();
 
     @Before
     public void setUp() throws Exception {
@@ -68,8 +68,8 @@ public class SampleScenariosTest extends AbstractKafkaTest {
 
     @After
     public void tearDown() {
-        for (Cancellation cancellation : cancellations)
-            cancellation.dispose();
+        for (Disposable disposable : disposables)
+            disposable.dispose();
     }
 
     @Test
@@ -96,7 +96,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
                 return super.receiverOptions().consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
             }
         };
-        cancellations.add(source.flux().subscribe());
+        disposables.add(source.flux().subscribe());
         sendMessages(topic, 20, expected);
         waitForMessages(expected, received);
     }
@@ -113,7 +113,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
                 return super.receiverOptions().consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
             }
         };
-        cancellations.add(flow.flux().subscribe());
+        disposables.add(flow.flux().subscribe());
         subscribeToDestTopic("test-group", destTopic, received);
         sendMessages(sourceTopic, 20, expected);
         for (Person p : expected)
@@ -133,7 +133,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
                 return super.receiverOptions().consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
             }
         };
-        cancellations.add(flow.flux().subscribe());
+        disposables.add(flow.flux().subscribe());
         subscribeToDestTopic("test-group", destTopic, received);
         sendMessages(sourceTopic, 20, expected);
         for (Person p : expected)
@@ -157,7 +157,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
                 return super.receiverOptions().consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
             }
         };
-        cancellations.add(flow.flux().subscribe());
+        disposables.add(flow.flux().subscribe());
         subscribeToDestTopic("group1", destTopic1, received1);
         subscribeToDestTopic("group2", destTopic2, received2);
         sendMessages(sourceTopic, 20, expected1);
@@ -191,7 +191,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
             }
 
         };
-        cancellations.add(source.flux().subscribe());
+        disposables.add(source.flux().subscribe());
         sendMessages(topic, 1000, expected);
         waitForMessages(expected, received);
         checkMessageOrder(partitionMap);
@@ -207,14 +207,14 @@ public class SampleScenariosTest extends AbstractKafkaTest {
                         partitions.forEach(p -> log.trace("Group {} partition {} position {}", groupId, p, p.position()));
                     })
                 .addRevokeListener(p -> log.debug("Group {} revoked {}", groupId, p));
-        Cancellation c = Receiver.create(receiverOptions.subscription(Collections.singleton(topic)))
+        Disposable c = Receiver.create(receiverOptions.subscription(Collections.singleton(topic)))
                                  .receive()
                                  .subscribe(m -> {
                                          Person p = m.record().value();
                                          received.add(p);
                                          log.debug("Thread {} Received: {} ", Thread.currentThread().getName(), p);
                                      });
-        cancellations.add(c);
+        disposables.add(c);
     }
     private CommittableSource createTestSource(int count, List<Person> expected) {
         for (int i = 0; i < count; i++)

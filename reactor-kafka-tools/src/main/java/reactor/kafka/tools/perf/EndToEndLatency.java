@@ -61,7 +61,7 @@ import net.sourceforge.argparse4j.ArgumentParsers;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
-import reactor.core.Cancellation;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.kafka.receiver.ReceiverOptions;
@@ -332,7 +332,7 @@ public class EndToEndLatency {
         final LinkedBlockingQueue<ConsumerRecord<byte[], byte[]>> receiveQueue;
         final Semaphore sendSemaphore = new Semaphore(0);
         final Semaphore assignSemaphore = new Semaphore(0);
-        Cancellation consumerCancel;
+        Disposable subscribeDisposable;
 
         ReactiveEndToEndLatency(Map<String, Object> consumerPropsOverride, Map<String, Object> producerPropsOverride, String bootstrapServers, String topic) {
             super(consumerPropsOverride, producerPropsOverride, bootstrapServers, topic);
@@ -351,7 +351,7 @@ public class EndToEndLatency {
             System.out.println("Running latency test using Reactive API, class=" + this.getClass().getName());
         }
         public void initialize() {
-            consumerCancel = flux.subscribe(cr -> receiveQueue.offer(cr.record()));
+            subscribeDisposable = flux.subscribe(cr -> receiveQueue.offer(cr.record()));
             try {
                 if (!assignSemaphore.tryAcquire(10, TimeUnit.SECONDS))
                     throw new IllegalStateException("Timed out waiting for assignment");
@@ -373,8 +373,8 @@ public class EndToEndLatency {
         public void close() {
             if (sender != null)
                 sender.close();
-            if (consumerCancel != null)
-                consumerCancel.dispose();
+            if (subscribeDisposable != null)
+                subscribeDisposable.dispose();
         }
     }
 

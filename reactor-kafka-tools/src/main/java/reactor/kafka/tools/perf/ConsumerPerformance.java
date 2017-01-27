@@ -55,7 +55,7 @@ import net.sourceforge.argparse4j.ArgumentParsers;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
-import reactor.core.Cancellation;
+import reactor.core.Disposable;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.Receiver;
 import reactor.kafka.receiver.ReceiverPartition;
@@ -318,7 +318,7 @@ public class ConsumerPerformance {
                             }
                         })
                     .subscription(Collections.singletonList(topic));
-            Cancellation cancellation = Receiver.create(receiverOptions)
+            Disposable disposable = Receiver.create(receiverOptions)
                      .receive()
                      .subscribe(cr -> {
                              ConsumerRecord<byte[], byte[]> record = cr.record();
@@ -340,7 +340,7 @@ public class ConsumerPerformance {
                              receiveLatch.countDown();
                          }, numMessages);
             receiveLatch.await();
-            cancellation.dispose();
+            disposable.dispose();
         }
     }
 }

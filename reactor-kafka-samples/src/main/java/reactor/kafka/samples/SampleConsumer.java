@@ -30,7 +30,7 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import reactor.core.Cancellation;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.ReceiverRecord;
@@ -71,7 +71,7 @@ public class SampleConsumer {
         dateFormat = new SimpleDateFormat("HH:mm:ss:SSS z dd MMM yyyy");
     }
 
-    public Cancellation consumeMessages(String topic, CountDownLatch latch) {
+    public Disposable consumeMessages(String topic, CountDownLatch latch) {
 
         ReceiverOptions<Integer, String> options = receiverOptions.subscription(Collections.singleton(topic))
                 .addAssignListener(partitions -> log.debug("onPartitionsAssigned {}", partitions))
@@ -94,8 +94,8 @@ public class SampleConsumer {
         int count = 20;
         CountDownLatch latch = new CountDownLatch(count);
         SampleConsumer consumer = new SampleConsumer(BOOTSTRAP_SERVERS);
-        Cancellation cancellation = consumer.consumeMessages(TOPIC, latch);
+        Disposable disposable = consumer.consumeMessages(TOPIC, latch);
         latch.await(10, TimeUnit.SECONDS);
-        cancellation.dispose();
+        disposable.dispose();
     }
 }

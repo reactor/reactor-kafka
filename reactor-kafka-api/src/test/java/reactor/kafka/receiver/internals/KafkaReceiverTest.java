@@ -55,7 +55,7 @@ import org.apache.kafka.common.errors.InvalidOffsetException;
 import org.junit.Before;
 import org.junit.Test;
 
-import reactor.core.Cancellation;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
@@ -127,7 +127,7 @@ public class KafkaReceiverTest {
         assertEquals(0, consumerFactory.consumersInUse().size());
         Flux<ReceiverRecord<Integer, String>> flux = receiver.receive();
         assertEquals(0, consumerFactory.consumersInUse().size());
-        Cancellation c = flux.subscribe();
+        Disposable c = flux.subscribe();
         TestUtils.waitUntil("Consumer not created using factory", null, f -> f.consumersInUse().size() > 0, consumerFactory, Duration.ofMillis(500));
         assertEquals(Arrays.asList(consumer), consumerFactory.consumersInUse());
         assertFalse("Consumer closed", consumer.closed());
@@ -202,13 +202,13 @@ public class KafkaReceiverTest {
         for (TopicPartition partition : cluster.partitions(topic))
             receiveStartOffsets.put(partition, (long) cluster.log(partition).size());
         CountDownLatch latch = new CountDownLatch(10);
-        Cancellation cancellation = asyncReceive(latch);
+        Disposable disposable = asyncReceive(latch);
         assertTrue("Assign callback not invoked", assignSemaphore.tryAcquire(1, TimeUnit.SECONDS));
 
         sendMessages(topic, 10, 20);
         assertTrue("Messages not received", latch.await(1, TimeUnit.SECONDS));
         verifyMessages(10);
-        cancellation.dispose();
+        disposable.dispose();
     }
 
     /**
@@ -232,13 +232,13 @@ public class KafkaReceiverTest {
             receiveCount += cluster.log(partition).size() - startOffset;
         }
         CountDownLatch latch = new CountDownLatch(receiveCount);
-        Cancellation cancellation = asyncReceive(latch);
+        Disposable disposable = asyncReceive(latch);
         assertTrue("Assign callback not invoked", assignSemaphore.tryAcquire(1, TimeUnit.SECONDS));
 
         sendMessages(topic, 10, 20);
         assertTrue("Messages not received", latch.await(1, TimeUnit.SECONDS));
         verifyMessages(receiveCount);
-        cancellation.dispose();
+        disposable.dispose();
     }
 
     /**
@@ -892,11 +892,11 @@ public class KafkaReceiverTest {
         Map<String, Set<Integer>> threadMap = new ConcurrentHashMap<>();
 
         receiverOptions = receiverOptions.subscription(Collections.singletonList(topic));
-        List<Cancellation> groupCancels = new ArrayList<>();
-        Cancellation cancellation = new KafkaReceiver<>(consumerFactory, receiverOptions)
+        List<Disposable> groupDisposables = new ArrayList<>();
+        Disposable disposable = new KafkaReceiver<>(consumerFactory, receiverOptions)
             .receive()
             .groupBy(m -> m.offset().topicPartition().partition())
-            .subscribe(partitionFlux -> groupCancels.add(partitionFlux.take(countPerPartition).publishOn(scheduler, 1).subscribe(record -> {
+            .subscribe(partitionFlux -> groupDisposables.add(partitionFlux.take(countPerPartition).publishOn(scheduler, 1).subscribe(record -> {
                     String thread = Thread.currentThread().getName();
                     int partition = record.record().partition();
                     Set<Integer> partitionSet = threadMap.get(thread);
@@ -924,10 +924,10 @@ public class KafkaReceiverTest {
             assertTrue("Threads not allocated elastically " + threadMap, threadMap.size() > 1 && threadMap.size() < partitions);
             verifyMessages(countPerPartition * partitions);
         } finally {
-            for (Cancellation groupCancel : groupCancels)
-                groupCancel.dispose();
-            cancellation.dispose();
-            scheduler.shutdown();
+            for (Disposable groupDisposable : groupDisposables)
+                groupDisposable.dispose();
+            disposable.dispose();
+            scheduler.dispose();
         }
     }
 
@@ -954,11 +954,11 @@ public class KafkaReceiverTest {
         AtomicInteger maxInProgress = new AtomicInteger();
 
         receiverOptions = receiverOptions.subscription(Collections.singletonList(topic));
-        List<Cancellation> groupCancels = new ArrayList<>();
-        Cancellation cancellation = new KafkaReceiver<>(consumerFactory, receiverOptions)
+        List<Disposable> groupDisposables = new ArrayList<>();
+        Disposable disposable = new KafkaReceiver<>(consumerFactory, receiverOptions)
             .receive()
             .groupBy(m -> m.offset().topicPartition())
-            .subscribe(partitionFlux -> groupCancels.add(partitionFlux.publishOn(scheduler, 1).subscribe(record -> {
+            .subscribe(partitionFlux -> groupDisposables.add(partitionFlux.publishOn(scheduler, 1).subscribe(record -> {
                     int partition = record.record().partition();
                     String thread = Thread.currentThread().getName();
                     Set<Integer> partitionSet = threadMap.get(thread);
@@ -988,10 +988,10 @@ public class KafkaReceiverTest {
                 assertTrue("Thread assignment not balanced: " + threadMap, entry.getValue().size() > 1);
             assertEquals(partitions, maxInProgress.get());
         } finally {
-            scheduler.shutdown();
-            for (Cancellation groupCancel : groupCancels)
-                groupCancel.dispose();
-            cancellation.dispose();
+            scheduler.dispose();
+            for (Disposable groupDisposable : groupDisposables)
+                groupDisposable.dispose();
+            disposable.dispose();
         }
     }
 
@@ -1033,7 +1033,7 @@ public class KafkaReceiverTest {
             blocker.release();
             TestUtils.waitUntil("Messages not received ", null, list -> list.size() == count, receivedMessages, waitMs);
         } finally {
-            scheduler.shutdown();
+            scheduler.dispose();
         }
     }
 
@@ -1411,7 +1411,7 @@ public class KafkaReceiverTest {
         assertEquals(committedOffset, lastCommitted == -1 ? null : lastCommitted + 1);
     }
 
-    private Cancellation asyncReceive(CountDownLatch latch) {
+    private Disposable asyncReceive(CountDownLatch latch) {
         KafkaReceiver<Integer, String> receiver = new KafkaReceiver<>(consumerFactory, receiverOptions);
         return receiver.receive()
                 .doOnNext(r -> {
