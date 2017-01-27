@@ -16,8 +16,11 @@
 package reactor.kafka.tools.perf;
 
 import java.util.Map;
+
+import org.apache.kafka.clients.producer.ProducerConfig;
 import org.junit.Before;
 import org.junit.Test;
+
 import reactor.kafka.AbstractKafkaTest;
 import reactor.kafka.tools.perf.ConsumerPerformance.ConsumerPerfConfig;
 import reactor.kafka.tools.perf.ConsumerPerformance.NonReactiveConsumerPerformance;
@@ -56,7 +59,9 @@ public class ConsumerPerformanceTest extends AbstractKafkaTest {
     }
 
     private void sendToKafka(int numRecords, int recordSize) throws InterruptedException {
-        new ReactiveProducerPerformance(PerfTestUtils.producerProps(embeddedKafka), topic, numRecords, recordSize, -1)
+        Map<String, Object> props = PerfTestUtils.producerProps(embeddedKafka);
+        props.put(ProducerConfig.RETRIES_CONFIG, Integer.MAX_VALUE);
+        new ReactiveProducerPerformance(props, topic, numRecords, recordSize, -1)
                 .runTest()
                 .printTotal();
     }
