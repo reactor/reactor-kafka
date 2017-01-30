@@ -83,14 +83,16 @@ public class SenderTest extends AbstractKafkaTest {
     }
 
     /**
-     * Good path send without response. Tests that the returned Mono completes successfully
+     * Good path send without response. Tests that the outbound publisher completes successfully
      * when sends complete.
      */
     @Test
     public void sendNoResponse() throws Exception {
         int count = 1000;
         Flux<Integer> source = Flux.range(0, count);
-        kafkaSender.send(source.map(i -> createProducerRecord(i, true)))
+        kafkaSender.outbound()
+                   .send(source.map(i -> createProducerRecord(i, true)))
+                   .then()
                    .subscribe()
                    .block();
 
@@ -106,14 +108,54 @@ public class SenderTest extends AbstractKafkaTest {
         int count = 4;
         Semaphore errorSemaphore = new Semaphore(0);
         try {
-            kafkaSender.send(createOutboundErrorFlux(count, true, false))
+            kafkaSender.outbound()
+                       .send(createOutboundErrorFlux(count, true, false))
+                       .then()
                        .doOnError(t -> errorSemaphore.release())
-                .subscribe();
+                       .subscribe();
         } catch (Exception e) {
             // ignore
             assertTrue("Invalid exception " + e, e.getClass().getName().contains("CancelException"));
         }
         waitForMessages(consumer, 1, true);
+        assertTrue("Error callback not invoked", errorSemaphore.tryAcquire(requestTimeoutMillis, TimeUnit.MILLISECONDS));
+    }
+
+    /**
+     * Good path send chaining without response. Tests that all chain sends complete
+     * successfully when the tail Outbound is subscribed to.
+     */
+    @Test
+    public void sendChain() throws Exception {
+        int batch = 100;
+        kafkaSender.outbound()
+                   .send(Flux.range(0, batch).map(i -> createProducerRecord(i, true)))
+                   .send(Flux.range(batch, batch).map(i -> createProducerRecord(i, true)))
+                   .send(Flux.range(batch * 2, batch).map(i -> createProducerRecord(i, true)))
+                   .then()
+                   .subscribe()
+                   .block();
+
+        waitForMessages(consumer, batch * 3, true);
+    }
+
+    /**
+     * Good path send chaining without response. Tests that all chain sends complete
+     * successfully when the tail Outbound is subscribed to.
+     */
+    @Test
+    public void sendChainFailure() throws Exception {
+        int count = 4;
+        Semaphore errorSemaphore = new Semaphore(0);
+        kafkaSender.outbound()
+                   .send(createOutboundErrorFlux(count, true, false))
+                   .send(Flux.range(0, 10).map(i -> createProducerRecord(i, true)))
+                   .send(Flux.range(10, 10).map(i -> createProducerRecord(i, true)))
+                   .then()
+                   .doOnError(t -> errorSemaphore.release())
+                   .subscribe();
+
+        waitForMessages(consumer, 1, false);
         assertTrue("Error callback not invoked", errorSemaphore.tryAcquire(requestTimeoutMillis, TimeUnit.MILLISECONDS));
     }
 

@@ -254,7 +254,7 @@ public class ReceiverTest extends AbstractKafkaTest {
     public void atmostOnce() throws Exception {
         receiverOptions.closeTimeout(Duration.ofMillis(1000));
         Receiver<Integer, String> receiver = createReceiver();
-        Flux<ConsumerRecord<Integer, String>> kafkaFlux = receiver.receiveAtmostOnce();
+        Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux = receiver.receiveAtmostOnce();
 
         sendReceive(kafkaFlux, 0, 10, 0, 10);
 
@@ -899,7 +899,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         return new TestableReceiver(receiver, kafkaFlux);
     }
 
-    private Disposable subscribe(Flux<ConsumerRecord<Integer, String>> kafkaFlux, CountDownLatch latch) throws Exception {
+    private Disposable subscribe(Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux, CountDownLatch latch) throws Exception {
         Disposable disposable =
                 kafkaFlux
                         .doOnNext(record -> {
@@ -923,7 +923,7 @@ public class ReceiverTest extends AbstractKafkaTest {
             fail(latch.getCount() + " messages not received, received=" + count(receivedMessages) + " : " + receivedMessages);
     }
 
-    private void sendReceive(Flux<ConsumerRecord<Integer, String>> kafkaFlux,
+    private void sendReceive(Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux,
             int sendStartIndex, int sendCount,
             int receiveStartIndex, int receiveCount) throws Exception {
 
@@ -935,7 +935,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         checkConsumedMessages(receiveStartIndex, receiveCount);
     }
 
-    private void sendReceiveWithSendDelay(Flux<ConsumerRecord<Integer, String>> kafkaFlux,
+    private void sendReceiveWithSendDelay(Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux,
             Duration sendDelay,
             int startIndex, int count) throws Exception {
 
@@ -947,7 +947,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         checkConsumedMessages(startIndex, count);
     }
 
-    private void sendReceiveWithRedelivery(Flux<ConsumerRecord<Integer, String>> kafkaFlux,
+    private void sendReceiveWithRedelivery(Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux,
             int sendStartIndex, int sendCount, int minRedelivered, int maxRedelivered) throws Exception {
 
         int maybeRedelivered = maxRedelivered - minRedelivered;
@@ -979,9 +979,10 @@ public class ReceiverTest extends AbstractKafkaTest {
     }
 
     private void sendMessages(int startIndex, int count) throws Exception {
-        Disposable disposable = kafkaSender.send(Flux.range(startIndex, count)
+        Disposable disposable = kafkaSender.outbound().send(Flux.range(startIndex, count)
                                                             .map(i -> createProducerRecord(i, true)))
-                                               .subscribe();
+                                           .then()
+                                           .subscribe();
         subscribeDisposables.add(disposable);
     }
 
@@ -989,7 +990,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         CountDownLatch latch = new CountDownLatch(count);
         Flux.range(startIndex, count)
             .map(i -> createProducerRecord(i, true))
-            .concatMap(record -> kafkaSender.send(Mono.just(record))
+            .concatMap(record -> kafkaSender.outbound().send(Mono.just(record)).then()
                                             .doOnSuccess(metadata -> latch.countDown())
                                             .retry(100))
             .subscribe();
@@ -1033,7 +1034,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         new TestableReceiver(receiver).terminate();
         cancelSubscriptions(true);
         clearReceivedMessages();
-        Flux<ConsumerRecord<Integer, String>> kafkaFlux2 = createReceiver().receiveAtmostOnce();
+        Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux2 = createReceiver().receiveAtmostOnce();
         sendReceiveWithRedelivery(kafkaFlux2, sendStartIndex, sendCount, 0, maxRedelivered);
         clearReceivedMessages();
         cancelSubscriptions(false);

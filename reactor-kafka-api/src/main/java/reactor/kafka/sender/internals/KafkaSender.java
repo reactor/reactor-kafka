@@ -94,17 +94,10 @@ public class KafkaSender<K, V> implements Sender<K, V> {
         .publishOn(senderOptions.scheduler(), senderOptions.maxInFlight());
     }
 
+
     @Override
-    public Mono<Void> send(Publisher<ProducerRecord<K, V>> records) {
-        return new Flux<RecordMetadata>() {
-            @Override
-            public void subscribe(Subscriber<? super RecordMetadata> s) {
-                records.subscribe(new SendSubscriberNoResponse(s));
-            }
-        }
-        .doOnError(e -> log.trace("Send failed with exception {}", e))
-        .publishOn(senderOptions.scheduler(), senderOptions.maxInFlight())
-        .then();
+    public Outbound<K, V> outbound() {
+        return new KafkaOutbound<K, V>(this);
     }
 
     @Override
@@ -124,6 +117,18 @@ public class KafkaSender<K, V> implements Sender<K, V> {
         if (hasProducer.getAndSet(false))
             producerMono.block().close(senderOptions.closeTimeout().toMillis(), TimeUnit.MILLISECONDS);
     }
+
+    public Flux<RecordMetadata> sendProducerRecords(Publisher<? extends ProducerRecord<K, V>> records) {
+        return new Flux<RecordMetadata>() {
+            @Override
+            public void subscribe(Subscriber<? super RecordMetadata> s) {
+                records.subscribe(new SendSubscriberNoResponse(s));
+            }
+        }
+        .doOnError(e -> log.trace("Send failed with exception {}", e))
+        .publishOn(senderOptions.scheduler(), senderOptions.maxInFlight());
+    }
+
 
     @SuppressWarnings("unchecked")
     private synchronized Producer<K, V> producerProxy(Producer<K, V> producer) {
@@ -325,6 +330,49 @@ public class KafkaSender<K, V> implements Sender<K, V> {
         @Override
         public String toString() {
             return String.format("Correlation=%s metadata=%s exception=%s", correlationMetadata, metadata, exception);
+        }
+    }
+
+    private static class KafkaOutbound<K, V> implements Outbound<K, V> {
+
+        private final KafkaSender<K, V> sender;
+
+        KafkaOutbound(KafkaSender<K, V> sender) {
+            this.sender = sender;
+        }
+
+        @Override
+        public Outbound<K, V> send(Publisher<? extends ProducerRecord<K, V>> records) {
+            return then(sender.sendProducerRecords(records).then());
+        }
+
+        @Override
+        public Outbound<K, V> then(Publisher<Void> other) {
+            return new KafkaOutboundThen<>(sender, this, other);
+        }
+
+        public Mono<Void> then() {
+            return Mono.empty();
+        }
+
+    }
+
+    private static class KafkaOutboundThen<K, V> extends KafkaOutbound<K, V> {
+
+        private final Mono<Void> thenMono;
+
+        KafkaOutboundThen(KafkaSender<K, V> sender, Outbound<K, V> kafkaOutbound, Publisher<Void> thenPublisher) {
+            super(sender);
+            Mono<Void> parentMono = kafkaOutbound.then();
+            if (parentMono == Mono.<Void>empty())
+                this.thenMono = Mono.from(thenPublisher);
+            else
+                this.thenMono = parentMono.thenEmpty(thenPublisher);
+        }
+
+        @Override
+        public Mono<Void> then() {
+            return thenMono;
         }
     }
 }

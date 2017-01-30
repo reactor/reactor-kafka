@@ -73,7 +73,7 @@ public interface Receiver<K, V> {
      *
      * @return Flux of consumer record batches from Kafka that are auto-acknowledged
      */
-    Flux<Flux<ConsumerRecord<K, V>>> receiveAutoAck();
+    Flux<Flux<? extends ConsumerRecord<K, V>>> receiveAutoAck();
 
     /**
      * Returns a {@link Flux} of consumer records that are committed before the record is dispatched
@@ -88,7 +88,7 @@ public interface Receiver<K, V> {
      *
      * @return Flux of consumer records whose offsets have been committed prior to dispatch
      */
-    Flux<ConsumerRecord<K, V>> receiveAtmostOnce();
+    Flux<? extends ConsumerRecord<K, V>> receiveAtmostOnce();
 
     /**
      * Invokes the specified function on the Kafka {@link Consumer} associated with this Receiver.

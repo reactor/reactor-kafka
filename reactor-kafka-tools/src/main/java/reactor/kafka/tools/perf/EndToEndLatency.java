@@ -360,7 +360,9 @@ public class EndToEndLatency {
             }
         }
         public Iterator<ConsumerRecord<byte[], byte[]>> sendAndReceive(String topic, byte[] message, long timeout) throws Exception {
-            sender.send(Mono.just(new ProducerRecord<byte[], byte[]>(topic, message)))
+            sender.outbound()
+                  .send(Mono.just(new ProducerRecord<byte[], byte[]>(topic, message)))
+                  .then()
                   .doOnSuccess(s -> sendSemaphore.release())
                   .subscribe();
             sendSemaphore.acquire();

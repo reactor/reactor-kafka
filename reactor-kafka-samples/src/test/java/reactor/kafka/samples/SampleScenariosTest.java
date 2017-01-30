@@ -50,6 +50,7 @@ import reactor.kafka.samples.SampleScenarios.FanOut;
 import reactor.kafka.samples.SampleScenarios.KafkaTransform;
 import reactor.kafka.samples.SampleScenarios.PartitionProcessor;
 import reactor.kafka.samples.SampleScenarios.KafkaSink;
+import reactor.kafka.samples.SampleScenarios.KafkaSinkChain;
 import reactor.kafka.samples.SampleScenarios.KafkaSource;
 import reactor.kafka.samples.SampleScenarios.Person;
 import reactor.kafka.util.TestUtils;
@@ -81,6 +82,24 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         sink.source(createTestSource(10, expected));
         sink.runScenario();
         waitForMessages(expected, received);
+    }
+
+    @Test
+    public void kafkaSinkChain() throws Exception {
+        List<Person> expected = new ArrayList<>();
+        List<Person> received1 = new ArrayList<>();
+        List<Person> received2 = new ArrayList<>();
+        String topic1 = "testtopic1";
+        String topic2 = "testtopic2";
+        createNewTopic(topic1, partitions);
+        createNewTopic(topic2, partitions);
+        subscribeToDestTopic("test-group", topic1, received1);
+        subscribeToDestTopic("test-group", topic2, received2);
+        KafkaSinkChain sinkChain = new KafkaSinkChain(bootstrapServers, topic1, topic2);
+        sinkChain.source(createTestSource(10, expected));
+        sinkChain.runScenario();
+        waitForMessages(expected, received1);
+        waitForMessages(expected, received2);
     }
 
     @Test
@@ -212,7 +231,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
                                  .subscribe(m -> {
                                          Person p = m.record().value();
                                          received.add(p);
-                                         log.debug("Thread {} Received: {} ", Thread.currentThread().getName(), p);
+                                         log.debug("Thread {} Received from {}: {} ", Thread.currentThread().getName(), m.record().topic(), p);
                                      });
         disposables.add(c);
     }
@@ -229,7 +248,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
     }
     private void waitForMessages(Collection<Person> expected, Collection<Person> received) throws Exception {
         try {
-            TestUtils.waitUntil("One or more messages not received, expected=" + expected.size() + ", received=",
+            TestUtils.waitUntil("Incorrect number of messages received, expected=" + expected.size() + ", received=",
                         () -> received.size(), r -> r.size() == expected.size(), received, Duration.ofMillis(receiveTimeoutMillis));
         } catch (Error e) {
             TestUtils.printStackTrace(".*group.*");

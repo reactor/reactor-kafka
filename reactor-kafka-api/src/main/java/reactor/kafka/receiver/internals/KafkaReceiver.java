@@ -147,7 +147,7 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
     }
 
     @Override
-    public Flux<Flux<ConsumerRecord<K, V>>> receiveAutoAck() {
+    public Flux<Flux<? extends ConsumerRecord<K, V>>> receiveAutoAck() {
         this.ackMode = AckMode.AUTO_ACK;
         Flux<ConsumerRecords<K, V>> flux = withDoOnRequest(createConsumerFlux());
         return flux
@@ -159,7 +159,7 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
     }
 
     @Override
-    public Flux<ConsumerRecord<K, V>> receiveAtmostOnce() {
+    public Flux<? extends ConsumerRecord<K, V>> receiveAtmostOnce() {
         this.ackMode = AckMode.ATMOST_ONCE;
         atmostOnceOffsets = new AtmostOnceOffsets();
         Flux<ConsumerRecord<K, V>> flux = createConsumerFlux()

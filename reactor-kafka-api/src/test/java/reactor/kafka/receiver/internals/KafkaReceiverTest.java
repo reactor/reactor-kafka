@@ -284,7 +284,7 @@ public class KafkaReceiverTest {
         receiverOptions = receiverOptions
                 .subscription(Collections.singleton(topic));
         sendMessages(topic, 0, 20);
-        Flux<ConsumerRecord<Integer, String>> inboundFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
+        Flux<? extends ConsumerRecord<Integer, String>> inboundFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
                 .receiveAtmostOnce()
                 .filter(r -> cluster.committedOffset(groupId, topicPartition(r)) >= r.offset());
         verifyMessages(inboundFlux.take(10), 10);
@@ -302,7 +302,7 @@ public class KafkaReceiverTest {
                 .subscription(Collections.singleton(topic));
         sendMessages(topic, 0, 50);
         Map<TopicPartition, Long> consumedOffsets = new HashMap<>();
-        Flux<ConsumerRecord<Integer, String>> inboundFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
+        Flux<? extends ConsumerRecord<Integer, String>> inboundFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
                 .receiveAtmostOnce()
                 .filter(r -> {
                         long committed = cluster.committedOffset(groupId, topicPartition(r));
@@ -342,7 +342,7 @@ public class KafkaReceiverTest {
                 .subscription(Collections.singletonList(topic));
 
         sendMessages(topic, 0, 20);
-        Flux<ConsumerRecord<Integer, String>> inboundFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
+        Flux<? extends ConsumerRecord<Integer, String>> inboundFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
                 .receiveAtmostOnce();
         verifyMessages(inboundFlux.take(10), 10);
         verifyCommits(groupId, topic, 10);
@@ -361,7 +361,7 @@ public class KafkaReceiverTest {
                 .subscription(Collections.singletonList(topic));
         sendMessages(topic, 0, count + 10);
 
-        Flux<ConsumerRecord<Integer, String>> inboundFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
+        Flux<? extends ConsumerRecord<Integer, String>> inboundFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
                 .receiveAtmostOnce();
         StepVerifier.create(inboundFlux)
             .expectError(RetriableCommitFailedException.class)
@@ -377,7 +377,7 @@ public class KafkaReceiverTest {
         receiverOptions = receiverOptions
                 .subscription(Collections.singleton(topic));
         sendMessages(topic, 0, 20);
-        Flux<ConsumerRecord<Integer, String>> inboundFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
+        Flux<? extends ConsumerRecord<Integer, String>> inboundFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
                 .receiveAtmostOnce()
                 .doOnNext(r -> {
                         receiveStartOffsets.put(topicPartition(r), r.offset() + 1);
@@ -388,7 +388,7 @@ public class KafkaReceiverTest {
             .verify();
 
         consumerFactory.addConsumer(new MockConsumer(cluster, true));
-        Flux<ConsumerRecord<Integer, String>> newFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
+        Flux<? extends ConsumerRecord<Integer, String>> newFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
                 .receiveAtmostOnce();
         verifyMessages(newFlux.take(9), 9);
         verifyCommits(groupId, topic, 10);
@@ -404,7 +404,7 @@ public class KafkaReceiverTest {
                 .commitBatchSize(1)
                 .subscription(Collections.singleton(topic));
         sendMessages(topic, 0, 20);
-        Flux<ConsumerRecord<Integer, String>> inboundFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
+        Flux<? extends ConsumerRecord<Integer, String>> inboundFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
                 .receiveAutoAck()
                 .concatMap(r -> r)
                 .filter(r -> {
@@ -427,7 +427,7 @@ public class KafkaReceiverTest {
                 .maxCommitAttempts(5)
                 .commitBatchSize(2);
         sendMessages(topic, 0, 20);
-        Flux<ConsumerRecord<Integer, String>> inboundFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
+        Flux<? extends ConsumerRecord<Integer, String>> inboundFlux = new KafkaReceiver<>(consumerFactory, receiverOptions)
                 .receiveAutoAck()
                 .concatMap(r -> r);
         verifyMessages(inboundFlux.take(11), 11);
@@ -1325,12 +1325,12 @@ public class KafkaReceiverTest {
     }
 
     private void receiveAndVerify(Flux<ReceiverRecord<Integer, String>> inboundFlux, int receiveCount) {
-        Flux<ConsumerRecord<Integer, String>> flux = inboundFlux
+        Flux<? extends ConsumerRecord<Integer, String>> flux = inboundFlux
                 .map(r -> r.record());
         verifyMessages(flux.take(receiveCount), receiveCount);
     }
 
-    private void verifyMessages(Flux<ConsumerRecord<Integer, String>> inboundFlux, int receiveCount) {
+    private void verifyMessages(Flux<? extends ConsumerRecord<Integer, String>> inboundFlux, int receiveCount) {
         StepVerifier.create(inboundFlux)
                 .recordWith(() -> receivedMessages)
                 .expectNextCount(receiveCount)

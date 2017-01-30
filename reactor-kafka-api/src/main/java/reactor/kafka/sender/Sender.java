@@ -21,6 +21,7 @@ import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.reactivestreams.Publisher;
+import org.reactivestreams.Subscriber;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -82,14 +83,13 @@ public interface Sender<K, V> {
     <T> Flux<SenderResult<T>> send(Publisher<SenderRecord<K, V, T>> records, boolean delayError);
 
     /**
-     * Sends a sequence of producer records to Kafka. No metadata is returned for individual producer
-     * records on success or failure. The returned {@link Mono} is failed immediately if a record cannot
-     * be delivered to Kafka after the configured number of retries in {@link ProducerConfig#RETRIES_CONFIG}.
-     * @param records Outbound producer records
-     * @return Mono that succeeds if all records are delivered successfully to Kafka and
-     * fails if any of the sends fail.
+     * Creates a reactive gateway for outgoing Kafka records. Outgoing sends can be chained
+     * using {@link Outbound#send(Publisher)}. Like {@link Flux} and {@link Mono}, subscribing
+     * to the tail {@link Outbound} will schedule all parent sends in the declaration order.
+     *
+     * @return chainable reactive gateway for outgoing Kafka producer records
      */
-    Mono<Void> send(Publisher<ProducerRecord<K, V>> records);
+    Outbound<K, V> outbound();
 
     /**
      * Invokes the specified function on the Kafka {@link Producer} associated with this Sender.
@@ -120,5 +120,78 @@ public interface Sender<K, V> {
      * Closes this sender and the underlying Kafka producer and releases all resources allocated to it.
      */
     void close();
+
+    /**
+     * {@link Outbound} is a reactive gateway for outgoing data flows to Kafka. Each Outbound
+     * represents a sequence of outgoing records that are sent to Kafka using {@link Outbound#send(Publisher)}.
+     * Send sequences may be chained together into a longer sequence of outgoing producer records.
+     * Like {@link Flux} and {@link Mono}, subscribing to the tail {@link Outbound} will schedule all
+     * parent sends in the declaration order. Outgoing records of each topic partition will be delivered
+     * to Kafka in the declaration order.
+     * <p>
+     * The subscriber to Outbound is notified of completion and failure of its send sequence. If any
+     * record cannot be delivered to Kafka, the outbound publisher fails with an error. Note that some
+     * of the subsequent records already in flight may still be delivered. No metadata is returned
+     * for individual records on success or failure. {@link Sender#send(Publisher, boolean)} may be used
+     * to send records to Kafka when per-record completion status is required.
+     * <p>
+     * Example usage:
+     * <pre>
+     * {@code
+     *     sender.createOutbound()
+     *       .send(flux1)
+     *       .send(flux2)
+     *       .send(flux3)
+     *       .then();
+     * }
+     * </pre>
+     */
+    public interface Outbound<K, V> extends Publisher<Void> {
+
+        /**
+         * Sends a sequence of producer records to Kafka. No metadata is returned for individual producer
+         * records on success or failure. This outbound publisher is failed immediately if a record cannot
+         * be delivered to Kafka after the configured number of retries in {@link ProducerConfig#RETRIES_CONFIG}.
+         * The underlying Kafka sender may continue to be used until the sender is explicitly closed using
+         * {@link Sender#close()}. Sends may be chained by sending another record sequence on the returned
+         * {@link Outbound}.
+         *
+         * @param records Outbound producer records
+         * @return new instance of Outbound that may be used to control and monitor delivery of this send
+         *         and to queue more sends to Kafka
+         */
+        Outbound<K, V> send(Publisher<? extends ProducerRecord<K, V>> records);
+
+        /**
+         * Appends a {@link Publisher} task and returns a new {@link Outbound} to schedule further send sequences
+         * to Kafka after pending send sequences are complete.
+         *
+         * @param other the {@link Publisher} to subscribe to when this pending outbound {@link #then} is complete
+         * @return new instance of Outbound that may be used to control and monitor delivery of pending sends
+         *         and to queue more sends to Kafka
+         */
+        Outbound<K, V> then(Publisher<Void> other);
+
+        /**
+         * Returns a {@link Mono} that completes when all the producer records in this outbound
+         * sequence sent using {@link #send(Publisher)} are delivered to Kafka. The returned
+         * Mono fails with an error if any of the producer records in the sequence cannot be
+         * delivered to Kafka after the configured number of retries.
+         *
+         * @return Mono that completes when producer records from this {@link Outbound} are delivered to Kafka
+         */
+        Mono<Void> then();
+
+        /**
+         * Subscribes the specified {@code Void} subscriber to this {@link Outbound} and triggers the send of
+         * pending producer record sequence queued using {@link #send(Publisher)} to Kafka.
+         *
+         * @param subscriber the {@link Subscriber} to listen for send sequence completion or failure
+         */
+        @Override
+        default void subscribe(Subscriber<? super Void> subscriber) {
+            then().subscribe(subscriber);
+        }
+    }
 
 }

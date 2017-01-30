@@ -52,6 +52,7 @@ import reactor.kafka.receiver.ReceiverRecord;
 import reactor.kafka.receiver.Receiver;
 import reactor.kafka.receiver.ReceiverOffset;
 import reactor.kafka.sender.Sender;
+import reactor.kafka.sender.Sender.Outbound;
 import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.SenderRecord;
 import reactor.kafka.sender.SenderResult;
@@ -81,6 +82,7 @@ public class SampleScenarios {
 
     enum Scenario {
         KAFKA_SINK,
+        KAFKA_SINK_CHAIN,
         KAFKA_SOURCE,
         KAFKA_TRANSFORM,
         ATMOST_ONCE,
@@ -115,6 +117,38 @@ public class SampleScenarios {
                             log.trace("Successfully stored person with id {} in Kafka", id);
                             source.commit(id);
                         });
+        }
+    }
+
+    /**
+     * This sample demonstrates the use of Kafka as a sink when messages are transferred from
+     * an external source to a Kafka topic. Unlimited (very large) blocking time and retries
+     * are used to handle broker failures. Each source record is transformed into multiple Kafka
+     * records and the result records are sent to Kafka using chained outbound sequences.
+     * Source records are committed when sends succeed.
+     *
+     */
+    public static class KafkaSinkChain extends AbstractScenario {
+        private final String topic1;
+        private final String topic2;
+
+        public KafkaSinkChain(String bootstrapServers, String topic1, String topic2) {
+            super(bootstrapServers);
+            this.topic1 = topic1;
+            this.topic2 = topic2;
+        }
+        public Flux<?> flux() {
+            SenderOptions<Integer, Person> senderOptions = senderOptions()
+                    .producerProperty(ProducerConfig.ACKS_CONFIG, "all")
+                    .producerProperty(ProducerConfig.MAX_BLOCK_MS_CONFIG, Long.MAX_VALUE)
+                    .producerProperty(ProducerConfig.RETRIES_CONFIG, Integer.MAX_VALUE);
+            Outbound<Integer, Person> outbound = sender(senderOptions).outbound();
+            Flux<Person> srcFlux = source().flux();
+            return srcFlux.concatMap(p ->
+                    outbound.send(Mono.just(new ProducerRecord<>(topic1, p.id(), p)))
+                            .send(Mono.just(new ProducerRecord<>(topic2, p.id(), p)))
+                            .then()
+                            .doOnSuccess(v -> source.commit(p.id())));
         }
     }
 
@@ -491,6 +525,9 @@ public class SampleScenarios {
         switch (scenario) {
             case KAFKA_SINK:
                 sampleScenario = new KafkaSink(BOOTSTRAP_SERVERS, TOPICS[0]);
+                break;
+            case KAFKA_SINK_CHAIN:
+                sampleScenario = new KafkaSinkChain(BOOTSTRAP_SERVERS, TOPICS[0], TOPICS[1]);
                 break;
             case KAFKA_SOURCE:
                 sampleScenario = new KafkaSource(BOOTSTRAP_SERVERS, TOPICS[0]);
