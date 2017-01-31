@@ -156,99 +156,104 @@ public class KafkaSender<K, V> implements Sender<K, V> {
         INIT,
         ACTIVE,
         OUTBOUND_DONE,
-        COMPLETE,
-        FAILED
+        COMPLETE
     }
 
     private abstract class AbstractSendSubscriber<Q, S, C> implements Subscriber<Q> {
         protected final Subscriber<? super S> actual;
         private final boolean delayError;
         private Producer<K, V> producer;
-        private AtomicInteger inflight = new AtomicInteger();
-        private SubscriberState state;
-        private AtomicReference<Throwable> firstException = new AtomicReference<>();
+        private AtomicInteger inflight;
+        AtomicReference<SubscriberState> state;
+        private AtomicReference<Throwable> firstException;
 
         AbstractSendSubscriber(Subscriber<? super S> actual, boolean delayError) {
-            this.actual = actual;
             this.delayError = delayError;
-            this.state = SubscriberState.INIT;
+            this.actual = actual;
+            this.state = new AtomicReference<>(SubscriberState.INIT);
+            inflight = new AtomicInteger();
+            firstException = new AtomicReference<>();
         }
 
         @Override
         public void onSubscribe(Subscription s) {
-            this.state = SubscriberState.ACTIVE;
             producer = producerMono.block();
+            state.set(SubscriberState.ACTIVE);
             actual.onSubscribe(s);
         }
 
         @Override
         public void onNext(Q m) {
-            if (state == SubscriberState.FAILED)
+            if (checkComplete(m))
                 return;
-            else if (state == SubscriberState.COMPLETE) {
-                Operators.onNextDropped(m);
-                return;
-            }
             inflight.incrementAndGet();
             C correlationMetadata = correlationMetadata(m);
             try {
                 producer.send(producerRecord(m), (metadata, exception) -> {
-                        boolean complete = inflight.decrementAndGet() == 0 && state == SubscriberState.OUTBOUND_DONE;
                         try {
-                            if (exception == null) {
-                                handleResponse(metadata, null, correlationMetadata);
-                                if (complete)
-                                    complete();
-                            } else
-                                error(metadata, exception, correlationMetadata, complete);
+                            if (exception == null)
+                                handleMetadata(metadata, correlationMetadata);
+                            else
+                                handleError(exception, correlationMetadata, !delayError);
                         } catch (Exception e) {
-                            error(metadata, e, correlationMetadata, complete);
+                            handleError(e, correlationMetadata, true);
+                        } finally {
+                            if (inflight.decrementAndGet() == 0)
+                                maybeComplete();
                         }
                     });
             } catch (Exception e) {
                 inflight.decrementAndGet();
-                error(null, e, correlationMetadata, true);
+                handleError(e, correlationMetadata, true);
             }
         }
 
         @Override
         public void onError(Throwable t) {
-            if (state == SubscriberState.FAILED)
-                return;
-            else if (state == SubscriberState.COMPLETE) {
+            if (state.compareAndSet(SubscriberState.ACTIVE, SubscriberState.COMPLETE) ||
+                    state.compareAndSet(SubscriberState.OUTBOUND_DONE, SubscriberState.COMPLETE)) {
+                actual.onError(t);
+            } else if (firstException.compareAndSet(null, t) && state.get() == SubscriberState.COMPLETE)
                 Operators.onErrorDropped(t);
-                return;
-            }
-            state = SubscriberState.FAILED;
-            actual.onError(t);
         }
 
         @Override
         public void onComplete() {
-            if (state == SubscriberState.COMPLETE)
-                return;
-            state = SubscriberState.OUTBOUND_DONE;
-            if (inflight.get() == 0) {
-                complete();
+            if (state.compareAndSet(SubscriberState.ACTIVE, SubscriberState.OUTBOUND_DONE) && inflight.get() == 0)
+                maybeComplete();
+        }
+
+        private void maybeComplete() {
+            if (state.compareAndSet(SubscriberState.OUTBOUND_DONE, SubscriberState.COMPLETE)) {
+                Throwable exception = firstException.get();
+                if (exception != null)
+                    actual.onError(exception);
+                else
+                    actual.onComplete();
             }
         }
 
-        private void complete() {
-            Throwable exception = firstException.getAndSet(null);
-            if (delayError && exception != null) {
-                onError(exception);
-            } else {
-                state = SubscriberState.COMPLETE;
-                actual.onComplete();
-            }
+        public void handleMetadata(RecordMetadata metadata, C correlation) {
+            if (!checkComplete(metadata))
+                handleResponse(metadata, null, correlation);
         }
 
-        public void error(RecordMetadata metadata, Exception e, C correlation, boolean complete) {
+        public void handleError(Exception e, C correlation, boolean abort) {
             log.error("error {}", e);
+            boolean complete = checkComplete(e);
             firstException.compareAndSet(null, e);
-            handleResponse(metadata, e, correlation);
-            if (!delayError || complete)
-                onError(e);
+            if (!complete) {
+                handleResponse(null, e, correlation);
+                if (abort)
+                    onError(e);
+            }
+        }
+
+        public <T> boolean checkComplete(T t) {
+            boolean complete = state.get() == SubscriberState.COMPLETE;
+            if (complete && firstException.get() == null)
+                Operators.onNextDropped(t);
+            return complete;
         }
 
         protected abstract void handleResponse(RecordMetadata metadata, Exception e, C correlation);

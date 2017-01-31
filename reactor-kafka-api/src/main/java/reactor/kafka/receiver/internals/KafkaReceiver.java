@@ -299,7 +299,7 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
         Duration commitInterval = receiverOptions.commitInterval();
         if ((ackMode == AckMode.AUTO_ACK || ackMode == AckMode.MANUAL_ACK) && !commitInterval.isZero()) {
             Flux<CommitEvent> periodicCommitFlux = Flux.interval(receiverOptions.commitInterval())
-                             .map(i -> commitEvent);
+                             .map(i -> commitEvent.periodicEvent());
             fluxList.add(periodicCommitFlux);
         }
 
@@ -473,7 +473,8 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
         }
         @Override
         public void run() {
-            isPending.set(false);
+            if (!isPending.compareAndSet(true, false))
+                return;
             final CommitArgs commitArgs = commitBatch.getAndClearOffsets();
             try {
                 if (commitArgs != null) {
@@ -510,9 +511,10 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
         }
 
         void runIfRequired(boolean force) {
-            if (isPending.compareAndSet(true, false) || force) {
+            if (force)
+                isPending.set(true);
+            if (isPending.get())
                 run();
-            }
         }
 
         private void handleSuccess(CommitArgs commitArgs, Map<TopicPartition, OffsetAndMetadata> offsets) {
@@ -545,6 +547,11 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
                 log.warn("Commit failed with exception" + exception + ", retries remaining " + (receiverOptions.maxCommitAttempts() - consecutiveCommitFailures.get()));
                 isPending.set(true);
             }
+        }
+
+        private CommitEvent periodicEvent() {
+            isPending.set(true);
+            return this;
         }
 
         private void scheduleIfRequired() {
