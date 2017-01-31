@@ -27,12 +27,14 @@ import reactor.kafka.tools.perf.ProducerPerformance.NonReactiveProducerPerforman
 import reactor.kafka.tools.perf.ProducerPerformance.ReactiveProducerPerformance;
 import reactor.kafka.tools.perf.ProducerPerformance.Stats;
 import reactor.kafka.tools.util.PerfTestUtils;
+import reactor.kafka.util.TestUtils;
 
 public class ProducerPerformanceTest extends AbstractKafkaTest {
 
     private int numMessages;
     private int messageSize;
     private int maxPercentDiff;
+    private long timeoutMs;
 
     @Before
     public void setUp() throws Exception {
@@ -41,18 +43,19 @@ public class ProducerPerformanceTest extends AbstractKafkaTest {
         numMessages = PerfTestUtils.getTestConfig("reactor.kafka.test.numMessages", 5000000);
         messageSize = PerfTestUtils.getTestConfig("reactor.kafka.test.messageSize", 100);
         maxPercentDiff = PerfTestUtils.getTestConfig("reactor.kafka.test.maxPercentDiff", 50);
+        timeoutMs = PerfTestUtils.getTestConfig("reactor.kafka.test.timeoutMs", 60000);
     }
 
     @Test
     public void performanceRegressionTest() throws Exception {
 
         NonReactiveProducerPerformance nonReactive = new NonReactiveProducerPerformance(producerProps(), topic, numMessages, messageSize, -1);
-        Stats nrStats = nonReactive.runTest();
+        Stats nrStats = TestUtils.execute(() -> nonReactive.runTest(), timeoutMs);
         nrStats.printTotal();
         assertEquals(numMessages, (int) nrStats.count());
 
         ReactiveProducerPerformance reactive = new ReactiveProducerPerformance(producerProps(), topic, numMessages, messageSize, -1);
-        Stats rStats = reactive.runTest();
+        Stats rStats = TestUtils.execute(() -> reactive.runTest(), timeoutMs);
         rStats.printTotal();
         assertEquals(numMessages, (int) rStats.count());
 

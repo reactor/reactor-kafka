@@ -101,7 +101,7 @@ configure(subprojects) { subproject ->
     maxHeapSize = "1024m"
     testLogging {
       events "passed", "skipped", "failed"
-      //showStandardStreams = true
+      showStandardStreams = project.hasProperty("showStandardStreams") ?: false
       exceptionFormat = 'full'
     }
     jacoco {

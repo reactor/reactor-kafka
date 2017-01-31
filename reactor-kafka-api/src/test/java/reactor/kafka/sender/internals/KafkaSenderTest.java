@@ -274,6 +274,7 @@ public class KafkaSenderTest {
             semaphore.release();
         }
         outgoing.verify(sendResponses);
+        scheduler.dispose();
     }
 
     /**
@@ -302,6 +303,7 @@ public class KafkaSenderTest {
         Thread.yield();
         assertFalse("Producer is blocked", producer.isBlocked());
         semaphore.release();
+        scheduler.dispose();
     }
 
     /**

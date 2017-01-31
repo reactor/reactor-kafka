@@ -17,22 +17,26 @@ package reactor.kafka.tools.perf;
 
 import java.util.Map;
 
+
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.junit.Before;
 import org.junit.Test;
 
 import reactor.kafka.AbstractKafkaTest;
+import reactor.kafka.tools.perf.ConsumerPerformance.AbstractConsumerPerformance;
 import reactor.kafka.tools.perf.ConsumerPerformance.ConsumerPerfConfig;
 import reactor.kafka.tools.perf.ConsumerPerformance.NonReactiveConsumerPerformance;
 import reactor.kafka.tools.perf.ConsumerPerformance.ReactiveConsumerPerformance;
 import reactor.kafka.tools.perf.ProducerPerformance.ReactiveProducerPerformance;
 import reactor.kafka.tools.util.PerfTestUtils;
+import reactor.kafka.util.TestUtils;
 
 public class ConsumerPerformanceTest extends AbstractKafkaTest {
 
     private int numMessages;
     private int messageSize;
     private int maxPercentDiff;
+    private long timeoutMs;
 
     @Before
     public void setUp() throws Exception {
@@ -41,6 +45,7 @@ public class ConsumerPerformanceTest extends AbstractKafkaTest {
         numMessages = PerfTestUtils.getTestConfig("reactor.kafka.test.numMessages", 5000000);
         messageSize = PerfTestUtils.getTestConfig("reactor.kafka.test.messageSize", 100);
         maxPercentDiff = PerfTestUtils.getTestConfig("reactor.kafka.test.maxPercentDiff", 20);
+        timeoutMs = PerfTestUtils.getTestConfig("reactor.kafka.test.timeoutMs", 60000);
     }
 
     @Test
@@ -48,21 +53,30 @@ public class ConsumerPerformanceTest extends AbstractKafkaTest {
         ConsumerPerfConfig config = new ConsumerPerfConfig();
         Map<String, Object> consumerProps = PerfTestUtils.consumerProps(embeddedKafka);
 
-        sendToKafka(numMessages, messageSize);
+        TestUtils.execute(() -> sendToKafka(numMessages, messageSize), timeoutMs);
 
         NonReactiveConsumerPerformance nonReactive = new NonReactiveConsumerPerformance(consumerProps, topic, "non-reactive", config);
-        nonReactive.runTest(numMessages);
+        TestUtils.execute(() -> runConsumerPerformanceTest(nonReactive), timeoutMs);
         ReactiveConsumerPerformance reactive = new ReactiveConsumerPerformance(consumerProps, topic, "reactive", config);
-        reactive.runTest(numMessages);
+        TestUtils.execute(() -> runConsumerPerformanceTest(reactive), timeoutMs);
 
         PerfTestUtils.verifyReactiveThroughput(reactive.recordsPerSec(), nonReactive.recordsPerSec(), maxPercentDiff);
     }
 
-    private void sendToKafka(int numRecords, int recordSize) throws InterruptedException {
+    private int sendToKafka(int numRecords, int recordSize) throws InterruptedException {
         Map<String, Object> props = PerfTestUtils.producerProps(embeddedKafka);
         props.put(ProducerConfig.RETRIES_CONFIG, Integer.MAX_VALUE);
         new ReactiveProducerPerformance(props, topic, numRecords, recordSize, -1)
                 .runTest()
                 .printTotal();
+        return numRecords;
+    }
+
+    private void runConsumerPerformanceTest(AbstractConsumerPerformance perfTest) {
+        try {
+            perfTest.runTest(numMessages);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
     }
 }

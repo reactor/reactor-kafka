@@ -16,7 +16,10 @@
 package reactor.kafka.util;
 
 import java.time.Duration;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
@@ -94,6 +97,22 @@ public class TestUtils {
             MemberModifier.field(obj.getClass(), field).set(obj, value);
         } catch (Exception e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    public static void execute(Runnable runnable, long maxTimeMs) throws Exception {
+        execute(() -> {
+                runnable.run();
+                return null;
+            }, maxTimeMs);
+    }
+
+    public static <T> T execute(Callable<T> callable, long maxTimeMs) throws Exception {
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            return executor.submit(callable).get(maxTimeMs, TimeUnit.MILLISECONDS);
+        } finally {
+            executor.shutdown();
         }
     }
 }

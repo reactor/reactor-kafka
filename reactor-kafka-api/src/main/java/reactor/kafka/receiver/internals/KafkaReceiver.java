@@ -183,7 +183,8 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
     public <T> Mono<T> doOnConsumer(Function<org.apache.kafka.clients.consumer.Consumer<K, V>, ? extends T> function) {
         return Mono.create(monoSink -> {
                 CustomEvent<T> event = new CustomEvent<>(function, monoSink);
-                emit(event);
+                if (!emit(event))
+                    throw new IllegalStateException("Consumer method could not be executed at this time");
             });
     }
 
@@ -235,6 +236,10 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
                             log.error("Subscription to event flux failed", e);
                             throw e;
                         }
+                    })
+                .doOnRequest(r -> {
+                        if (requestsPending.get() > 0)
+                            pollEvent.scheduleIfRequired();
                     })
                 .doOnCancel(() -> cancel(true));
         return consumerFlux;
@@ -326,8 +331,8 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
                     long closeEndNanos = closeStartNanos + receiverOptions.closeTimeout().toNanos();
                     CloseEvent closeEvent = new CloseEvent(closeEndNanos);
                     if (async) {
-                        emit(closeEvent);
-                        isConsumerClosed = closeEvent.await();
+                        if (emit(closeEvent))
+                            isConsumerClosed = closeEvent.await();
                     } else
                         closeEvent.run();
                 }
@@ -372,10 +377,13 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
         }
     }
 
-    private void emit(Event<?> event) {
+    private boolean emit(Event<?> event) {
         Emission emission = eventSubmission.emit(event);
-        if (emission != Emission.OK)
+        if (emission != Emission.OK) {
             log.error("Event emission failed: {} {}", event.eventType, emission);
+            return false;
+        } else
+            return true;
     }
 
     abstract class Event<R> implements Runnable {
@@ -413,7 +421,7 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
 
     private class PollEvent extends Event<ConsumerRecords<K, V>> {
 
-        private final AtomicBoolean isPending = new AtomicBoolean();
+        private AtomicInteger pendingCount = new AtomicInteger();
         private final long pollTimeoutMs;
         private final AtomicBoolean partitionsPaused = new AtomicBoolean();
         PollEvent() {
@@ -428,7 +436,8 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
                     // Ensure that commits are not queued behind polls since number of poll events is
                     // chosen by reactor.
                     commitEvent.runIfRequired(false);
-                    if (requestsPending.get()  > 0) {
+                    pendingCount.decrementAndGet();
+                    if (requestsPending.get() > 0 && recordSubmission.hasRequested()) {
                         if (partitionsPaused.getAndSet(false))
                             consumer.resume(consumer.assignment());
                     } else {
@@ -440,10 +449,9 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
                     if (records.count() > 0) {
                         Emission emission = recordSubmission.emit(records);
                         if (emission != Emission.OK)
-                            log.error("Emission of consumer records failed with error " + emission);
+                            log.error("Emission of {} consumer records failed: {}", records.count(), emission);
                     }
                     if (isActive.get()) {
-                        isPending.compareAndSet(true, false);
                         int count = ackMode == AckMode.AUTO_ACK && records.count() > 0 ? 1 : records.count();
                         if (requestsPending.addAndGet(0 - count) > 0 || commitEvent.inProgress.get() > 0)
                             scheduleIfRequired();
@@ -458,8 +466,8 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
         }
 
         void scheduleIfRequired() {
-            if (isPending.compareAndSet(false, true))
-                emit(this);
+            if (pendingCount.get() <= 0 && emit(this))
+                pendingCount.incrementAndGet();
         }
     }
 
@@ -488,7 +496,7 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
                                     else
                                         handleFailure(commitArgs, exception);
                                 });
-                            emit(pollEvent);
+                            pollEvent.scheduleIfRequired();
                         } else {
                             try {
                                 consumer.commitSync(commitArgs.offsets());
@@ -555,7 +563,7 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
         }
 
         private void scheduleIfRequired() {
-            if (isPending.compareAndSet(false, true))
+            if (isActive.get() && isPending.compareAndSet(false, true))
                 emit(this);
         }
 

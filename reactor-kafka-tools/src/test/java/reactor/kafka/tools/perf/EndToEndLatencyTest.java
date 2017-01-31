@@ -22,12 +22,14 @@ import reactor.kafka.AbstractKafkaTest;
 import reactor.kafka.tools.perf.EndToEndLatency.NonReactiveEndToEndLatency;
 import reactor.kafka.tools.perf.EndToEndLatency.ReactiveEndToEndLatency;
 import reactor.kafka.tools.util.PerfTestUtils;
+import reactor.kafka.util.TestUtils;
 
 public class EndToEndLatencyTest extends AbstractKafkaTest {
 
     private int numMessages;
     private int messageSize;
     private int maxPercentDiff;
+    private long timeoutMs;
 
     @Before
     public void setUp() throws Exception {
@@ -36,6 +38,7 @@ public class EndToEndLatencyTest extends AbstractKafkaTest {
         numMessages = PerfTestUtils.getTestConfig("reactor.kafka.test.numMessages", 10000);
         messageSize = PerfTestUtils.getTestConfig("reactor.kafka.test.messageSize", 100);
         maxPercentDiff = PerfTestUtils.getTestConfig("reactor.kafka.test.maxPercentDiff", 100);
+        timeoutMs = PerfTestUtils.getTestConfig("reactor.kafka.test.timeoutMs", 60000);
     }
 
     @Test
@@ -43,10 +46,10 @@ public class EndToEndLatencyTest extends AbstractKafkaTest {
         Map<String, Object> producerProps = PerfTestUtils.producerProps(embeddedKafka);
         Map<String, Object> consumerProps = PerfTestUtils.consumerProps(embeddedKafka);
 
-        ReactiveEndToEndLatency reactive = new ReactiveEndToEndLatency(consumerProps, producerProps, embeddedKafka.getBrokersAsString(), topic);
-        double[] rLatencies = reactive.runTest(numMessages, messageSize, 10000L);
         NonReactiveEndToEndLatency nonReactive = new NonReactiveEndToEndLatency(consumerProps, producerProps, embeddedKafka.getBrokersAsString(), topic);
-        double[] nrLatencies = nonReactive.runTest(numMessages, messageSize, 10000L);
+        double[] nrLatencies = TestUtils.execute(() -> nonReactive.runTest(numMessages, messageSize, 10000L), timeoutMs);
+        ReactiveEndToEndLatency reactive = new ReactiveEndToEndLatency(consumerProps, producerProps, embeddedKafka.getBrokersAsString(), topic);
+        double[] rLatencies = TestUtils.execute(() -> reactive.runTest(numMessages, messageSize, 10000L), timeoutMs);
 
         double r75 = rLatencies[(int) (rLatencies.length * 0.75)];
         double nr75 = nrLatencies[(int) (rLatencies.length * 0.75)];

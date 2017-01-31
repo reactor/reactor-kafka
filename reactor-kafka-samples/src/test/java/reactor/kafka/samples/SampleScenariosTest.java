@@ -99,7 +99,10 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         sinkChain.source(createTestSource(10, expected));
         sinkChain.runScenario();
         waitForMessages(expected, received1);
-        waitForMessages(expected, received2);
+        List<Person> expected2 = new ArrayList<>();
+        for (Person p : expected)
+            expected2.add(p.upperCase());
+        waitForMessages(expected2, received2);
     }
 
     @Test
@@ -249,13 +252,12 @@ public class SampleScenariosTest extends AbstractKafkaTest {
     private void waitForMessages(Collection<Person> expected, Collection<Person> received) throws Exception {
         try {
             TestUtils.waitUntil("Incorrect number of messages received, expected=" + expected.size() + ", received=",
-                        () -> received.size(), r -> r.size() == expected.size(), received, Duration.ofMillis(receiveTimeoutMillis));
+                        () -> received.size(), r -> r.size() >= expected.size(), received, Duration.ofMillis(receiveTimeoutMillis));
         } catch (Error e) {
             TestUtils.printStackTrace(".*group.*");
             throw e;
         }
         assertEquals(new HashSet<>(expected), new HashSet<>(received));
-        assertEquals(expected.size(), received.size());
     }
     private void checkMessageOrder(Map<Integer, List<Person>> received) throws Exception {
         for (List<Person> list : received.values()) {

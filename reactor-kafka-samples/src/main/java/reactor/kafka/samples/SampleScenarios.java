@@ -146,7 +146,7 @@ public class SampleScenarios {
             Flux<Person> srcFlux = source().flux();
             return srcFlux.concatMap(p ->
                     outbound.send(Mono.just(new ProducerRecord<>(topic1, p.id(), p)))
-                            .send(Mono.just(new ProducerRecord<>(topic2, p.id(), p)))
+                            .send(Mono.just(new ProducerRecord<>(topic2, p.id(), p.upperCase())))
                             .then()
                             .doOnSuccess(v -> source.commit(p.id())));
         }
@@ -352,6 +352,9 @@ public class SampleScenarios {
         }
         public String email() {
             return email == null ? "" : email;
+        }
+        public Person upperCase() {
+            return new Person(id, firstName.toUpperCase(Locale.ROOT), lastName.toUpperCase(Locale.ROOT));
         }
         @Override
         public boolean equals(Object other) {

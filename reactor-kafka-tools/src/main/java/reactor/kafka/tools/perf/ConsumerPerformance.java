@@ -298,6 +298,8 @@ public class ConsumerPerformance {
     }
     static class ReactiveConsumerPerformance extends AbstractConsumerPerformance {
 
+        Receiver<byte[], byte[]> receiver;
+
         ReactiveConsumerPerformance(Map<String, Object> consumerPropsOverride, String topic, String groupId, ConsumerPerfConfig config) {
             super(consumerPropsOverride, topic, groupId, config);
         }
@@ -318,7 +320,8 @@ public class ConsumerPerformance {
                             }
                         })
                     .subscription(Collections.singletonList(topic));
-            Disposable disposable = Receiver.create(receiverOptions)
+            receiver = Receiver.create(receiverOptions);
+            Disposable disposable = receiver
                      .receive()
                      .subscribe(cr -> {
                              ConsumerRecord<byte[], byte[]> record = cr.record();
