@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2016-2017 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  */
 package reactor.kafka.mock;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.ConcurrentModificationException;
@@ -48,8 +47,6 @@ import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InvalidOffsetException;
 import org.apache.kafka.common.record.TimestampType;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.internals.ConsumerFactory;
@@ -62,8 +59,6 @@ import reactor.kafka.receiver.internals.ConsumerFactory;
  */
 public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer<Integer, String> {
 
-    private static final Logger log = LoggerFactory.getLogger(MockConsumer.class);
-
     private final ScheduledExecutorService executor;
     private final Queue<Runnable> completedCallbacks;
     private final ReentrantLock consumerLock;
@@ -74,18 +69,15 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
     private final Queue<KafkaException> pollExceptions;
     private final Queue<KafkaException> commitExceptions;
     private final MockCluster cluster;
-    private final boolean autoHeartbeat;
     private final AtomicLong pollCount;
-    private Duration sessionTimeout;
     private int maxPollRecords;
-    private long sessionExpiryNanos;
     private long requestLatencyMs;
     private ReceiverOptions<Integer, String> receiverOptions;
     private ConsumerRebalanceListener rebalanceCallback;
     private boolean assignmentPending = false;
     private Thread consumerThread;
 
-    public MockConsumer(MockCluster cluster, boolean autoHeartbeat) {
+    public MockConsumer(MockCluster cluster) {
         super(OffsetResetStrategy.EARLIEST);
         executor = Executors.newSingleThreadScheduledExecutor();
         completedCallbacks = new ConcurrentLinkedQueue<>();
@@ -97,7 +89,6 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
         pollExceptions = new ConcurrentLinkedQueue<>();
         commitExceptions = new ConcurrentLinkedQueue<>();
         this.cluster = cluster;
-        this.autoHeartbeat = autoHeartbeat;
         this.pollCount = new AtomicLong();
         this.requestLatencyMs = 10;
     }
@@ -105,7 +96,6 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
     public void configure(ReceiverOptions<Integer, String> receiverOptions) {
         this.receiverOptions = receiverOptions;
         this.maxPollRecords = Integer.parseInt(getProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 2));
-        sessionTimeout = Duration.ofMillis(Long.parseLong(String.valueOf(getProperty(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, 2000))));
     }
 
     public void addPollException(KafkaException exception, int count) {
@@ -163,8 +153,6 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
                     }
                 }
             }
-            if (!autoHeartbeat)
-                sessionExpiryNanos = System.nanoTime() + sessionTimeout.toNanos();
             assignmentPending = true;
         } finally {
             release();
@@ -222,9 +210,6 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
                 doAssign();
                 assignmentPending = false;
                 return new ConsumerRecords<Integer, String>(records);
-            } else if (!autoHeartbeat && sessionExpiryNanos > 0 && System.nanoTime() > sessionExpiryNanos) {
-                log.error("Consumer session timed out.");
-                doUnAssign();
             }
             runCompletedCallbacks();
             try {
@@ -253,8 +238,6 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
                         break;
                 }
             }
-            if (!autoHeartbeat)
-                sessionExpiryNanos = System.nanoTime() + sessionTimeout.toNanos();
             return new ConsumerRecords<>(records);
         } finally {
             release();

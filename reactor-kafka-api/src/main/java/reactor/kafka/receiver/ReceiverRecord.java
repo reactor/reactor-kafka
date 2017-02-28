@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2016-2017 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,13 +23,23 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
  * @param <K> Incomimg record key type
  * @param <V> Incomimg record value type
  */
-public interface ReceiverRecord<K, V> {
+public class ReceiverRecord<K, V> extends ConsumerRecord<K, V> {
 
-    /**
-     * Returns the Kafka consumer record associated with this instance.
-     * @return consumer record from kafka
-     */
-    ConsumerRecord<K, V> record();
+    private ReceiverOffset receiverOffset;
+
+    public ReceiverRecord(ConsumerRecord<K, V> consumerRecord, ReceiverOffset receiverOffset) {
+        super(consumerRecord.topic(),
+                consumerRecord.partition(),
+                consumerRecord.offset(),
+                consumerRecord.timestamp(),
+                consumerRecord.timestampType(),
+                consumerRecord.checksum(),
+                consumerRecord.serializedKeySize(),
+                consumerRecord.serializedValueSize(),
+                consumerRecord.key(),
+                consumerRecord.value());
+        this.receiverOffset = receiverOffset;
+    }
 
     /**
      * Returns an acknowledgeable offset instance that should be acknowledged after this
@@ -39,5 +49,7 @@ public interface ReceiverRecord<K, V> {
      *
      * @return offset to acknowledge after record is processed
      */
-    ReceiverOffset offset();
+    public ReceiverOffset receiverOffset() {
+        return receiverOffset;
+    }
 }

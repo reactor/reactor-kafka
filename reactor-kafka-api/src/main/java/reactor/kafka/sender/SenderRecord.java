@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2016-2017 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,13 +27,12 @@ import org.apache.kafka.clients.producer.ProducerRecord;
  * @param <V> Outgoing record value type
  * @param <T> Correlation metadata type
  */
-public class SenderRecord<K, V, T> {
+public class SenderRecord<K, V, T> extends ProducerRecord<K, V> {
 
-    private final ProducerRecord<K, V> record;
     private final T correlationMetadata;
 
     /**
-     * Creates a record to send to Kafka.
+     * Converts a {@link ProducerRecord} a {@link SenderRecord} to send to Kafka
      *
      * @param record the producer record to send to Kafka
      * @param correlationMetadata Additional correlation metadata that is not sent to Kafka, but is
@@ -41,20 +40,32 @@ public class SenderRecord<K, V, T> {
      * @return new sender record that can be sent to Kafka using {@link Sender#send(org.reactivestreams.Publisher, boolean)}
      */
     public static <K, V, T> SenderRecord<K, V, T> create(ProducerRecord<K, V> record, T correlationMetadata) {
-        return new SenderRecord<K, V, T>(record, correlationMetadata);
-    }
-
-    private SenderRecord(ProducerRecord<K, V> record, T correlationMetadata) {
-        this.record = record;
-        this.correlationMetadata = correlationMetadata;
+        return new SenderRecord<>(record.topic(), record.partition(), record.timestamp(), record.key(), record.value(), correlationMetadata);
     }
 
     /**
-     * Returns the Kafka producer record associated with this instance.
-     * @return record to send to Kafka
+     * Creates a {@link SenderRecord} to send to Kafka.
+     *
+     * @param topic Topic to which record is sent
+     * @param partition The partition to which the record is sent. If null, the partitioner configured
+     *        for the {@link Sender} will be used to choose the partition.
+     * @param timestamp The timestamp of the record. If null, the current timestamp will be assigned by the producer.
+     *        The timestamp will be overwritten by the broker if the topic is configured with
+     *        {@link org.apache.kafka.common.record.TimestampType#LOG_APPEND_TIME}. The actual timestamp
+     *        used will be returned in {@link SenderResult#recordMetadata()}
+     * @param key The key to be included in the record. May be null.
+     * @param value The contents to be included in the record.
+     * @param correlationMetadata Additional correlation metadata that is not sent to Kafka, but is
+     *        included in the response to match {@link SenderResult} to this record.
+     * @return new sender record that can be sent to Kafka using {@link Sender#send(org.reactivestreams.Publisher, boolean)}
      */
-    public ProducerRecord<K, V> record() {
-        return record;
+    public static <K, V, T> SenderRecord<K, V, T> create(String topic, Integer partition, Long timestamp, K key, V value, T correlationMetadata) {
+        return new SenderRecord<K, V, T>(topic, partition, timestamp, key, value, correlationMetadata);
+    }
+
+    private SenderRecord(String topic, Integer partition, Long timestamp, K key, V value, T correlationMetadata) {
+        super(topic, partition, timestamp, key, value);
+        this.correlationMetadata = correlationMetadata;
     }
 
     /**

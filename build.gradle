@@ -30,13 +30,13 @@ ext {
   gradleVersion = '3.1'
   gradleScriptDir = "${rootProject.projectDir}/gradle"
 
-  defaultKafkaVersion = "0.10.1.1"
+  defaultKafkaVersion = "0.10.2.0"
   def getKafkaVersion = project.hasProperty('kafkaVersion') ?
           project.property('kafkaVersion') : "${defaultKafkaVersion}"
 
   kafkaVersion = getKafkaVersion
   scalaVersion = '2.11'
-  reactorVersion = '3.0.4.RELEASE'
+  reactorVersion = '3.0.5.RELEASE'
   metricsVersion = '2.2.0'
 
   argparseVersion = '0.5.0'
@@ -45,11 +45,10 @@ ext {
   slf4jVersion = '1.7.21'
   junitVersion = '4.12'
   zkVersion = "3.4.9"
-  springKafkaVersion = '1.1.1.RELEASE'
   powermockVersion = '1.6.4'
 
   javadocLinks = ["http://docs.oracle.com/javase/8/docs/api/",
-                  "https://kafka.apache.org/0101/javadoc",
+                  "https://kafka.apache.org/0102/javadoc",
                   "http://www.reactive-streams.org/reactive-streams-1.0.0-javadoc/",
                   "http://projectreactor.io/docs/core/release/api/"] as String[]
 
@@ -137,10 +136,6 @@ configure(subprojects) { subproject ->
     testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion"
     testCompile "org.apache.kafka:kafka-clients:$kafkaVersion:test"
     testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion:test"
-    testCompile("org.springframework.kafka:spring-kafka-test:$springKafkaVersion") {
-      exclude group: 'org.apache.kafka'
-      exclude group: 'org.apache.zookeeper'
-    }
     testCompile "org.powermock:powermock-module-junit4:$powermockVersion"
     testCompile "org.powermock:powermock-core:$powermockVersion"
     testCompile "org.powermock:powermock-api-mockito:$powermockVersion"

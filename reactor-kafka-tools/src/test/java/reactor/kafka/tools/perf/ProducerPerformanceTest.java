@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2016-2017 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,7 +63,7 @@ public class ProducerPerformanceTest extends AbstractKafkaTest {
         // PerfTestUtils.verifyReactiveLatency(rStats.percentiles(0.75)[0], nrStats.percentiles(0.75)[0], 100);
     }
 
-    private Map<String, Object> producerProps() {
+    public Map<String, Object> producerProps() {
         return PerfTestUtils.producerProps(embeddedKafka);
     }
 }

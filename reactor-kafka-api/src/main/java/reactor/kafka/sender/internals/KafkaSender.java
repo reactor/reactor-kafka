@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2016-2017 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -279,7 +279,7 @@ public class KafkaSender<K, V> implements Sender<K, V> {
 
         @Override
         protected ProducerRecord<K, V> producerRecord(SenderRecord<K, V, T> request) {
-            return request.record();
+            return request;
         }
     }
 

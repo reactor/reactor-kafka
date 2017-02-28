@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2016-2017 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,10 +44,10 @@ public class TestableReceiver {
 
     public static final TopicPartition NON_EXISTENT_PARTITION = new TopicPartition("non-existent", 0);
 
-    private final Flux<ReceiverRecord<Integer, String>> kafkaFlux;
+    private final Flux<? extends ReceiverRecord<Integer, String>> kafkaFlux;
     private final KafkaReceiver<Integer, String> kafkaReceiver;
 
-    public TestableReceiver(Receiver<Integer, String> kafkaReceiver, Flux<ReceiverRecord<Integer, String>> kafkaFlux) {
+    public TestableReceiver(Receiver<Integer, String> kafkaReceiver, Flux<? extends ReceiverRecord<Integer, String>> kafkaFlux) {
         this.kafkaReceiver = (KafkaReceiver<Integer, String>) kafkaReceiver;
         this.kafkaFlux = kafkaFlux;
     }
@@ -57,7 +57,7 @@ public class TestableReceiver {
         this.kafkaFlux = null;
     }
 
-    public Flux<ReceiverRecord<Integer, String>> kafkaFlux() {
+    public Flux<? extends ReceiverRecord<Integer, String>> kafkaFlux() {
         return kafkaFlux;
     }
 
@@ -71,7 +71,7 @@ public class TestableReceiver {
         return commitOffsets;
     }
 
-    public Flux<ReceiverRecord<Integer, String>> receiveWithManualCommitFailures(boolean retriable, int failureCount,
+    public Flux<? extends ReceiverRecord<Integer, String>> receiveWithManualCommitFailures(boolean retriable, int failureCount,
             Semaphore successSemaphore, Semaphore failureSemaphore) {
         AtomicInteger retryCount = new AtomicInteger();
         if (retriable)
@@ -89,7 +89,7 @@ public class TestableReceiver {
                                     clearCommitError();
                                 return retryCount.get() <= failureCount + 1;
                             };
-                            record.offset().commit()
+                            record.receiverOffset().commit()
                                                    .doOnError(e -> failureSemaphore.release())
                                                    .doOnSuccess(i -> successSemaphore.release())
                                                    .retry(retryPredicate)

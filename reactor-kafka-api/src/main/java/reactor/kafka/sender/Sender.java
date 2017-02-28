@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2016-2017 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -69,7 +69,7 @@ public interface Sender<K, V> {
      * <pre>
      * {@code
      *     source = Flux.range(1, count)
-     *                  .map(i -> SenderRecord.create(new ProducerRecord<>(topic, key(i), message(i)), i));
+     *                  .map(i -> SenderRecord.create(topic, partition, null, key(i), message(i), i));
      *     sender.send(source, true)
      *           .doOnNext(r -> System.out.println("Message #" + r.correlationMetadata() + " metadata=" + r.recordMetadata()));
      * }

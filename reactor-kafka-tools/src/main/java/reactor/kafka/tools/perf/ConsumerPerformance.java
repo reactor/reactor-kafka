@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 /*
- * Copyright (c) 2016 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2016-2017 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -323,8 +323,7 @@ public class ConsumerPerformance {
             receiver = Receiver.create(receiverOptions);
             Disposable disposable = receiver
                      .receive()
-                     .subscribe(cr -> {
-                             ConsumerRecord<byte[], byte[]> record = cr.record();
+                     .subscribe(record -> {
                              lastConsumedTime.set(System.currentTimeMillis());
                              totalMessagesRead.incrementAndGet();
                              if (record.key() != null)

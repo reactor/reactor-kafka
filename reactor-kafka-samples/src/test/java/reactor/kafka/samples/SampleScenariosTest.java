@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2016-2017 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -64,7 +64,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
     @Before
     public void setUp() throws Exception {
         super.setUp();
-        bootstrapServers = embeddedKafka.getBrokersAsString();
+        bootstrapServers = embeddedKafka.bootstrapServers();
     }
 
     @After
@@ -206,9 +206,9 @@ public class SampleScenariosTest extends AbstractKafkaTest {
             }
             @Override
             public ReceiverOffset processRecord(TopicPartition topicPartition, ReceiverRecord<Integer, Person> message) {
-                Person person = message.record().value();
+                Person person = message.value();
                 received.add(person);
-                partitionMap.get(message.record().partition()).add(person);
+                partitionMap.get(message.partition()).add(person);
                 return super.processRecord(topicPartition, message);
             }
 
@@ -232,9 +232,9 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         Disposable c = Receiver.create(receiverOptions.subscription(Collections.singleton(topic)))
                                  .receive()
                                  .subscribe(m -> {
-                                         Person p = m.record().value();
+                                         Person p = m.value();
                                          received.add(p);
-                                         log.debug("Thread {} Received from {}: {} ", Thread.currentThread().getName(), m.record().topic(), p);
+                                         log.debug("Thread {} Received from {}: {} ", Thread.currentThread().getName(), m.topic(), p);
                                      });
         disposables.add(c);
     }

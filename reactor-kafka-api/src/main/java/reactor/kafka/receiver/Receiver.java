@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2016-2017 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -73,7 +73,7 @@ public interface Receiver<K, V> {
      *
      * @return Flux of consumer record batches from Kafka that are auto-acknowledged
      */
-    Flux<Flux<? extends ConsumerRecord<K, V>>> receiveAutoAck();
+    Flux<Flux<ConsumerRecord<K, V>>> receiveAutoAck();
 
     /**
      * Returns a {@link Flux} of consumer records that are committed before the record is dispatched
@@ -88,7 +88,7 @@ public interface Receiver<K, V> {
      *
      * @return Flux of consumer records whose offsets have been committed prior to dispatch
      */
-    Flux<? extends ConsumerRecord<K, V>> receiveAtmostOnce();
+    Flux<ConsumerRecord<K, V>> receiveAtmostOnce();
 
     /**
      * Invokes the specified function on the Kafka {@link Consumer} associated with this Receiver.

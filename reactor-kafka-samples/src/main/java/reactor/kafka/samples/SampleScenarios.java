@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2016-2017 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -169,8 +169,8 @@ public class SampleScenarios {
             return Receiver.create(receiverOptions(Collections.singletonList(topic)).commitInterval(Duration.ZERO))
                            .receive()
                            .publishOn(Schedulers.newSingle("sample", true))
-                           .concatMap(m -> storeInDB(m.record().value())
-                                          .doOnSuccess(r -> m.offset().commit().block()))
+                           .concatMap(m -> storeInDB(m.value())
+                                          .doOnSuccess(r -> m.receiverOffset().commit().block()))
                            .retry();
         }
         public Mono<Void> storeInDB(Person person) {
@@ -198,7 +198,7 @@ public class SampleScenarios {
             Sender<Integer, Person> sender = sender(senderOptions());
             return sender.send(Receiver.create(receiverOptions(Collections.singleton(sourceTopic)))
                                        .receive()
-                                       .map(m -> SenderRecord.create(transform(m.record().value()), m.offset())), false)
+                                       .map(m -> SenderRecord.create(transform(m.value()), m.receiverOffset())), false)
                          .doOnNext(m -> m.correlationMetadata().acknowledge());
         }
         public ProducerRecord<Integer, Person> transform(Person p) {
@@ -315,7 +315,7 @@ public class SampleScenarios {
             Scheduler scheduler = Schedulers.newElastic("sample", 60, true);
             return Receiver.create(receiverOptions(Collections.singleton(topic)).commitInterval(Duration.ZERO))
                             .receive()
-                            .groupBy(m -> m.offset().topicPartition())
+                            .groupBy(m -> m.receiverOffset().topicPartition())
                             .flatMap(partitionFlux -> partitionFlux.publishOn(scheduler)
                                                                    .map(r -> processRecord(partitionFlux.key(), r))
                                                                    .sample(Duration.ofMillis(5000))
@@ -323,8 +323,8 @@ public class SampleScenarios {
         }
         public ReceiverOffset processRecord(TopicPartition topicPartition, ReceiverRecord<Integer, Person> message) {
             log.info("Processing record {} from partition {} in thread{}",
-                    message.record().value().id(), topicPartition, Thread.currentThread().getName());
-            return message.offset();
+                    message.value().id(), topicPartition, Thread.currentThread().getName());
+            return message.receiverOffset();
         }
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2016-2017 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,8 +42,6 @@ import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.consumer.RetriableCommitFailedException;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.WakeupException;
-import org.apache.kafka.common.protocol.ApiKeys;
-import org.apache.kafka.common.protocol.ProtoUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -104,7 +102,6 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
     private BlockingSink<ConsumerRecords<K, V>> recordSubmission;
     private InitEvent initEvent;
     private PollEvent pollEvent;
-    private HeartbeatEvent heartbeatEvent;
     private CommitEvent commitEvent;
     private Flux<Event<?>> eventFlux;
     private Flux<ConsumerRecords<K, V>> consumerFlux;
@@ -112,7 +109,7 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
     private org.apache.kafka.clients.consumer.Consumer<K, V> consumerProxy;
 
     enum EventType {
-        INIT, POLL, HEARTBEAT, COMMIT, CUSTOM, CLOSE
+        INIT, POLL, COMMIT, CUSTOM, CLOSE
     }
 
     enum AckMode {
@@ -142,12 +139,12 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
                 .map(r -> {
                         TopicPartition topicPartition = new TopicPartition(r.topic(), r.partition());
                         CommittableOffset committableOffset = new CommittableOffset(topicPartition, r.offset());
-                        return new CommittableRecord<K, V>(r, committableOffset);
+                        return new ReceiverRecord<K, V>(r, committableOffset);
                     });
     }
 
     @Override
-    public Flux<Flux<? extends ConsumerRecord<K, V>>> receiveAutoAck() {
+    public Flux<Flux<ConsumerRecord<K, V>>> receiveAutoAck() {
         this.ackMode = AckMode.AUTO_ACK;
         Flux<ConsumerRecords<K, V>> flux = withDoOnRequest(createConsumerFlux());
         return flux
@@ -159,7 +156,7 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
     }
 
     @Override
-    public Flux<? extends ConsumerRecord<K, V>> receiveAtmostOnce() {
+    public Flux<ConsumerRecord<K, V>> receiveAtmostOnce() {
         this.ackMode = AckMode.ATMOST_ONCE;
         atmostOnceOffsets = new AtmostOnceOffsets();
         Flux<ConsumerRecord<K, V>> flux = createConsumerFlux()
@@ -221,9 +218,6 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
 
         commitEvent = new CommitEvent();
 
-        if (!autoHeartbeatEnabledInConsumer())
-            heartbeatEvent = new HeartbeatEvent();
-
         recordEmitter = EmitterProcessor.create();
         recordSubmission = recordEmitter.connectSink();
 
@@ -264,12 +258,6 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
         cancel(true);
     }
 
-    protected boolean autoHeartbeatEnabledInConsumer() {
-        // Background heartbeat thread was added to Kafka consumer in 0.10.1.0 when
-        // JoinGroup request version was incremented from 0 to 1.
-        return ProtoUtils.latestVersion(ApiKeys.JOIN_GROUP.id) != 0;
-    }
-
     private Collection<ReceiverPartition> toSeekable(Collection<TopicPartition> partitions) {
         List<ReceiverPartition> seekableList = new ArrayList<>(partitions.size());
         for (TopicPartition partition : partitions)
@@ -294,13 +282,7 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
 
         fluxList.add(eventEmitter);
         fluxList.add(initFlux);
-        if (heartbeatEvent != null) {
-            Flux<HeartbeatEvent> heartbeatFlux =
-                    Flux.interval(receiverOptions.heartbeatInterval())
-                         .doOnSubscribe(i -> needsHeartbeat.set(true))
-                         .map(i -> heartbeatEvent);
-            fluxList.add(heartbeatFlux);
-        }
+
         Duration commitInterval = receiverOptions.commitInterval();
         if ((ackMode == AckMode.AUTO_ACK || ackMode == AckMode.MANUAL_ACK) && !commitInterval.isZero()) {
             Flux<CommitEvent> periodicCommitFlux = Flux.interval(receiverOptions.commitInterval())
@@ -327,9 +309,7 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
             try {
                 if (!isConsumerClosed) {
                     consumer.wakeup();
-                    long closeStartNanos = System.nanoTime();
-                    long closeEndNanos = closeStartNanos + receiverOptions.closeTimeout().toNanos();
-                    CloseEvent closeEvent = new CloseEvent(closeEndNanos);
+                    CloseEvent closeEvent = new CloseEvent(receiverOptions.closeTimeout());
                     if (async) {
                         if (emit(closeEvent))
                             isConsumerClosed = closeEvent.await();
@@ -578,20 +558,6 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
         }
     }
 
-    private class HeartbeatEvent extends Event<Void> {
-        HeartbeatEvent() {
-            super(EventType.HEARTBEAT);
-        }
-        @Override
-        public void run() {
-            if (isActive.get() && needsHeartbeat.getAndSet(true)) {
-                consumer.pause(consumer.assignment());
-                consumer.poll(0);
-                consumer.resume(consumer.assignment());
-            }
-        }
-    }
-
     private class CustomEvent<T> extends Event<Void> {
         private final Function<org.apache.kafka.clients.consumer.Consumer<K, V>, ? extends T> function;
         private MonoSink<T> monoSink;
@@ -638,9 +604,9 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
     private class CloseEvent extends Event<ConsumerRecords<K, V>> {
         private final long closeEndTimeNanos;
         private Semaphore semaphore = new Semaphore(0);
-        CloseEvent(long closeEndTimeNanos) {
+        CloseEvent(Duration timeout) {
             super(EventType.CLOSE);
-            this.closeEndTimeNanos = closeEndTimeNanos;
+            this.closeEndTimeNanos = System.nanoTime() + timeout.toNanos();
         }
         @Override
         public void run() {
@@ -658,7 +624,10 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
                             commitEvent.runIfRequired(forceCommit);
                             commitEvent.waitFor(closeEndTimeNanos);
 
-                            consumer.close();
+                            long timeoutNanos = closeEndTimeNanos - System.nanoTime();
+                            if (timeoutNanos < 0)
+                                timeoutNanos = 0;
+                            consumer.close(timeoutNanos, TimeUnit.NANOSECONDS);
                             break;
                         } catch (WakeupException e) {
                             if (i == attempts - 1)

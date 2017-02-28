@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2016-2017 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,9 +46,9 @@ public class EndToEndLatencyTest extends AbstractKafkaTest {
         Map<String, Object> producerProps = PerfTestUtils.producerProps(embeddedKafka);
         Map<String, Object> consumerProps = PerfTestUtils.consumerProps(embeddedKafka);
 
-        NonReactiveEndToEndLatency nonReactive = new NonReactiveEndToEndLatency(consumerProps, producerProps, embeddedKafka.getBrokersAsString(), topic);
+        NonReactiveEndToEndLatency nonReactive = new NonReactiveEndToEndLatency(consumerProps, producerProps, embeddedKafka.bootstrapServers(), topic);
         double[] nrLatencies = TestUtils.execute(() -> nonReactive.runTest(numMessages, messageSize, 10000L), timeoutMs);
-        ReactiveEndToEndLatency reactive = new ReactiveEndToEndLatency(consumerProps, producerProps, embeddedKafka.getBrokersAsString(), topic);
+        ReactiveEndToEndLatency reactive = new ReactiveEndToEndLatency(consumerProps, producerProps, embeddedKafka.bootstrapServers(), topic);
         double[] rLatencies = TestUtils.execute(() -> reactive.runTest(numMessages, messageSize, 10000L), timeoutMs);
 
         double r75 = rLatencies[(int) (rLatencies.length * 0.75)];

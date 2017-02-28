@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2016-2017 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,7 +43,6 @@ import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.kafka.test.utils.KafkaTestUtils;
 
 import reactor.core.publisher.BlockingSink;
 import reactor.core.publisher.EmitterProcessor;
@@ -410,7 +409,7 @@ public class SenderTest extends AbstractKafkaTest {
 
     private Consumer<Integer, String> createConsumer() throws Exception {
         String groupId = testName.getMethodName();
-        Map<String, Object> consumerProps = KafkaTestUtils.consumerProps(groupId, "true", embeddedKafka);
+        Map<String, Object> consumerProps = consumerProps(groupId);
         Consumer<Integer, String> consumer = ConsumerFactory.INSTANCE.createConsumer(ReceiverOptions.<Integer, String>create(consumerProps));
         consumer.subscribe(Collections.singletonList(topic));
         consumer.poll(requestTimeoutMillis);

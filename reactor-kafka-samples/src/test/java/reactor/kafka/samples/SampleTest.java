@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2016-2017 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,9 +40,9 @@ public class SampleTest extends AbstractKafkaTest {
         int count = 10;
         CountDownLatch sendLatch = new CountDownLatch(count);
         CountDownLatch receiveLatch = new CountDownLatch(count);
-        SampleConsumer consumer = new SampleConsumer(embeddedKafka.getBrokersAsString());
+        SampleConsumer consumer = new SampleConsumer(embeddedKafka.bootstrapServers());
         consumer.consumeMessages(topic, receiveLatch);
-        SampleProducer producer = new SampleProducer(embeddedKafka.getBrokersAsString());
+        SampleProducer producer = new SampleProducer(embeddedKafka.bootstrapServers());
         producer.sendMessages(topic, count, sendLatch);
         sendLatch.await(10, TimeUnit.SECONDS);
         receiveLatch.await(10, TimeUnit.SECONDS);

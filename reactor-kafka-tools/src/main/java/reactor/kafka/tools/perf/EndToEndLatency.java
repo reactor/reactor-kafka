@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 /*
- * Copyright (c) 2016 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2016-2017 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -351,7 +351,7 @@ public class EndToEndLatency {
             System.out.println("Running latency test using Reactive API, class=" + this.getClass().getName());
         }
         public void initialize() {
-            subscribeDisposable = flux.subscribe(cr -> receiveQueue.offer(cr.record()));
+            subscribeDisposable = flux.subscribe(cr -> receiveQueue.offer(cr));
             try {
                 if (!assignSemaphore.tryAcquire(10, TimeUnit.SECONDS))
                     throw new IllegalStateException("Timed out waiting for assignment");

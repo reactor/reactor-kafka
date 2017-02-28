@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2016-2017 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -547,7 +547,7 @@ public class KafkaSenderTest {
                 int correlation = senderRecords.size();
                 TopicPartition partition = new TopicPartition(topic, partitions == null ? 0 : i % partitions.intValue());
                 recordPartitions.put(correlation, partition);
-                senderRecords.add(SenderRecord.create(new ProducerRecord<>(topic, partition.partition(), i, "Message-" + i), correlation));
+                senderRecords.add(SenderRecord.create(topic, partition.partition(), null, i, "Message-" + i, correlation));
 
                 List<SenderResult<Integer>> partitionResponses = senderResponses.get(partition);
                 if (partitionResponses == null) {
@@ -568,7 +568,7 @@ public class KafkaSenderTest {
         public Flux<ProducerRecord<Integer, String>> producerRecords() {
             List<ProducerRecord<Integer, String>> list = new ArrayList<>();
             for (SenderRecord<Integer, String, Integer> record : senderRecords)
-                list.add(record.record());
+                list.add(record);
             return Flux.fromIterable(list)
                        .doOnNext(r -> onNextCount.incrementAndGet());
         }
@@ -601,9 +601,9 @@ public class KafkaSenderTest {
                 List<Message> messages = cluster.log(partition);
                 int index = 0;
                 for (SenderRecord<Integer, String, Integer> record : senderRecords) {
-                    if (record.record().partition() == partition.partition()) {
-                        assertEquals(record.record().key(), messages.get(index).key());
-                        assertEquals(record.record().value(), messages.get(index).value());
+                    if (record.partition() == partition.partition()) {
+                        assertEquals(record.key(), messages.get(index).key());
+                        assertEquals(record.value(), messages.get(index).value());
                         index++;
                     }
                 }

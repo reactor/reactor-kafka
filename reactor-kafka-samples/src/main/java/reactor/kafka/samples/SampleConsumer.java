@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2016-2017 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.slf4j.Logger;
@@ -77,9 +76,8 @@ public class SampleConsumer {
                 .addAssignListener(partitions -> log.debug("onPartitionsAssigned {}", partitions))
                 .addRevokeListener(partitions -> log.debug("onPartitionsRevoked {}", partitions));
         Flux<ReceiverRecord<Integer, String>> kafkaFlux = Receiver.create(options).receive();
-        return kafkaFlux.subscribe(message -> {
-                ReceiverOffset offset = message.offset();
-                ConsumerRecord<Integer, String> record = message.record();
+        return kafkaFlux.subscribe(record -> {
+                ReceiverOffset offset = record.receiverOffset();
                 System.out.printf("Received message: topic-partition=%s offset=%d timestamp=%s key=%d value=%s\n",
                         offset.topicPartition(),
                         offset.offset(),

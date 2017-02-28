@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2016-2017 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,8 @@ import static org.junit.Assert.assertTrue;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
-import org.springframework.kafka.test.rule.KafkaEmbedded;
+
+import reactor.kafka.cluster.EmbeddedKafkaCluster;
 
 public class PerfTestUtils {
 
@@ -38,18 +39,18 @@ public class PerfTestUtils {
                 percentDiff <= maxPercentDiff || reactive < 5);
     }
 
-    public static Map<String, Object> producerProps(KafkaEmbedded embeddedKafka) {
+    public static Map<String, Object> producerProps(EmbeddedKafkaCluster embeddedKafka) {
         Map<String, Object> props = new HashMap<>();
-        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, embeddedKafka.getBrokersAsString());
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, embeddedKafka.bootstrapServers());
         props.put(ProducerConfig.CLIENT_ID_CONFIG, "prod-perf");
         props.put(ProducerConfig.ACKS_CONFIG, "all");
         props.put(ProducerConfig.SEND_BUFFER_CONFIG, String.valueOf(1024 * 1024));
         return props;
     }
 
-    public static Map<String, Object> consumerProps(KafkaEmbedded embeddedKafka) {
+    public static Map<String, Object> consumerProps(EmbeddedKafkaCluster embeddedKafka) {
         Map<String, Object> props = new HashMap<>();
-        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, embeddedKafka.getBrokersAsString());
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, embeddedKafka.bootstrapServers());
         props.put(ConsumerConfig.CLIENT_ID_CONFIG, "cons-perf");
         return props;
     }
