@@ -26,7 +26,7 @@ You need to have [Gradle 2.0 or higher](http://www.gradle.org/installation) and 
 ### Sample producer and consumer ###
 
 See [reactor-kafka-samples/src/main/java/reactor/kafka/samples/SampleProducer.java](reactor-kafka-samples/src/main/java/reactor/kafka/samples/SampleProducer.java) for sample reactive producer.
-See [reactor-kafka-samples/src/main/java/reactor/kafka/samples/SampleConsumer.java](reactor-kafka-samples/src/main/java/reactor/kafka/samples/SampleConsumer.java) for sample reactive producer.
+See [reactor-kafka-samples/src/main/java/reactor/kafka/samples/SampleConsumer.java](reactor-kafka-samples/src/main/java/reactor/kafka/samples/SampleConsumer.java) for sample reactive consumer.
 
 #### Setup Kafka cluster and create topic: ####
 1. Start Zookeeper and Kafka server
