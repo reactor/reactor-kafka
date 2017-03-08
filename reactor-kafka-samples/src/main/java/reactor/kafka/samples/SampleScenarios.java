@@ -51,8 +51,8 @@ import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.ReceiverRecord;
 import reactor.kafka.receiver.Receiver;
 import reactor.kafka.receiver.ReceiverOffset;
+import reactor.kafka.sender.SenderOutbound;
 import reactor.kafka.sender.Sender;
-import reactor.kafka.sender.Sender.Outbound;
 import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.SenderRecord;
 import reactor.kafka.sender.SenderResult;
@@ -142,7 +142,7 @@ public class SampleScenarios {
                     .producerProperty(ProducerConfig.ACKS_CONFIG, "all")
                     .producerProperty(ProducerConfig.MAX_BLOCK_MS_CONFIG, Long.MAX_VALUE)
                     .producerProperty(ProducerConfig.RETRIES_CONFIG, Integer.MAX_VALUE);
-            Outbound<Integer, Person> outbound = sender(senderOptions).outbound();
+            SenderOutbound<Integer, Person> outbound = sender(senderOptions).outbound();
             Flux<Person> srcFlux = source().flux();
             return srcFlux.concatMap(p ->
                     outbound.send(Mono.just(new ProducerRecord<>(topic1, p.id(), p)))

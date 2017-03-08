@@ -39,6 +39,7 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Operators;
+import reactor.kafka.sender.SenderOutbound;
 import reactor.kafka.sender.Sender;
 import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.SenderRecord;
@@ -96,7 +97,7 @@ public class KafkaSender<K, V> implements Sender<K, V> {
 
 
     @Override
-    public Outbound<K, V> outbound() {
+    public SenderOutbound<K, V> outbound() {
         return new KafkaOutbound<K, V>(this);
     }
 
@@ -338,7 +339,7 @@ public class KafkaSender<K, V> implements Sender<K, V> {
         }
     }
 
-    private static class KafkaOutbound<K, V> implements Outbound<K, V> {
+    private static class KafkaOutbound<K, V> implements SenderOutbound<K, V> {
 
         private final KafkaSender<K, V> sender;
 
@@ -347,12 +348,12 @@ public class KafkaSender<K, V> implements Sender<K, V> {
         }
 
         @Override
-        public Outbound<K, V> send(Publisher<? extends ProducerRecord<K, V>> records) {
+        public SenderOutbound<K, V> send(Publisher<? extends ProducerRecord<K, V>> records) {
             return then(sender.sendProducerRecords(records).then());
         }
 
         @Override
-        public Outbound<K, V> then(Publisher<Void> other) {
+        public SenderOutbound<K, V> then(Publisher<Void> other) {
             return new KafkaOutboundThen<>(sender, this, other);
         }
 
@@ -366,7 +367,7 @@ public class KafkaSender<K, V> implements Sender<K, V> {
 
         private final Mono<Void> thenMono;
 
-        KafkaOutboundThen(KafkaSender<K, V> sender, Outbound<K, V> kafkaOutbound, Publisher<Void> thenPublisher) {
+        KafkaOutboundThen(KafkaSender<K, V> sender, SenderOutbound<K, V> kafkaOutbound, Publisher<Void> thenPublisher) {
             super(sender);
             Mono<Void> parentMono = kafkaOutbound.then();
             if (parentMono == Mono.<Void>empty())

@@ -50,8 +50,8 @@ import reactor.kafka.mock.Message;
 import reactor.kafka.mock.MockCluster;
 import reactor.kafka.mock.MockProducer;
 import reactor.kafka.mock.MockProducer.Pool;
+import reactor.kafka.sender.SenderOutbound;
 import reactor.kafka.sender.Sender;
-import reactor.kafka.sender.Sender.Outbound;
 import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.SenderRecord;
 import reactor.kafka.sender.SenderResult;
@@ -119,7 +119,7 @@ public class KafkaSenderTest {
     }
 
     /**
-     * Tests {@link Outbound#send(org.reactivestreams.Publisher)} good path. Checks that {@link Outbound#then()}
+     * Tests {@link SenderOutbound#send(org.reactivestreams.Publisher)} good path. Checks that {@link SenderOutbound#then()}
      * completes successfully when all records are successfully sent to Kafka.
      */
     @Test
@@ -129,7 +129,7 @@ public class KafkaSenderTest {
     }
 
     /**
-     * Tests {@link Outbound#send(org.reactivestreams.Publisher)} error path. Checks that {@link Outbound#then()}
+     * Tests {@link SenderOutbound#send(org.reactivestreams.Publisher)} error path. Checks that {@link SenderOutbound#then()}
      * fails if a record cannot be delivered to Kafka.
      */
     @Test
@@ -146,14 +146,14 @@ public class KafkaSenderTest {
     }
 
     /**
-     * Tests {@link Outbound#send(org.reactivestreams.Publisher)} good path with send chaining. Checks
-     * that {@link Outbound#then()} completes successfully when all records are successfully sent to Kafka.
+     * Tests {@link SenderOutbound#send(org.reactivestreams.Publisher)} good path with send chaining. Checks
+     * that {@link SenderOutbound#then()} completes successfully when all records are successfully sent to Kafka.
      */
     @Test
     public void sendChain() {
         sender = new KafkaSender<>(producerFactory, SenderOptions.create());
-        Outbound<Integer, String> outbound = sender.outbound();
-        Outbound<Integer, String> chain = outbound.send(outgoingRecords.append(topic, 10).producerRecords())
+        SenderOutbound<Integer, String> outbound = sender.outbound();
+        SenderOutbound<Integer, String> chain = outbound.send(outgoingRecords.append(topic, 10).producerRecords())
                 .send(outgoingRecords.append(topic, 10).producerRecords())
                 .send(outgoingRecords.append(topic, 10).producerRecords());
         StepVerifier.create(chain.then())
@@ -163,15 +163,15 @@ public class KafkaSenderTest {
     }
 
     /**
-     * Tests {@link Outbound#then(org.reactivestreams.Publisher)} with send chaining. Checks
+     * Tests {@link SenderOutbound#then(org.reactivestreams.Publisher)} with send chaining. Checks
      * that the chain is executed in order.
      */
     @Test
     public void sendChainThen() {
         AtomicInteger thenCount = new AtomicInteger();
         sender = new KafkaSender<>(producerFactory, SenderOptions.create());
-        Outbound<Integer, String> outbound = sender.outbound();
-        Outbound<Integer, String> chain = outbound.send(outgoingRecords.append(topic, 10).producerRecords())
+        SenderOutbound<Integer, String> outbound = sender.outbound();
+        SenderOutbound<Integer, String> chain = outbound.send(outgoingRecords.append(topic, 10).producerRecords())
                 .then(Mono.fromRunnable(() -> {
                         thenCount.incrementAndGet();
                         assertEquals(10, outgoingRecords.onNextCount.get());
@@ -190,7 +190,7 @@ public class KafkaSenderTest {
     }
 
     /**
-     * Tests {@link Outbound#send(org.reactivestreams.Publisher)} error path with send chaining. Checks that
+     * Tests {@link SenderOutbound#send(org.reactivestreams.Publisher)} error path with send chaining. Checks that
      * outbound chain fails if a record cannot be delivered to Kafka.
      */
     @Test
@@ -199,8 +199,8 @@ public class KafkaSenderTest {
         SenderOptions<Integer, String> options = SenderOptions.create();
         sender = new KafkaSender<>(producerFactory, options.maxInFlight(maxInflight));
         producer.enableInFlightCheck();
-        Outbound<Integer, String> outbound = sender.outbound();
-        Outbound<Integer, String> chain = outbound.send(outgoingRecords.append("nonexistent", 10).producerRecords())
+        SenderOutbound<Integer, String> outbound = sender.outbound();
+        SenderOutbound<Integer, String> chain = outbound.send(outgoingRecords.append("nonexistent", 10).producerRecords())
                 .send(outgoingRecords.append(topic, 10).producerRecords())
                 .send(outgoingRecords.append(topic, 10).producerRecords());
         StepVerifier.create(chain.then())

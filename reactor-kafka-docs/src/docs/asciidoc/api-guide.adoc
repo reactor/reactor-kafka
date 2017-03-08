@@ -134,15 +134,15 @@ option may be configured to limit the number of messages in-flight at any time.
 ==== Send without result metadata
 
 If individual results are not required for each send request, `ProducerRecord` can be sent to Kafka
-without providing correlation metadata using the send method on an `Outbound` instance obtained using
+without providing correlation metadata using the send method on an `SenderOutbound` instance obtained using
 `Sender#outbound()`.
 
 [source,java]
 --------
-Outbound<K, V> send(Publisher<? extends ProducerRecord<K, V>> records);
+SenderOutbound<K, V> send(Publisher<? extends ProducerRecord<K, V>> records);
 --------
 
-The send sequence is initiated by subscribing to the Mono obtained from `Outbound#then()`.
+The send sequence is initiated by subscribing to the Mono obtained from `SenderOutbound#then()`.
 The returned Mono completes successfully if all the outbound records are delivered successfully. The Mono
 terminates on the first send failure. If `outboundRecords` is a non-terminating Flux, records continue to
 be sent to Kafka unless a send fails or the returned Mono is cancelled.
@@ -158,12 +158,13 @@ sender.outbound()
       .subscribe();                                              // <5>
 --------
 <1> Create `ProducerRecord` Flux. Records are not wrapped in `SenderRecord`
+<2> Get the `Mono` to subscribe to for starting the message flow
 <3> Error indicates failure to send one or more records
 <4> Success indicates all records were published, individual partitions or offsets not returned
 <5> Subscribe to request the actual sends
 
-Multiple sends can be chained together using a sequence of sends on the returned `Outbound`.
-When the Mono returned from `Outbound#then()` is subscribed to, the sends are invoked
+Multiple sends can be chained together using a sequence of sends on the returned `SenderOutbound`.
+When the Mono returned from `SenderOutbound#then()` is subscribed to, the sends are invoked
 in sequence in the declaration order. The sequence is cancelled if any of the sends fail
 after the configured number of retries.
 
@@ -179,6 +180,7 @@ sender.outbound()
       .subscribe();                                              // <5>
 --------
 <1> Sends `flux1`, `flux2` and `flux3` in order
+<2> Get the `Mono` to subscribe to for starting the message flow sequence
 <3> Error indicates failure to send one or more records from any of the sends in the chain
 <4> Success indicates successful send of all records from the whole chain
 <5> Subscribe to initiate the sequence of sends in the chain

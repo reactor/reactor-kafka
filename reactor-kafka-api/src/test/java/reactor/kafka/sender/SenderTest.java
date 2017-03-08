@@ -122,7 +122,7 @@ public class SenderTest extends AbstractKafkaTest {
 
     /**
      * Good path send chaining without response. Tests that all chain sends complete
-     * successfully when the tail Outbound is subscribed to.
+     * successfully when the tail SenderOutbound is subscribed to.
      */
     @Test
     public void sendChain() throws Exception {
@@ -140,7 +140,7 @@ public class SenderTest extends AbstractKafkaTest {
 
     /**
      * Good path send chaining without response. Tests that all chain sends complete
-     * successfully when the tail Outbound is subscribed to.
+     * successfully when the tail SenderOutbound is subscribed to.
      */
     @Test
     public void sendChainFailure() throws Exception {
