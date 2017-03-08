@@ -35,6 +35,7 @@ import java.util.regex.Pattern;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.After;
 import org.junit.Before;
@@ -150,6 +151,26 @@ public class ReceiverTest extends AbstractKafkaTest {
     }
 
     @Test
+    public void offsetResetLatest() throws Exception {
+        int count = 10;
+        sendMessages(0, count);
+        receiverOptions = receiverOptions
+                .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest")
+                .addAssignListener(partitions -> assignSemaphore.release());
+        Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux = createReceiver()
+                .receive()
+                .doOnNext(record -> onReceive(record));
+        StepVerifier.create(kafkaFlux)
+                .then(() -> assignSemaphore.acquireUninterruptibly())
+                .expectNoEvent(Duration.ofMillis(100))
+                .then(() -> sendMessages(count, count))
+                .expectNextCount(count)
+                .thenCancel()
+                .verify();
+        checkConsumedMessages(count, count);
+    }
+
+    @Test
     public void wildcardSubscribe() throws Exception {
         receiverOptions = receiverOptions
                 .addAssignListener(this::onPartitionsAssigned)
@@ -231,8 +252,10 @@ public class ReceiverTest extends AbstractKafkaTest {
 
     @Test
     public void autoAck() throws Exception {
-        Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux = createReceiver().receiveAutoAck().concatMap(r -> r);
+        Receiver<Integer, String> receiver = createReceiver();
+        Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux = receiver.receiveAutoAck().concatMap(r -> r);
         sendReceive(kafkaFlux, 0, 100, 0, 100);
+        waitForCommits(receiver, 100);
 
         // Close consumer and create another one. First consumer should commit final offset on close.
         // Second consumer should receive only new messages.
@@ -479,16 +502,18 @@ public class ReceiverTest extends AbstractKafkaTest {
     private void testManualCommitRetry(boolean retriableException) throws Exception {
         int count = 1;
         int failureCount = 2;
+        Semaphore receiveSemaphore = new Semaphore(1 - count);
         Semaphore commitSuccessSemaphore = new Semaphore(0);
         Semaphore commitFailureSemaphore = new Semaphore(0);
         receiverOptions = receiverOptions.commitInterval(Duration.ZERO).commitBatchSize(0);
         Receiver<Integer, String> receiver = createReceiver();
         TestableReceiver testableReceiver = new TestableReceiver(receiver);
         Flux<? extends ConsumerRecord<Integer, String>> flux = testableReceiver
-                .receiveWithManualCommitFailures(retriableException, failureCount, commitSuccessSemaphore, commitFailureSemaphore);
+                .receiveWithManualCommitFailures(retriableException, failureCount, receiveSemaphore, commitSuccessSemaphore, commitFailureSemaphore);
 
         subscribe(flux, new CountDownLatch(count));
         sendMessages(1, count);
+        assertTrue("Did not receive messages", receiveSemaphore.tryAcquire(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
         assertTrue("Commit did not succeed after retry", commitSuccessSemaphore.tryAcquire(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
         assertEquals(failureCount,  commitFailureSemaphore.availablePermits());
     }
@@ -701,13 +726,15 @@ public class ReceiverTest extends AbstractKafkaTest {
                             assignSemaphore.release();
                         })
                     .subscription(Collections.singletonList(topic));
-            Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux =
-                    Receiver.create(receiverOptions)
+            Receiver<Integer, String> receiver = Receiver.create(receiverOptions);
+            Flux<ConsumerRecord<Integer, String>> kafkaFlux = receiver
                             .receiveAutoAck()
                             .concatMap(r -> r);
 
             Disposable disposable = sendAndWaitForMessages(kafkaFlux, count);
             assertTrue("No partitions assigned", seekablePartitions.size() > 0);
+            if (i == 0)
+                waitForCommits(receiver, count);
             disposable.dispose();
             try {
                 seekablePartitions.iterator().next().seekToBeginning();
@@ -855,10 +882,11 @@ public class ReceiverTest extends AbstractKafkaTest {
                 throw new RuntimeException("Test exception");
             record.receiverOffset().acknowledge();
         };
-        receiver.receive()
+        Disposable disposable = receiver.receive()
                 .doOnNext(onNext)
                 .onErrorResumeWith(e -> receiver.receive().doOnNext(onNext))
                 .subscribe();
+        subscribeDisposables.add(disposable);
         waitFoPartitionAssignment();
         sendMessages(0, count);
         waitForMessages(receiveLatch);
@@ -963,7 +991,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         }
     }
 
-    private void sendMessages(int startIndex, int count) throws Exception {
+    private void sendMessages(int startIndex, int count) {
         Disposable disposable = kafkaSender.outbound().send(Flux.range(startIndex, count)
                                                             .map(i -> createProducerRecord(i, true)))
                                            .then()
@@ -1035,5 +1063,20 @@ public class ReceiverTest extends AbstractKafkaTest {
                 throw e;
         }
         subscribeDisposables.clear();
+    }
+
+    private long committedCount(Receiver<Integer, String> receiver) {
+        long committed = 0;
+        for (int j = 0; j < partitions; j++) {
+            TopicPartition p = new TopicPartition(topic, j);
+            OffsetAndMetadata offset = receiver.doOnConsumer(c -> c.committed(p)).block();
+            if (offset != null && offset.offset() > 0)
+                committed += offset.offset();
+        }
+        return committed;
+    }
+
+    private void waitForCommits(Receiver<Integer, String> receiver, int count) {
+        TestUtils.waitUntil("Commits did not complete, committed=", () -> committedCount(receiver), t -> committedCount(receiver) == count, receiver, Duration.ofSeconds(2));
     }
 }

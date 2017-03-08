@@ -44,10 +44,10 @@ public class TestableReceiver {
 
     public static final TopicPartition NON_EXISTENT_PARTITION = new TopicPartition("non-existent", 0);
 
-    private final Flux<? extends ReceiverRecord<Integer, String>> kafkaFlux;
+    private final Flux<ReceiverRecord<Integer, String>> kafkaFlux;
     private final KafkaReceiver<Integer, String> kafkaReceiver;
 
-    public TestableReceiver(Receiver<Integer, String> kafkaReceiver, Flux<? extends ReceiverRecord<Integer, String>> kafkaFlux) {
+    public TestableReceiver(Receiver<Integer, String> kafkaReceiver, Flux<ReceiverRecord<Integer, String>> kafkaFlux) {
         this.kafkaReceiver = (KafkaReceiver<Integer, String>) kafkaReceiver;
         this.kafkaFlux = kafkaFlux;
     }
@@ -57,7 +57,7 @@ public class TestableReceiver {
         this.kafkaFlux = null;
     }
 
-    public Flux<? extends ReceiverRecord<Integer, String>> kafkaFlux() {
+    public Flux<ReceiverRecord<Integer, String>> kafkaFlux() {
         return kafkaFlux;
     }
 
@@ -71,8 +71,8 @@ public class TestableReceiver {
         return commitOffsets;
     }
 
-    public Flux<? extends ReceiverRecord<Integer, String>> receiveWithManualCommitFailures(boolean retriable, int failureCount,
-            Semaphore successSemaphore, Semaphore failureSemaphore) {
+    public Flux<ReceiverRecord<Integer, String>> receiveWithManualCommitFailures(boolean retriable, int failureCount,
+            Semaphore receiveSemaphore, Semaphore successSemaphore, Semaphore failureSemaphore) {
         AtomicInteger retryCount = new AtomicInteger();
         if (retriable)
             injectCommitEventForRetriableException();
@@ -83,6 +83,7 @@ public class TestableReceiver {
                     })
                 .doOnNext(record -> {
                         try {
+                            receiveSemaphore.release();
                             injectCommitError();
                             Predicate<Throwable> retryPredicate = e -> {
                                 if (retryCount.incrementAndGet() == failureCount)
