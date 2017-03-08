@@ -42,8 +42,8 @@ ReceiverOptions<Integer, String> options =
 Receiver.create(options)
         .receive()
         .doOnNext(r -> {
-                processRecord(r.record());  // <4>
-                r.offset().acknowledge();   // <5>
+                processRecord(r);                   // <4>
+                r.receiverOffset().acknowledge();   // <5>
             });
 --------
 <1> Start consuming from first available offset on each partition if committed offsets are not available
@@ -96,8 +96,8 @@ receiverOptions = receiverOptions
 Receiver.create(receiverOptions)
         .receive()
         .publishOn(Schedulers.newSingle("sample", true))
-        .concatMap(m -> sink.store(transform(m.record()))                  // <4>
-                          .doOnSuccess(r -> m.offset().commit().block())); // <5>
+        .concatMap(m -> sink.store(transform(m))                                   // <4>
+                          .doOnSuccess(r -> m.receiverOffset().commit().block())); // <5>
 --------
 <1> Disable periodic commits
 <2> Disable commits by batch size
@@ -121,7 +121,7 @@ receiverOptions = receiverOptions
     .subscription(Pattern.compile(topics));
 sender.send(Receiver.create(receiverOptions)
                     .receive()
-                    .map(m -> SenderRecord.create(transform(m.record().value()), m.offset())), false)  // <2>
+                    .map(m -> SenderRecord.create(transform(m.value()), m.receiverOffset())), false)  // <2>
       .doOnNext(m -> m.correlationMetadata().acknowledge());  // <3>
 --------
 <1> Configure interval for automatic commits
@@ -202,7 +202,7 @@ from each partition are processed on a single thread.
 Scheduler scheduler = Schedulers.newElastic("sample", 60, true);
 Receiver.create(receiverOptions)
         .receive()
-        .groupBy(m -> m.offset().topicPartition())                          // <1>
+        .groupBy(m -> m.receiverOffset().topicPartition())                  // <1>
         .flatMap(partitionFlux ->
             partitionFlux.publishOn(scheduler)
                          .map(r -> processRecord(partitionFlux.key(), r))

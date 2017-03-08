@@ -24,8 +24,8 @@ This document is the API specification for the Reactor Kafka library.
     <pre>
     receiver.receive()
             .subscribe(r -> {
-                log.info("Received message {} ", r.record());
-                r.offset().acknowledge();
+                log.info("Received message {} ", r);
+                r.receiverOffset().acknowledge();
             });
     </pre>
     <p>

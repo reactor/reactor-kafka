@@ -65,9 +65,9 @@ public interface Receiver<K, V> {
 
     /**
      * Returns a {@link Flux} containing each batch of consumer records returned by {@link Consumer#poll(long)}.
-     * {@link ConsumerConfig#MAX_POLL_RECORDS_CONFIG} can be configured on {@link ReceiverOptions} to
-     * control the maximum number of records in a batch. Each batch is returned as one Flux. All the
-     * records in a batch are acknowledged automatically when its Flux terminates. Acknowledged records
+     * The maximum number of records returned in each batch can be configured on {@link ReceiverOptions} by setting
+     * the consumer property {@link ConsumerConfig#MAX_POLL_RECORDS_CONFIG}. Each batch is returned as one Flux.
+     * All the records in a batch are acknowledged automatically when its Flux terminates. Acknowledged records
      * are committed periodically based on the configured commit interval and commit batch size of
      * this receiver's {@link ReceiverOptions}.
      *

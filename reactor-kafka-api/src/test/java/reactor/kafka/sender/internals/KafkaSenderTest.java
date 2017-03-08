@@ -163,6 +163,33 @@ public class KafkaSenderTest {
     }
 
     /**
+     * Tests {@link Outbound#then(org.reactivestreams.Publisher)} with send chaining. Checks
+     * that the chain is executed in order.
+     */
+    @Test
+    public void sendChainThen() {
+        AtomicInteger thenCount = new AtomicInteger();
+        sender = new KafkaSender<>(producerFactory, SenderOptions.create());
+        Outbound<Integer, String> outbound = sender.outbound();
+        Outbound<Integer, String> chain = outbound.send(outgoingRecords.append(topic, 10).producerRecords())
+                .then(Mono.fromRunnable(() -> {
+                        thenCount.incrementAndGet();
+                        assertEquals(10, outgoingRecords.onNextCount.get());
+                    }))
+                .send(outgoingRecords.append(topic, 10).producerRecords())
+                .then(Mono.fromRunnable(() -> {
+                        thenCount.incrementAndGet();
+                        assertEquals(20, outgoingRecords.onNextCount.get());
+                    }))
+                .send(outgoingRecords.append(topic, 10).producerRecords());
+        StepVerifier.create(chain.then())
+                    .expectComplete()
+                    .verify();
+        outgoingRecords.verify(cluster, topic);
+        assertEquals(2, thenCount.get());
+    }
+
+    /**
      * Tests {@link Outbound#send(org.reactivestreams.Publisher)} error path with send chaining. Checks that
      * outbound chain fails if a record cannot be delivered to Kafka.
      */
@@ -535,7 +562,8 @@ public class KafkaSenderTest {
         final List<SenderRecord<Integer, String, Integer>> senderRecords = new ArrayList<>();
         final Map<TopicPartition, List<SenderResult<Integer>>> senderResponses = new HashMap<>();
         final Map<Integer, TopicPartition> recordPartitions = new HashMap<>();
-        AtomicInteger onNextCount = new AtomicInteger();
+        final AtomicInteger nextRecordIndex = new AtomicInteger();
+        final AtomicInteger onNextCount = new AtomicInteger();
 
         public OutgoingRecords(MockCluster cluster) {
             this.cluster = cluster;
@@ -567,8 +595,8 @@ public class KafkaSenderTest {
 
         public Flux<ProducerRecord<Integer, String>> producerRecords() {
             List<ProducerRecord<Integer, String>> list = new ArrayList<>();
-            for (SenderRecord<Integer, String, Integer> record : senderRecords)
-                list.add(record);
+            for (int i = nextRecordIndex.get(); i < senderRecords.size(); i++, nextRecordIndex.incrementAndGet())
+                list.add(senderRecords.get(i));
             return Flux.fromIterable(list)
                        .doOnNext(r -> onNextCount.incrementAndGet());
         }

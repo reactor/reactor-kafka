@@ -44,7 +44,7 @@ public class ConsumerPerformanceTest extends AbstractKafkaTest {
 
         numMessages = PerfTestUtils.getTestConfig("reactor.kafka.test.numMessages", 5000000);
         messageSize = PerfTestUtils.getTestConfig("reactor.kafka.test.messageSize", 100);
-        maxPercentDiff = PerfTestUtils.getTestConfig("reactor.kafka.test.maxPercentDiff", 20);
+        maxPercentDiff = PerfTestUtils.getTestConfig("reactor.kafka.test.maxPercentDiff", 50);
         timeoutMs = PerfTestUtils.getTestConfig("reactor.kafka.test.timeoutMs", 60000);
     }
 

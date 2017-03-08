@@ -60,11 +60,12 @@ The underlying `KafkaProducer` instance is created lazily when the first message
 At this point, a `Sender` instance has been created, but no connections to Kafka have been made yet.
 
 Let's now create a sequence of messages to send to Kafka. Each outbound message to be sent to Kafka
-is represented as a `SenderRecord`.  A `SenderRecord` consists of a Kafka
-https://kafka.apache.org/0101/javadoc/org/apache/kafka/clients/producer/ProducerRecord.html[ProducerRecord]
-and correlation metadata for matching send results to records. `ProducerRecord` consists of a key/value pair
-to send to Kafka and the name of the Kafka topic to send the message to. Producer records may also
-optionally specify a partition to send the message to or use the configured partitioner to choose a partition.
+is represented as a `SenderRecord`.  A `SenderRecord` is a Kafka
+https://kafka.apache.org/0102/javadoc/org/apache/kafka/clients/producer/ProducerRecord.html[ProducerRecord]
+with additional correlation metadata for matching send results to records. `ProducerRecord` consists of a key/value pair
+to send to Kafka and the name of the Kafka topic to send the message to. Producer records may also optionally
+specify a partition to send the message to or use the configured partitioner to choose a partition. Timestamp may
+also be optionally specified in the record and if not specified, the current timestamp will be assigned by the Producer.
 The additional correlation metadata included in `SenderRecord` is not sent to Kafka, but is included in the
 `SendResult` generated for the record when the send operation completes or fails. Since results of sends to
 different partitions may be interleaved, the correlation metadata enables results to be matched to their corresponding record.
@@ -78,7 +79,7 @@ provides a hands-on tutorial on using the Reactor classes `Flux` and `Mono`.
 --------
 Flux<SenderRecord<Integer. String> outboundFlux =
     Flux.range(1, 10)
-        .map(i -> SenderRecord.create(new ProducerRecord<>(topic, i, "Message_" + i), i);
+        .map(i -> SenderRecord.create(topic, partition, timestamp, i, "Message_" + i, i);
 --------
 
 The code segment above creates a sequence of messages to send to Kafka, using the message index as
@@ -132,34 +133,61 @@ option may be configured to limit the number of messages in-flight at any time.
 
 ==== Send without result metadata
 
-If individual results are not required for each send request, `ProducerRecord` can be sent directly to Kafka
-without wrapping in `SenderRecord` using the method:
+If individual results are not required for each send request, `ProducerRecord` can be sent to Kafka
+without providing correlation metadata using the send method on an `Outbound` instance obtained using
+`Sender#outbound()`.
 
 [source,java]
 --------
-Mono<Void> send(Publisher<? extends ProducerRecord<K, V>> outboundRecords);
+Outbound<K, V> send(Publisher<? extends ProducerRecord<K, V>> records);
 --------
 
+The send sequence is initiated by subscribing to the Mono obtained from `Outbound#then()`.
 The returned Mono completes successfully if all the outbound records are delivered successfully. The Mono
 terminates on the first send failure. If `outboundRecords` is a non-terminating Flux, records continue to
 be sent to Kafka unless a send fails or the returned Mono is cancelled.
 
 [source,java]
 --------
-sender.send(Flux.range(1,  10)
+sender.outbound()
+      .send(Flux.range(1,  10)
                 .map(i -> new ProducerRecord<Integer, String>(topic, i, "Message_" + i))) // <1>
-      .doOnError(e -> e.printStackTrace())                       // <2>
-      .doOnSuccess(s -> System.out.println("Sends succeeded"))   // <3>
-      .subscribe();                                              // <4>
+      .then()                                                    // <2>
+      .doOnError(e -> e.printStackTrace())                       // <3>
+      .doOnSuccess(s -> System.out.println("Sends succeeded"))   // <4>
+      .subscribe();                                              // <5>
 --------
 <1> Create `ProducerRecord` Flux. Records are not wrapped in `SenderRecord`
-<2> Error indicates failure to send one or more records
-<3> Success indicates all records were published, individual partitions or offsets not returned
-<4> Subscribe to request the actual sends
+<3> Error indicates failure to send one or more records
+<4> Success indicates all records were published, individual partitions or offsets not returned
+<5> Subscribe to request the actual sends
+
+Multiple sends can be chained together using a sequence of sends on the returned `Outbound`.
+When the Mono returned from `Outbound#then()` is subscribed to, the sends are invoked
+in sequence in the declaration order. The sequence is cancelled if any of the sends fail
+after the configured number of retries.
+
+[source,java]
+--------
+sender.outbound()
+      .send(flux1)                                               // <1>
+      .send(flux2)
+      .send(flux3))
+      .then()                                                    // <2>
+      .doOnError(e -> e.printStackTrace())                       // <3>
+      .doOnSuccess(s -> System.out.println("Sends succeeded"))   // <4>
+      .subscribe();                                              // <5>
+--------
+<1> Sends `flux1`, `flux2` and `flux3` in order
+<3> Error indicates failure to send one or more records from any of the sends in the chain
+<4> Success indicates successful send of all records from the whole chain
+<5> Subscribe to initiate the sequence of sends in the chain
 
 
 Note that in all cases the retries configured for the `KafkaProducer` are attempted and failures returned by
-the reactive `KafkaSender` indicate a failure to send after the configured number of retry attempts.
+the reactive `KafkaSender` indicate a failure to send after the configured number of retry attempts. Retries
+can result in messages being delivered out of order. The producer property
+`ProducerConfig#MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION` may be set to one to avoid re-ordering.
 
 ==== Threading model
 
@@ -266,9 +294,9 @@ Flux<ReceiverRecord<Integer, String>> inboundFlux =
 --------
 
 The inbound Kafka Flux is ready to be consumed. Each inbound message delivered by the Flux is represented
-as a `ReceiverRecord`. Each receiver record consists of a
-https://kafka.apache.org/0101/javadoc/org/apache/kafka/clients/consumer/ConsumerRecord.html[ConsumerRecord]
-returned by `KafkaConsumer` and a committable `ReceiverOffset` instance. The offset must be acknowledged
+as a `ReceiverRecord`. Each receiver record is a
+https://kafka.apache.org/0102/javadoc/org/apache/kafka/clients/consumer/ConsumerRecord.html[ConsumerRecord]
+returned by `KafkaConsumer` along with a committable `ReceiverOffset` instance. The offset must be acknowledged
 after the message is processed since unacknowledged offsets will not be committed.
 If commit interval or commit batch size are configured, acknowledged offsets will be committed periodically.
 Offsets may also be committed manually using `ReceiverOffset#commit()` if finer grained control of commit
@@ -279,8 +307,8 @@ operations is required.
 [source,java]
 --------
 inboundFlux.subscribe(r -> {
-    System.out.printf("Received message: %s\n", r.record());  // <1>
-    r.offset().acknowledge();                                 // <2>
+    System.out.printf("Received message: %s\n", r);           // <1>
+    r.receiverOffset().acknowledge();                         // <2>
 });
 --------
 <1> Prints each consumer record from Kafka
@@ -345,7 +373,7 @@ messages as they are consumed and invoking commit() periodically to commit ackno
 receiver.receive()
         .doOnNext(r -> {
                 process(r);
-                r.offset().commit().block();
+                r.receiverOffset().commit().block();
             });
 --------
 
@@ -388,7 +416,7 @@ receiverOptions = ReceiverOptions.create()
         .commitBatchSize(0);                       // <2>
 Receiver.create(receiverOptions)
         .receive()
-        .subscribe(r -> process(r.record()));      // <3>
+        .subscribe(r -> process(r));               // <3>
 --------
 <1> Disable periodic commits
 <2> Disable commits based on batch size

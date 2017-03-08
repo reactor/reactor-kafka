@@ -87,6 +87,19 @@ public interface Sender<K, V> {
      * using {@link Outbound#send(Publisher)}. Like {@link Flux} and {@link Mono}, subscribing
      * to the tail {@link Outbound} will schedule all parent sends in the declaration order.
      *
+     * <p>
+     * Example usage:
+     * <pre>
+     * {@code
+     *     kafkaSender.outbound()
+     *                .send(flux1)
+     *                .send(flux2)
+     *                .send(flux3)
+     *                .then()
+     *                .subscribe();
+     * }
+     * </pre>
+     *
      * @return chainable reactive gateway for outgoing Kafka producer records
      */
     Outbound<K, V> outbound();
