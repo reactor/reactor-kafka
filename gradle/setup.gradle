@@ -19,26 +19,20 @@ task wrapper(type: Wrapper, description: "Create a Gradle self-download wrapper"
     gradleVersion = "$gradleVersion"
 }
 
-configure(subprojects) { subproject ->
-
-    if (subproject.name == 'reactor-kafka-docs') {
-      println "Skipping maven setup for ${subproject.name}"
-      return
-    }
+configure(allprojects) { project ->
 
     apply plugin: 'propdeps-maven'
     apply plugin: 'maven'
     install {
         repositories.mavenInstaller {
-            customizePom(pom, subproject)
+            customizePom(pom, project)
         }
     }
 
     jar {
-        onlyIf {subproject.name != 'reactor-kafka-docs'}
         manifest.attributes["Created-By"] = "${System.getProperty("java.version")} (${System.getProperty("java.specification.vendor")})"
-        manifest.attributes["Implementation-Title"] = subproject.name
-        manifest.attributes["Implementation-Version"] = subproject.version
+        manifest.attributes["Implementation-Title"] = project.name
+        manifest.attributes["Implementation-Version"] = project.version
         from '../NOTICE'
     }
 

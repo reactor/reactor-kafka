@@ -69,7 +69,7 @@ allprojects {
   }
 }
 
-configure(subprojects) { subproject ->
+configure(allprojects) { project ->
   group = 'io.projectreactor.kafka'
 
   repositories {
@@ -81,9 +81,7 @@ configure(subprojects) { subproject ->
     mavenCentral()
   }
 
-  if (subproject.name != 'reactor-kafka-docs') {
-    apply plugin: 'maven'
-  }
+  apply plugin: 'maven'
   apply plugin: 'eclipse'
   apply plugin: 'idea'
   apply plugin: 'propdeps'
@@ -144,13 +142,14 @@ configure(subprojects) { subproject ->
   }
 }
 
-project(':reactor-kafka-api') {
+configure(rootProject) {
   archivesBaseName = 'reactor-kafka'
   description = 'Reactor Kafka: A reactive API for Apache Kafka'
 
   artifacts {
     archives sourcesJar
     archives javadocJar
+    archives docsZip
   }
 }
 
@@ -158,12 +157,12 @@ project(':reactor-kafka-tools') {
   archivesBaseName = 'reactor-kafka-tools'
   description = 'Tools for Reactor Kafka'
   dependencies {
-    compile project(':reactor-kafka-api')
+    compile rootProject
     compile "com.yammer.metrics:metrics-core:$metricsVersion"
     compile "net.sf.jopt-simple:jopt-simple:$joptVersion"
     compile "net.sourceforge.argparse4j:argparse4j:$argparseVersion"
 
-    testCompile project(':reactor-kafka-api').sourceSets.test.output
+    testCompile rootProject.sourceSets.test.output
   }
 
   test {
@@ -183,10 +182,10 @@ project(':reactor-kafka-samples') {
   archivesBaseName = 'reactor-kafka-samples'
   description = 'Samples for Reactor Kafka'
   dependencies {
-    compile project(':reactor-kafka-api')
+    compile rootProject
     compile "com.yammer.metrics:metrics-core:$metricsVersion"
 
-    testCompile project(':reactor-kafka-api').sourceSets.test.output
+    testCompile rootProject.sourceSets.test.output
   }
 
   task classpath << {
@@ -205,28 +204,12 @@ project(':reactor-kafka-samples') {
   }
 }
 
-project(':reactor-kafka-docs') {
-  archivesBaseName = 'reactor-kafka-docs'
-  description = 'Documentation for Reactor Kafka'
 
-  artifacts {
-    archives docsZip
-  }
 
-  test {
-    jacoco {
-      enabled = false
-    }
-  }
-
-  // Only docs.zip is required, don't generate empty jar file
-  configurations.archives.artifacts.removeAll { it.archiveTask.is jar }
-}
-
-// aggregates jacoco results from subprojects with jacoco enabled and generates a report
+// aggregates jacoco results from the top-level project and subprojects with jacoco enabled and generates a report
 task jacocoRootTestReport(type: JacocoReport) {
 
-  def jacocoProjects = subprojects.findAll { it.test.jacoco.enabled }
+  def jacocoProjects = allprojects.findAll { it.test.jacoco.enabled }
 
   logger.info('Aggregating JaCoCo Coverage from projects : {}', jacocoProjects)
   executionData = files(jacocoProjects.jacocoTestReport.executionData)
@@ -243,6 +226,6 @@ task jacocoRootTestReport(type: JacocoReport) {
     executionData = files(executionData.findAll { it.exists() })
   }
 }
-jacocoRootTestReport.dependsOn subprojects.test
+jacocoRootTestReport.dependsOn allprojects.test
 check.dependsOn jacocoRootTestReport
 

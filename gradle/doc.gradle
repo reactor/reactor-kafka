@@ -14,8 +14,7 @@
  * limitations under the License.
  */
 
-configure(subprojects) { subproject ->
-    if (subproject.name == 'reactor-kafka-docs') return
+configure(allprojects) { project ->
 
     apply plugin: "java"
 
@@ -24,7 +23,7 @@ configure(subprojects) { subproject ->
         group = "Reactor Kafka Javadoc"
 
         description = "Generates Javadoc API documentation."
-        title = "Reactor Kafka $subproject.version"
+        title = "Reactor Kafka $project.version"
 
         if (JavaVersion.current().isJava8Compatible()) {
             compileTestJava.options.compilerArgs += "-parameters"
@@ -36,26 +35,25 @@ configure(subprojects) { subproject ->
         options.memberLevel = org.gradle.external.javadoc.JavadocMemberLevel.PROTECTED
         options.author = false
         options.header = "Reactor Kafka"
-        options.overview = "$rootDir/reactor-kafka-docs/src/api/overview.html"
-        options.stylesheetFile = rootProject.file("reactor-kafka-docs/src/api/stylesheet.css")
+        options.overview = "$rootDir/src/api/overview.html"
+        options.stylesheetFile = rootProject.file("src/api/stylesheet.css")
         options.links(rootProject.ext.javadocLinks)
 
         maxMemory = "1024m"
         destinationDir = new File(buildDir, "docs/javadoc")
-        source subproject.sourceSets.main.allJava
+        source project.sourceSets.main.allJava
         exclude "**/internals/**"
         doFirst {
-          classpath = files(subproject.sourceSets.main.compileClasspath)
+          classpath = files(project.sourceSets.main.compileClasspath)
         }
     }
 }
 
-configure(subprojects) { subproject ->
-    if (subproject.name != 'reactor-kafka-docs') return
+configure(rootProject) {
 
     apply plugin: 'org.asciidoctor.convert'
     asciidoctor {
-        sourceDir "${subproject.projectDir}/src/docs/asciidoc"
+        sourceDir "${rootProject.projectDir}/src/docs/asciidoc"
         sources {
             include "index.asciidoc"
         }
@@ -70,7 +68,7 @@ configure(subprojects) { subproject ->
                 'compat-mode': '',
                 stylesdir: "stylesheets/",
                 stylesheet: 'golo.css',
-                appversion: "$subproject.version",
+                appversion: "$rootProject.version",
                 'source-highlighter': 'coderay'
 
         doLast {
@@ -78,6 +76,7 @@ configure(subprojects) { subproject ->
         }
     }
     task docsZip(type: Zip, dependsOn: asciidoctor) {
+       baseName = 'reactor-kafka-docs'
        from("$buildDir/asciidoc/pdf/reactor-kafka-reference-guide-${version}.pdf") { into("docs/") }
        from("$buildDir/asciidoc/html5/index.html") { into("docs/") }
        from("$buildDir/asciidoc/html5/images") { into("images/") }

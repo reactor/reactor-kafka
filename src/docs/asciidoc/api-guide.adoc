@@ -9,7 +9,7 @@ There are two main interfaces in Reactor Kafka:
 . `reactor.kafka.Sender` for publishing messages to Kafka
 . `reactor.kafka.Receiver` for consuming messages from Kafka
 
-Full API for Reactor Kafka is available in the link:../../api/index.html[javadocs].
+Full API for Reactor Kafka is available in the link:../api/index.html[javadocs].
 
 The project uses https://github.com/reactor/reactor-core[Reactor Core] to expose a https://github.com/reactive-streams/reactive-streams-jvm["Reactive Streams"] API.
 
