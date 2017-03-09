@@ -89,18 +89,17 @@ public interface Sender<K, V> {
      * Example usage:
      * <pre>
      * {@code
-     *     kafkaSender.outbound()
+     *     kafkaSender.createOutbound()
      *                .send(flux1)
      *                .send(flux2)
      *                .send(flux3)
-     *                .then()
      *                .subscribe();
      * }
      * </pre>
      *
      * @return chainable reactive gateway for outgoing Kafka producer records
      */
-    SenderOutbound<K, V> outbound();
+    SenderOutbound<K, V> createOutbound();
 
     /**
      * Invokes the specified function on the Kafka {@link Producer} associated with this Sender.

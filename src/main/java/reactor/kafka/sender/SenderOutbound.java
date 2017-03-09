@@ -29,7 +29,7 @@ import reactor.core.publisher.Mono;
  *       .send(flux1)
  *       .send(flux2)
  *       .send(flux3)
- *       .then();
+ *       .subscribe();
  * }
  * </pre>
  */

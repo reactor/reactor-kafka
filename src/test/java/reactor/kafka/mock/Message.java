@@ -38,4 +38,8 @@ public class Message {
     public long timestamp() {
         return timestamp;
     }
+
+    public String toString() {
+        return String.valueOf(key);
+    }
 }

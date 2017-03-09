@@ -97,7 +97,7 @@ public class KafkaSender<K, V> implements Sender<K, V> {
 
 
     @Override
-    public SenderOutbound<K, V> outbound() {
+    public SenderOutbound<K, V> createOutbound() {
         return new KafkaOutbound<K, V>(this);
     }
 

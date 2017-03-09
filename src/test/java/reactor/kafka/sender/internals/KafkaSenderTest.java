@@ -21,7 +21,12 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
@@ -111,7 +116,7 @@ public class KafkaSenderTest {
     @Test
     public void producerClose() {
         sender = new KafkaSender<>(producerFactory, SenderOptions.create());
-        sender.outbound().send(outgoingRecords.append(topic, 10).producerRecords()).then().block();
+        sender.createOutbound().send(outgoingRecords.append(topic, 10).producerRecords()).then().block();
         assertEquals(Arrays.asList(producer), producerFactory.producersInUse());
         assertFalse("Producer closed after send", producer.isClosed());
         sender.close();
@@ -139,7 +144,7 @@ public class KafkaSenderTest {
         sender = new KafkaSender<>(producerFactory, options.maxInFlight(maxInflight));
         producer.enableInFlightCheck();
         OutgoingRecords outgoing = outgoingRecords.append("nonexistent", 10);
-        StepVerifier.create(sender.outbound().send(outgoing.producerRecords()).then())
+        StepVerifier.create(sender.createOutbound().send(outgoing.producerRecords()).then())
                     .expectError(InvalidTopicException.class)
                     .verify();
         assertEquals(maxInflight, outgoing.onNextCount.get());
@@ -152,14 +157,14 @@ public class KafkaSenderTest {
     @Test
     public void sendChain() {
         sender = new KafkaSender<>(producerFactory, SenderOptions.create());
-        SenderOutbound<Integer, String> outbound = sender.outbound();
+        SenderOutbound<Integer, String> outbound = sender.createOutbound();
         SenderOutbound<Integer, String> chain = outbound.send(outgoingRecords.append(topic, 10).producerRecords())
                 .send(outgoingRecords.append(topic, 10).producerRecords())
                 .send(outgoingRecords.append(topic, 10).producerRecords());
-        StepVerifier.create(chain.then())
+        StepVerifier.create(chain)
                     .expectComplete()
                     .verify();
-        outgoingRecords.verify(cluster, topic);
+        outgoingRecords.verify(cluster, topic, true);
     }
 
     /**
@@ -170,7 +175,7 @@ public class KafkaSenderTest {
     public void sendChainThen() {
         AtomicInteger thenCount = new AtomicInteger();
         sender = new KafkaSender<>(producerFactory, SenderOptions.create());
-        SenderOutbound<Integer, String> outbound = sender.outbound();
+        SenderOutbound<Integer, String> outbound = sender.createOutbound();
         SenderOutbound<Integer, String> chain = outbound.send(outgoingRecords.append(topic, 10).producerRecords())
                 .then(Mono.fromRunnable(() -> {
                         thenCount.incrementAndGet();
@@ -185,8 +190,60 @@ public class KafkaSenderTest {
         StepVerifier.create(chain.then())
                     .expectComplete()
                     .verify();
-        outgoingRecords.verify(cluster, topic);
+        outgoingRecords.verify(cluster, topic, true);
         assertEquals(2, thenCount.get());
+    }
+
+    /**
+     * Tests concurrent SenderOutbound chains from one Sender. Tests that each chain is delivered
+     * in sequence and that chains can proceed independently.
+     */
+    @Test
+    public void sendConcurrentChains() throws Exception {
+        sender = new KafkaSender<>(producerFactory, SenderOptions.create());
+
+        Semaphore waitSemaphore1 = new Semaphore(0);
+        Semaphore doneSemaphore1 = new Semaphore(0);
+        OutgoingRecords outgoing1 = new OutgoingRecords(cluster);
+        outgoing1.nextMessageID.set(1000);
+        SenderOutbound<Integer, String> outbound1 = sender.createOutbound();
+        SenderOutbound<Integer, String> chain1 = outbound1
+                .send(outgoing1.append(topic, 10).producerRecords())
+                .then(Mono.fromRunnable(() -> doneSemaphore1.release()))
+                .send(outgoing1.append(topic, 10).producerRecords())
+                .then(Mono.fromRunnable(() -> waitSemaphore1.acquireUninterruptibly()))
+                .send(outgoing1.append(topic, 10).producerRecords());
+
+        Semaphore waitSemaphore2 = new Semaphore(0);
+        Semaphore doneSemaphore2 = new Semaphore(0);
+        CountDownLatch latch2 = new CountDownLatch(20);
+        OutgoingRecords outgoing2 = new OutgoingRecords(cluster);
+        outgoing2.nextMessageID.set(2000);
+        SenderOutbound<Integer, String> outbound2 = sender.createOutbound();
+        SenderOutbound<Integer, String> chain2 = outbound2
+                .send(outgoing2.append(topic, 10).producerRecords())
+                .then(Mono.fromRunnable(() -> doneSemaphore2.release()))
+                .send(outgoing2.append(topic, 10).producerRecords())
+                .then(Mono.fromRunnable(() -> waitSemaphore2.acquireUninterruptibly()))
+                .send(outgoing2.append(topic, 10).producerRecords());
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> future1 = executor.submit(() -> StepVerifier.create(chain1).expectComplete().verify());
+            Future<?> future2 = executor.submit(() -> StepVerifier.create(chain2).expectComplete().verify());
+
+            assertTrue("First send not complete", doneSemaphore1.tryAcquire(5, TimeUnit.SECONDS));
+            assertTrue("Second send not complete", doneSemaphore2.tryAcquire(5, TimeUnit.SECONDS));
+            waitSemaphore1.release();
+            waitSemaphore2.release();
+            future2.get(5, TimeUnit.SECONDS);
+            future1.get(5, TimeUnit.SECONDS);
+
+            outgoing1.verify(cluster, topic, false);
+            outgoing2.verify(cluster, topic, false);
+        } finally {
+            executor.shutdown();
+        }
     }
 
     /**
@@ -199,7 +256,7 @@ public class KafkaSenderTest {
         SenderOptions<Integer, String> options = SenderOptions.create();
         sender = new KafkaSender<>(producerFactory, options.maxInFlight(maxInflight));
         producer.enableInFlightCheck();
-        SenderOutbound<Integer, String> outbound = sender.outbound();
+        SenderOutbound<Integer, String> outbound = sender.createOutbound();
         SenderOutbound<Integer, String> chain = outbound.send(outgoingRecords.append("nonexistent", 10).producerRecords())
                 .send(outgoingRecords.append(topic, 10).producerRecords())
                 .send(outgoingRecords.append(topic, 10).producerRecords());
@@ -316,7 +373,7 @@ public class KafkaSenderTest {
         sender = new KafkaSender<>(producerFactory, senderOptions);
         OutgoingRecords outgoing = outgoingRecords.append(topic, 10);
         Semaphore semaphore = new Semaphore(0);
-        sender.outbound()
+        sender.createOutbound()
               .send(outgoing.producerRecords())
               .then()
               .doOnSuccess(r -> {
@@ -545,10 +602,10 @@ public class KafkaSenderTest {
 
     private void sendNoResponseAndVerify(Sender<Integer, String> sender, String topic, int count) {
         OutgoingRecords outgoing = outgoingRecords.append(topic, count);
-        StepVerifier.create(sender.outbound().send(outgoing.producerRecords()))
+        StepVerifier.create(sender.createOutbound().send(outgoing.producerRecords()))
                     .expectComplete()
                     .verify();
-        outgoing.verify(cluster, topic);
+        outgoing.verify(cluster, topic, true);
     }
 
     private void resetSender() {
@@ -562,6 +619,7 @@ public class KafkaSenderTest {
         final List<SenderRecord<Integer, String, Integer>> senderRecords = new ArrayList<>();
         final Map<TopicPartition, List<SenderResult<Integer>>> senderResponses = new HashMap<>();
         final Map<Integer, TopicPartition> recordPartitions = new HashMap<>();
+        final AtomicInteger nextMessageID = new AtomicInteger();
         final AtomicInteger nextRecordIndex = new AtomicInteger();
         final AtomicInteger onNextCount = new AtomicInteger();
 
@@ -572,10 +630,11 @@ public class KafkaSenderTest {
             Integer partitions = cluster.cluster().partitionCountForTopic(topic);
             boolean fail = partitions == null;
             for (int i = 0; i < count; i++) {
+                int messageID = nextMessageID.getAndIncrement();
                 int correlation = senderRecords.size();
-                TopicPartition partition = new TopicPartition(topic, partitions == null ? 0 : i % partitions.intValue());
+                TopicPartition partition = new TopicPartition(topic, partitions == null ? 0 : messageID % partitions.intValue());
                 recordPartitions.put(correlation, partition);
-                senderRecords.add(SenderRecord.create(topic, partition.partition(), null, i, "Message-" + i, correlation));
+                senderRecords.add(SenderRecord.create(topic, partition.partition(), null, messageID, "Message-" + messageID, correlation));
 
                 List<SenderResult<Integer>> partitionResponses = senderResponses.get(partition);
                 if (partitionResponses == null) {
@@ -624,12 +683,18 @@ public class KafkaSenderTest {
             }
         }
 
-        public void verify(MockCluster cluster, String topic) {
+        public void verify(MockCluster cluster, String topic, boolean strictlyEqual) {
             for (TopicPartition partition : cluster.partitions(topic)) {
                 List<Message> messages = cluster.log(partition);
                 int index = 0;
                 for (SenderRecord<Integer, String, Integer> record : senderRecords) {
                     if (record.partition() == partition.partition()) {
+                        if (!strictlyEqual && !record.key().equals(messages.get(index).key())) {
+                            while (!record.key().equals(messages.get(index).key())) {
+                                index++;
+                                assertTrue("Message not found " + partition + " index " + index + " key=" + record.key() + " messages=" + messages, messages.size() > index);
+                            }
+                        }
                         assertEquals(record.key(), messages.get(index).key());
                         assertEquals(record.value(), messages.get(index).value());
                         index++;
