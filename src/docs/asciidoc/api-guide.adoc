@@ -97,12 +97,12 @@ for each partition, but responses from different partitions may be interleaved.
 
 [source,java]
 --------
-sender.send(outboundFlux, false)                   // <1>
+sender.send(outboundFlux)                          // <1>
       .doOnError(e-> log.error("Send failed", e))  // <2>
       .doOnNext(r -> System.out.printf("Message #%d send response: %s\n", r.correlationMetadata(), r.recordMetadata())) <3>
       .subscribe();    // <4>
 --------
-<1> Reactive send operation for the outbound Flux that fails if any send fails
+<1> Reactive send operation for the outbound Flux
 <2> If Kafka send fails, log an error
 <3> Print metadata returned by Kafka and the message index in `correlationMetadata()`
 <4> Subscribe to trigger the actual flow of records from `outboundFlux` to Kafka.
@@ -112,21 +112,28 @@ See https://github.com/reactor/reactor-kafka/blob/master/reactor-kafka-samples/s
 
 ==== Error handling
 
-A send operation can specify if the operation should fail immediately on error or wait until all messages have
-been processed.
+[source,java]
+--------
+public SenderOptions<K, V> stopOnError(boolean stopOnError);
+--------
+
+`SenderOptions#stopOnError()` specifies whether each send sequence should fail immediately if one
+record could not delivered to Kafka after the configured number of retries or wait until all records
+have been processed. This can be used along with `ProducerConfig#ACKS_CONFIG`
+and `ProducerConfig#RETRIES_CONFIG` to configure the required quality of service.
 
 [source,java]
 --------
-<T> Flux<SenderResult<T>> send(Publisher<SenderRecord<K, V, T>> outboundRecords, boolean delayError);
+<T> Flux<SenderResult<T>> send(Publisher<SenderRecord<K, V, T>> outboundRecords);
 --------
 
-If `delayError` is true, a success or error response is returned for each outgoing record.
+If `stopOnError` is false, a success or error response is returned for each outgoing record.
 For error responses, the exception from Kafka indicating the reason for send failure is set on `SenderResult`
 and can be retrieved using `SenderResult#exception()`. The Flux fails with an error after attempting to send
 all records published on `outboundRecords`. If `outboundRecords` is a non-terminating `Flux`, send continues to send
 records published on this `Flux` until the result `Flux` is explicitly cancelled by the user.
 
-If `delayError` is false, a response is returned for the first failed send and the result Flux is terminated
+If `stopOnError` is true, a response is returned for the first failed send and the result Flux is terminated
 immediately with an error. Since multiple outbound messages may be in-flight at any time, it is possible that
 some messages are delivered successfully to Kafka after the first failure is detected. `SenderOptions#maxInFlight()`
 option may be configured to limit the number of messages in-flight at any time.
@@ -135,7 +142,7 @@ option may be configured to limit the number of messages in-flight at any time.
 
 If individual results are not required for each send request, `ProducerRecord` can be sent to Kafka
 without providing correlation metadata using the send method on an `SenderOutbound` instance obtained using
-`Sender#outbound()`.
+`Sender#createOutbound()`.
 
 [source,java]
 --------

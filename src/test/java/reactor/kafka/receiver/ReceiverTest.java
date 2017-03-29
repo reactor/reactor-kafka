@@ -624,7 +624,7 @@ public class ReceiverTest extends AbstractKafkaTest {
                 .receive()
                 .doOnNext(cr -> receiveLatch0.countDown())
                 .publishOn(consumerScheduler);
-        Disposable disposable0 = kafkaSender.send(flux0.map(cr -> SenderRecord.create(topic, 1, null, cr.key(), cr.value(), cr.receiverOffset())), false)
+        Disposable disposable0 = kafkaSender.send(flux0.map(cr -> SenderRecord.create(topic, 1, null, cr.key(), cr.value(), cr.receiverOffset())))
                     .doOnNext(sendResult -> {
                             sendResult.correlationMetadata()
                                       .commit()
@@ -639,7 +639,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         // Send messages to partition 0
         kafkaSender.send(Flux.range(0, count)
                              .map(i -> SenderRecord.create(topic, 0, null, i, "Message " + i, null))
-                             .doOnNext(r -> sendLatch0.countDown()), false)
+                             .doOnNext(r -> sendLatch0.countDown()))
                    .subscribe();
 
         if (!sendLatch0.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS))

@@ -16,7 +16,7 @@ This document is the API specification for the Reactor Kafka library.
     </p>
     <h3><a href="reactor/kafka/sender/Sender.html">Sender</a></h3>
     <pre>
-    sender.send(Flux.range(1, 10).map(i -> SenderRecord.create(new ProducerRecord<>(topic, i, "Message_" + i)), i), false)
+    sender.send(Flux.range(1, 10).map(i -> SenderRecord.create(new ProducerRecord<>(topic, i, "Message_" + i)), i))
           .doOnNext(r -> log.debug("Message #{} result: {}", r.correlationMetadata(), r.recordMetadata()))
           .subscribe();
     </pre>

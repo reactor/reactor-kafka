@@ -402,7 +402,7 @@ public class ProducerPerformance {
                                             throttler.throttle();
                                         Callback cb = stats.nextCompletion(sendStartMs, recordSize, stats);
                                         return SenderRecord.create(record, cb);
-                                    }), false)
+                                    }))
                       .map(result -> {
                               RecordMetadata metadata = result.recordMetadata();
                               Callback cb = result.correlationMetadata();

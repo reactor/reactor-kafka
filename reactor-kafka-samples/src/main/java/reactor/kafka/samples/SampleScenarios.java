@@ -110,7 +110,7 @@ public class SampleScenarios {
                     .producerProperty(ProducerConfig.RETRIES_CONFIG, Integer.MAX_VALUE);
             Flux<Person> srcFlux = source().flux();
             return sender(senderOptions)
-                    .send(srcFlux.map(p -> SenderRecord.create(new ProducerRecord<>(topic, p.id(), p), p.id())), false)
+                    .send(srcFlux.map(p -> SenderRecord.create(new ProducerRecord<>(topic, p.id(), p), p.id())))
                     .doOnError(e-> log.error("Send failed, terminating.", e))
                     .doOnNext(r -> {
                             int id = r.correlationMetadata();
@@ -198,7 +198,7 @@ public class SampleScenarios {
             Sender<Integer, Person> sender = sender(senderOptions());
             return sender.send(Receiver.create(receiverOptions(Collections.singleton(sourceTopic)))
                                        .receive()
-                                       .map(m -> SenderRecord.create(transform(m.value()), m.receiverOffset())), false)
+                                       .map(m -> SenderRecord.create(transform(m.value()), m.receiverOffset())))
                          .doOnNext(m -> m.correlationMetadata().acknowledge());
         }
         public ProducerRecord<Integer, Person> transform(Person p) {
@@ -227,12 +227,12 @@ public class SampleScenarios {
         public Flux<?> flux() {
             SenderOptions<Integer, Person> senderOptions = senderOptions()
                     .producerProperty(ProducerConfig.ACKS_CONFIG, "0")
-                    .producerProperty(ProducerConfig.RETRIES_CONFIG, "0");
+                    .producerProperty(ProducerConfig.RETRIES_CONFIG, "0")
+                    .stopOnError(false);
             return sender(senderOptions)
                 .send(Receiver.create(receiverOptions(Collections.singleton(sourceTopic)))
                               .receiveAtmostOnce()
-                              .map(cr -> SenderRecord.create(transform(cr.value()), cr.offset())),
-                      true);
+                              .map(cr -> SenderRecord.create(transform(cr.value()), cr.offset())));
         }
         public ProducerRecord<Integer, Person> transform(Person p) {
             Person transformed = new Person(p.id(), p.firstName(), p.lastName());
@@ -270,8 +270,8 @@ public class SampleScenarios {
                                              Emission emission = incoming.emit(m.value());
                                              log.debug("Emit {} {}", m.value().id(), emission);
                                          });
-            Flux<SenderResult<Integer>> stream1 = sender.send(processor.publishOn(scheduler1).map(p -> SenderRecord.create(process1(p, true), p.id())), false);
-            Flux<SenderResult<Integer>> stream2 = sender.send(processor.publishOn(scheduler2).map(p -> SenderRecord.create(process2(p, true), p.id())), false);
+            Flux<SenderResult<Integer>> stream1 = sender.send(processor.publishOn(scheduler1).map(p -> SenderRecord.create(process1(p, true), p.id())));
+            Flux<SenderResult<Integer>> stream2 = sender.send(processor.publishOn(scheduler2).map(p -> SenderRecord.create(process2(p, true), p.id())));
             AtomicReference<Disposable> cancelRef = new AtomicReference<>();
             Consumer<AtomicReference<Disposable>> cancel = cr -> {
                 Disposable c = cr.getAndSet(null);

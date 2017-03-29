@@ -165,7 +165,8 @@ public class SenderTest extends AbstractKafkaTest {
     public void fireAndForget() throws Exception {
         int count = 1000;
         Flux<Integer> source = Flux.range(0, count);
-        kafkaSender.send(source.map(i -> SenderRecord.create(createProducerRecord(i, true), null)), true)
+        recreateSender(senderOptions.stopOnError(false));
+        kafkaSender.send(source.map(i -> SenderRecord.create(createProducerRecord(i, true), null)))
                    .subscribe();
 
         waitForMessages(consumer, count, true);
@@ -180,7 +181,7 @@ public class SenderTest extends AbstractKafkaTest {
         CountDownLatch latch = new CountDownLatch(count);
         Semaphore completeSemaphore = new Semaphore(0);
         Flux<Integer> source = Flux.range(0, count);
-        kafkaSender.send(source.map(i -> SenderRecord.create(createProducerRecord(i, true), latch)), false)
+        kafkaSender.send(source.map(i -> SenderRecord.create(createProducerRecord(i, true), latch)))
             .doOnNext(result -> result.correlationMetadata().countDown())
             .doOnComplete(() -> completeSemaphore.release())
             .subscribe();
@@ -198,7 +199,7 @@ public class SenderTest extends AbstractKafkaTest {
         int count = 10;
         Map<Integer, RecordMetadata> resultMap = new HashMap<>();
         Flux<Integer> source = Flux.range(0, count);
-        kafkaSender.send(source.map(i -> SenderRecord.create(createProducerRecord(i, true), i)), false)
+        kafkaSender.send(source.map(i -> SenderRecord.create(createProducerRecord(i, true), i)))
             .doOnNext(result -> resultMap.put(result.correlationMetadata(), result.recordMetadata()))
             .subscribe();
 
@@ -213,13 +214,14 @@ public class SenderTest extends AbstractKafkaTest {
     }
 
     /**
-     * Tests that responses are returned for successful and failed sends when delayError=true.
+     * Tests that responses are returned for successful and failed sends when stopOnError=false.
      */
     @Test
-    public void sendDelayError() throws Exception {
+    public void sendDontStopOnError() throws Exception {
         int count = 4;
         Semaphore errorSemaphore = new Semaphore(0);
-        kafkaSender.send(createOutboundErrorFlux(count, false, false).map(r -> SenderRecord.create(r, null)), true)
+        recreateSender(senderOptions.stopOnError(false));
+        kafkaSender.send(createOutboundErrorFlux(count, false, false).map(r -> SenderRecord.create(r, null)))
                    .doOnError(t -> errorSemaphore.release())
                    .subscribe();
         waitForMessages(consumer, 2, true);
@@ -227,14 +229,14 @@ public class SenderTest extends AbstractKafkaTest {
     }
 
     /**
-     * Tests that response flux is terminated with error on the first failure if delayError=false.
+     * Tests that response flux is terminated with error on the first failure if stopOnError=true.
      */
     @Test
-    public void sendFailOnError() throws Exception {
+    public void sendStopOnError() throws Exception {
         int count = 4;
         Semaphore errorSemaphore = new Semaphore(0);
         try {
-            kafkaSender.send(createOutboundErrorFlux(count, true, false).map(r -> SenderRecord.create(r, null)), false)
+            kafkaSender.send(createOutboundErrorFlux(count, true, false).map(r -> SenderRecord.create(r, null)))
                        .doOnError(t -> errorSemaphore.release())
                 .subscribe();
         } catch (Exception e) {
@@ -253,14 +255,14 @@ public class SenderTest extends AbstractKafkaTest {
         int count = 20;
         Semaphore blocker = new Semaphore(0);
         CountDownLatch sendLatch = new CountDownLatch(count);
-        kafkaSender.send(Flux.range(0, count / 2).map(i -> SenderRecord.create(createProducerRecord(i, true), null)), false)
+        kafkaSender.send(Flux.range(0, count / 2).map(i -> SenderRecord.create(createProducerRecord(i, true), null)))
                    .doOnNext(r -> {
                            assertFalse("Running onNext on producer network thread", Thread.currentThread().getName().contains("network"));
                            sendLatch.countDown();
                            TestUtils.acquireSemaphore(blocker);
                        })
                    .subscribe();
-        kafkaSender.send(Flux.range(count / 2, count / 2).map(i -> SenderRecord.create(createProducerRecord(i, true), null)), false)
+        kafkaSender.send(Flux.range(count / 2, count / 2).map(i -> SenderRecord.create(createProducerRecord(i, true), null)))
                    .doOnError(e -> log.error("KafkaSender exception", e))
                    .doOnNext(r -> sendLatch.countDown())
                    .subscribe();
@@ -280,7 +282,7 @@ public class SenderTest extends AbstractKafkaTest {
         AtomicInteger messageIndex = new AtomicInteger();
         AtomicInteger lastSuccessful = new AtomicInteger();
         Flux<SenderResult<Integer>> outboundFlux =
-            kafkaSender.send(createOutboundErrorFlux(count, false, true).map(r -> SenderRecord.create(r, messageIndex.getAndIncrement())), false)
+            kafkaSender.send(createOutboundErrorFlux(count, false, true).map(r -> SenderRecord.create(r, messageIndex.getAndIncrement())))
                     .doOnNext(r -> {
                             if (r.exception() == null)
                                 lastSuccessful.set(r.correlationMetadata());
@@ -312,7 +314,7 @@ public class SenderTest extends AbstractKafkaTest {
             kafkaSender.send(Flux.range(0, count)
                                  .map(index -> SenderRecord.create(new ProducerRecord<>(topic, 0, "Message " + index), null))
                                  .publishOn(scheduler)
-                                 .doOnNext(r -> latch.countDown()), false)
+                                 .doOnNext(r -> latch.countDown()))
                        .subscribe();
         }
 
@@ -326,12 +328,11 @@ public class SenderTest extends AbstractKafkaTest {
      */
     @Test
     public void maxInFlight() throws Exception {
-        kafkaSender.close();
         int maxConcurrency = 4;
         senderOptions = senderOptions.producerProperty(ProducerConfig.MAX_REQUEST_SIZE_CONFIG, "100")
                                    .producerProperty(ProducerConfig.MAX_BLOCK_MS_CONFIG, "1000")
                                    .maxInFlight(maxConcurrency);
-        kafkaSender = Sender.create(senderOptions);
+        recreateSender(senderOptions);
 
         int count = 100;
         AtomicInteger inflight = new AtomicInteger();
@@ -345,7 +346,7 @@ public class SenderTest extends AbstractKafkaTest {
                                 maxInflight.set(current);
                             return SenderRecord.create(createProducerRecord(i, true), null);
                         });
-        kafkaSender.send(source, false)
+        kafkaSender.send(source)
                    .doOnNext(metadata -> {
                            TestUtils.sleep(100);
                            latch.countDown();
@@ -371,15 +372,14 @@ public class SenderTest extends AbstractKafkaTest {
         Semaphore done = new Semaphore(0);
         Scheduler scheduler = Schedulers.newSingle("kafka-sender");
         int maxInflight = 1024;
-        boolean delayError = true;
         for (int i = 0; i < partitions; i++)
             successfulSends.add(new ArrayList<>());
 
-        kafkaSender.close();
         senderOptions = senderOptions.maxInFlight(maxInflight)
+                .stopOnError(false)
                 .scheduler(scheduler);
-        kafkaSender = Sender.create(senderOptions);
-        kafkaSender.send(emitter.map(i -> SenderRecord.create(new ProducerRecord<Integer, String>(topic, i % partitions, i, "Message " + i), i)), delayError)
+        recreateSender(senderOptions);
+        kafkaSender.send(emitter.map(i -> SenderRecord.create(new ProducerRecord<Integer, String>(topic, i % partitions, i, "Message " + i), i)))
                    .doOnNext(result -> {
                            int messageIdentifier = result.correlationMetadata();
                            RecordMetadata metadata = result.recordMetadata();
@@ -456,7 +456,12 @@ public class SenderTest extends AbstractKafkaTest {
 
     private Flux<SenderResult<Integer>> outboundFlux(int startIndex, int count) {
         return kafkaSender.send(Flux.range(startIndex, count)
-                                    .map(i -> SenderRecord.create(createProducerRecord(i, true), i)), false);
+                                    .map(i -> SenderRecord.create(createProducerRecord(i, true), i)));
+    }
+
+    private void recreateSender(SenderOptions<Integer, String> senderOptions) {
+        kafkaSender.close();
+        kafkaSender = Sender.create(senderOptions);
     }
 
 }

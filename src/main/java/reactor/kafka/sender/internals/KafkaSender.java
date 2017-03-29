@@ -84,11 +84,11 @@ public class KafkaSender<K, V> implements Sender<K, V> {
     }
 
     @Override
-    public <T> Flux<SenderResult<T>> send(Publisher<SenderRecord<K, V, T>> records, boolean delayError) {
+    public <T> Flux<SenderResult<T>> send(Publisher<SenderRecord<K, V, T>> records) {
         return new Flux<SenderResult<T>>() {
             @Override
             public void subscribe(Subscriber<? super SenderResult<T>> s) {
-                records.subscribe(new SendSubscriber<T>(s, delayError));
+                records.subscribe(new SendSubscriber<T>(s, senderOptions.stopOnError()));
             }
         }
         .doOnError(e -> log.trace("Send failed with exception {}", e))
@@ -123,7 +123,7 @@ public class KafkaSender<K, V> implements Sender<K, V> {
         return new Flux<RecordMetadata>() {
             @Override
             public void subscribe(Subscriber<? super RecordMetadata> s) {
-                records.subscribe(new SendSubscriberNoResponse(s));
+                records.subscribe(new SendSubscriberNoResponse(s, senderOptions.stopOnError()));
             }
         }
         .doOnError(e -> log.trace("Send failed with exception {}", e))
@@ -162,14 +162,14 @@ public class KafkaSender<K, V> implements Sender<K, V> {
 
     private abstract class AbstractSendSubscriber<Q, S, C> implements Subscriber<Q> {
         protected final Subscriber<? super S> actual;
-        private final boolean delayError;
+        private final boolean stopOnError;
         private Producer<K, V> producer;
         private AtomicInteger inflight;
         AtomicReference<SubscriberState> state;
         private AtomicReference<Throwable> firstException;
 
-        AbstractSendSubscriber(Subscriber<? super S> actual, boolean delayError) {
-            this.delayError = delayError;
+        AbstractSendSubscriber(Subscriber<? super S> actual, boolean stopOnError) {
+            this.stopOnError = stopOnError;
             this.actual = actual;
             this.state = new AtomicReference<>(SubscriberState.INIT);
             inflight = new AtomicInteger();
@@ -195,7 +195,7 @@ public class KafkaSender<K, V> implements Sender<K, V> {
                             if (exception == null)
                                 handleMetadata(metadata, correlationMetadata);
                             else
-                                handleError(exception, correlationMetadata, !delayError);
+                                handleError(exception, correlationMetadata, stopOnError);
                         } catch (Exception e) {
                             handleError(e, correlationMetadata, true);
                         } finally {
@@ -264,8 +264,8 @@ public class KafkaSender<K, V> implements Sender<K, V> {
 
     private class SendSubscriber<T> extends AbstractSendSubscriber<SenderRecord<K, V, T>, SenderResult<T>, T> {
 
-        SendSubscriber(Subscriber<? super SenderResult<T>> actual, boolean delayError) {
-           super(actual, delayError);
+        SendSubscriber(Subscriber<? super SenderResult<T>> actual, boolean stopOnError) {
+           super(actual, stopOnError);
         }
 
         @Override
@@ -286,8 +286,8 @@ public class KafkaSender<K, V> implements Sender<K, V> {
 
     private class SendSubscriberNoResponse extends AbstractSendSubscriber<ProducerRecord<K, V>, RecordMetadata, Void> {
 
-        SendSubscriberNoResponse(Subscriber<? super RecordMetadata> actual) {
-           super(actual, false);
+        SendSubscriberNoResponse(Subscriber<? super RecordMetadata> actual, boolean stopOnError) {
+           super(actual, stopOnError);
         }
 
         @Override

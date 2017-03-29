@@ -84,6 +84,7 @@ public class SampleConsumer {
                         dateFormat.format(new Date(record.timestamp())),
                         record.key(),
                         record.value());
+                offset.acknowledge();
                 latch.countDown();
             });
     }

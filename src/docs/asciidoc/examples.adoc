@@ -14,13 +14,13 @@ processes the responses. The outbound flow is triggered when the returned Flux i
 [source,java]
 --------
 Sender.create(SenderOptions.<Integer, String>create(producerProps).maxInFlight(512))   // <1>
-      .send(outbound.map(r -> senderRecord(r)), false)                                 // <2>
+      .send(outbound.map(r -> senderRecord(r)))                                        // <2>
       .doOnNext(result -> processResponse(result))                                     // <3>
       .doOnError(e -> processError(e));
 --------
 
-<1> Create a sender with maximum 512 messages in-flight.
-<2> Send a sequence of sender records with delayError=false to fail on error
+<1> Create a sender with maximum 512 messages in-flight
+<2> Send a sequence of sender records
 <3> Process send result when onNext is triggered
 
 [[sample-consumer]]
@@ -66,16 +66,16 @@ performed only after records are successfully written to Kafka.
 senderOptions = senderOptions
     .producerProperty(ProducerConfig.ACKS_CONFIG, "all")                  // <1>
     .producerProperty(ProducerConfig.RETRIES_CONFIG, Integer.MAX_VALUE)   // <2>
-    .maxInFlight(128)                                                     // <3>
+    .maxInFlight(128);                                                    // <3>
 Sender.create(senderOptions)
-    .send(source.flux().map(r -> transform(r)), false)                    // <4>
+    .send(source.flux().map(r -> transform(r)))                           // <4>
     .doOnError(e-> log.error("Send failed, terminating.", e))             // <5>
     .doOnNext(r -> source.commit(r.correlationMetadata()));               // <6>
 --------
 <1> Send is acknowledged by Kafka for acks=all after message is delivered to all in-sync replicas
 <2> Large number of retries in the producer to cope with transient failures in brokers
-<3> Low in-flight count to avoid filling up producer buffer and blocking the pipeline
-<4> Receive from external source, transform and send to Kafka with fail-on-error
+<3> Low in-flight count to avoid filling up producer buffer and blocking the pipeline, default stopOnError=true
+<4> Receive from external source, transform and send to Kafka
 <5> If a send fails, it indicates catastrophic error, fail the whole pipeline
 <6> Use correlation metadata in the sender record to commit source record
 
@@ -121,7 +121,7 @@ receiverOptions = receiverOptions
     .subscription(Pattern.compile(topics));
 sender.send(Receiver.create(receiverOptions)
                     .receive()
-                    .map(m -> SenderRecord.create(transform(m.value()), m.receiverOffset())), false)  // <2>
+                    .map(m -> SenderRecord.create(transform(m.value()), m.receiverOffset())))  // <2>
       .doOnNext(m -> m.correlationMetadata().acknowledge());  // <3>
 --------
 <1> Configure interval for automatic commits
@@ -141,18 +141,19 @@ this code can be used for at-most-once delivery.
 --------
 senderOptions = senderOptions
     .producerProperty(ProducerConfig.ACKS_CONFIG, "0")     // <1>
-    .producerProperty(ProducerConfig.RETRIES_CONFIG, "0"); // <2>
+    .producerProperty(ProducerConfig.RETRIES_CONFIG, "0")  // <2>
+    .stopOnError(false);                                   // <3>
 receiverOptions = receiverOptions
     .subscription(Collections.singleton(sourceTopic));
 Sender.create(senderOptions)
       .send(Receiver.create(receiverOptions)
                     .receiveAtmostOnce()                   // <3>
-                    .map(cr -> SenderRecord.create(transform(cr.value()), cr.offset())),
-            true);
+                    .map(cr -> SenderRecord.create(transform(cr.value()), cr.offset())));
 --------
 <1> Send with acks=0 completes when message is buffered locally, before it is delivered to Kafka broker
 <2> No retries in producer
-<3> At-most-once receive
+<3> Ignore any error and continue to send remaining records
+<4> At-most-once receive
 
 [[fan-out]]
 === Fan-out with Multiple Streams
@@ -176,7 +177,7 @@ inputRecords = Receiver.create(receiverOptions)
 outputRecords1 = processor.publishOn(scheduler1).map(p -> process1(p)); // <4>
 outputRecords2 = processor.publishOn(scheduler2).map(p -> process2(p)); // <5>
 
-Flux.merge(sender.send(outputRecords1, false), sender.send(outputRecords2, false))
+Flux.merge(sender.send(outputRecords1), sender.send(outputRecords2))
     .doOnSubscribe(s -> inputRecords.subscribe())
     .subscribe();                                                       // <6>
 --------

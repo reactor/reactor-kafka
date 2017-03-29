@@ -74,11 +74,10 @@ public interface Sender<K, V> {
      * </pre>
      *
      * @param records Outbound records along with additional correlation metadata to be included in response
-     * @param delayError If false, send terminates when a response indicates failure, otherwise send is attempted for all records
      * @return Flux of Kafka producer response record metadata along with the corresponding request correlation metadata.
      *         For records that could not be sent, the response contains an exception that indicates reason for failure.
      */
-    <T> Flux<SenderResult<T>> send(Publisher<SenderRecord<K, V, T>> records, boolean delayError);
+    <T> Flux<SenderResult<T>> send(Publisher<SenderRecord<K, V, T>> records);
 
     /**
      * Creates a reactive gateway for outgoing Kafka records. Outgoing sends can be chained

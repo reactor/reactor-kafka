@@ -39,6 +39,7 @@ public class SenderOptions<K, V> {
     private Duration closeTimeout;
     private Scheduler scheduler;
     private int maxInFlight;
+    private boolean stopOnError;
 
     /**
      * Creates a sender options instance with default properties.
@@ -76,6 +77,7 @@ public class SenderOptions<K, V> {
         closeTimeout = Duration.ofMillis(Long.MAX_VALUE);
         scheduler = Schedulers.single();
         maxInFlight = QueueSupplier.SMALL_BUFFER_SIZE;
+        stopOnError = true;
     }
 
     /**
@@ -142,6 +144,32 @@ public class SenderOptions<K, V> {
     }
 
     /**
+     * Returns stopOnError configuration which indicates if a send operation
+     * should be terminated when an error is encountered. If set to false, send
+     * is attempted for all records in a sequence even if send of one of the records fails.
+     * @return boolean indicating if send sequences should fail on first error
+     */
+    public boolean stopOnError() {
+        return stopOnError;
+    }
+
+    /**
+     * Configures error handling behaviour for {@link Sender#send(org.reactivestreams.Publisher)}.
+     * If set to true, send fails when an error is encountered and only records
+     * that are already in transit may be delivered after the first error. If set to false,
+     * an attempt is made to send each record to Kafka, even if one or more records cannot
+     * be delivered after the configured number of retries. This flag should be set along with
+     * {@link ProducerConfig#RETRIES_CONFIG} and {@link ProducerConfig#ACKS_CONFIG} to configure
+     * the required quality-of-service. By default, stopOnError is true.
+     * @param stopOnError true to stop each send sequence on first failure
+     * @return sender options with the new stopOnError flag.
+     */
+    public SenderOptions<K, V> stopOnError(boolean stopOnError) {
+        this.stopOnError = stopOnError;
+        return this;
+    }
+
+    /**
      * Returns the timeout for graceful shutdown of this sender.
      * @return close timeout duration
      */
@@ -186,6 +214,11 @@ public class SenderOptions<K, V> {
             }
 
             @Override
+            public SenderOptions<K, V> stopOnError(boolean stopOnError) {
+                throw new java.lang.UnsupportedOperationException("Cannot modify immutable options");
+            }
+
+            @Override
             public SenderOptions<K, V> closeTimeout(Duration timeout) {
                 throw new java.lang.UnsupportedOperationException("Cannot modify immutable options");
             }
@@ -195,6 +228,7 @@ public class SenderOptions<K, V> {
         options.closeTimeout = closeTimeout;
         options.scheduler = scheduler;
         options.maxInFlight = maxInFlight;
+        options.stopOnError = stopOnError;
         return options;
     }
 }

@@ -72,7 +72,7 @@ public class SampleProducer {
 
     public void sendMessages(String topic, int count, CountDownLatch latch) throws InterruptedException {
         sender.send(Flux.range(1, count)
-                        .map(i -> SenderRecord.create(new ProducerRecord<>(topic, i, "Message_" + i), i)), true)
+                        .map(i -> SenderRecord.create(new ProducerRecord<>(topic, i, "Message_" + i), i)))
               .doOnError(e-> log.error("Send failed", e))
               .subscribe(r -> {
                       RecordMetadata metadata = r.recordMetadata();
