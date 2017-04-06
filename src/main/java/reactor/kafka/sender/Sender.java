@@ -19,6 +19,7 @@ import java.util.function.Function;
 
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.reactivestreams.Publisher;
 
 import reactor.core.publisher.Flux;
@@ -49,10 +50,10 @@ public interface Sender<K, V> {
 
     /**
      * Sends a sequence of records to Kafka and returns a {@link Flux} of response record metadata including
-     * partition and offset of each send request. Ordering of responses is guaranteed for partitions,
+     * partition and offset of each record. Responses are ordered for each partition in the absence of retries,
      * but responses from different partitions may be interleaved in a different order from the requests.
      * Additional correlation metadata may be passed through in the {@link SenderRecord} that is not sent
-     * to Kafka, but is included in the response {@link Flux} to enable matching responses to requests.
+     * to Kafka, but is included in the response {@link Flux} to match responses to requests.
      * <p>
      * Results are published when the send is acknowledged based on the acknowledgement mode
      * configured using the option {@link ProducerConfig#ACKS_CONFIG}. If acks=0, records are acknowledged
@@ -61,6 +62,8 @@ public interface Sender<K, V> {
      * modes, requests are retried up to the configured {@link ProducerConfig#RETRIES_CONFIG} times. If
      * the request does not succeed after these attempts, the request fails and an exception indicating
      * the reason for failure is returned in {@link SenderResult#exception()}.
+     * {@link SenderOptions#stopOnError(boolean)} can be configured to stop the send sequence on first failure
+     * or to attempt all sends even if one or more records could not be delivered.
      *
      * <p>
      * Example usage:
@@ -80,7 +83,14 @@ public interface Sender<K, V> {
     <T> Flux<SenderResult<T>> send(Publisher<SenderRecord<K, V, T>> records);
 
     /**
-     * Creates a reactive gateway for outgoing Kafka records. Outgoing sends can be chained
+     * Sends a sequence of records to Kafka without specifying correlation metadata. No metadata
+     * is returned for individual records on success or failure. The send operation succeeds if all
+     * records are successfully delivered to Kafka based on the configured ack mode and fails if any
+     * of the records could not be delivered after the configured number of retries.
+     * {@link SenderOptions#stopOnError()} can be configured to stop the send sequence on first failure
+     * or to attempt sends of all records even if one or more records could not be delivered.
+     * <p>
+     * The outbound instance returned can be used to chain together multiple send sequences
      * using {@link SenderOutbound#send(Publisher)}. Like {@link Flux} and {@link Mono}, subscribing
      * to the tail {@link SenderOutbound} will schedule all parent sends in the declaration order.
      *
@@ -88,17 +98,17 @@ public interface Sender<K, V> {
      * Example usage:
      * <pre>
      * {@code
-     *     kafkaSender.createOutbound()
-     *                .send(flux1)
+     *     kafkaSender.sendOutbound(flux1)
      *                .send(flux2)
      *                .send(flux3)
      *                .subscribe();
      * }
      * </pre>
      *
+     * @param records Outbound producer records
      * @return chainable reactive gateway for outgoing Kafka producer records
      */
-    SenderOutbound<K, V> createOutbound();
+    SenderOutbound<K, V> sendOutbound(Publisher<? extends ProducerRecord<K, V>> records);
 
     /**
      * Invokes the specified function on the Kafka {@link Producer} associated with this Sender.

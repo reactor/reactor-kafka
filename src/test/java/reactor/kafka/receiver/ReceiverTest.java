@@ -992,8 +992,8 @@ public class ReceiverTest extends AbstractKafkaTest {
     }
 
     private void sendMessages(int startIndex, int count) {
-        Disposable disposable = kafkaSender.createOutbound().send(Flux.range(startIndex, count)
-                                                            .map(i -> createProducerRecord(i, true)))
+        Disposable disposable = kafkaSender.sendOutbound(Flux.range(startIndex, count)
+                                                             .map(i -> createProducerRecord(i, true)))
                                            .then()
                                            .subscribe();
         subscribeDisposables.add(disposable);
@@ -1003,7 +1003,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         CountDownLatch latch = new CountDownLatch(count);
         Flux.range(startIndex, count)
             .map(i -> createProducerRecord(i, true))
-            .concatMap(record -> kafkaSender.createOutbound().send(Mono.just(record)).then()
+            .concatMap(record -> kafkaSender.sendOutbound(Mono.just(record)).then()
                                             .doOnSuccess(metadata -> latch.countDown())
                                             .retry(100))
             .subscribe();

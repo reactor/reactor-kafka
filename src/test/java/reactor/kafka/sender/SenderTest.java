@@ -89,8 +89,7 @@ public class SenderTest extends AbstractKafkaTest {
     public void sendNoResponse() throws Exception {
         int count = 1000;
         Flux<Integer> source = Flux.range(0, count);
-        kafkaSender.createOutbound()
-                   .send(source.map(i -> createProducerRecord(i, true)))
+        kafkaSender.sendOutbound(source.map(i -> createProducerRecord(i, true)))
                    .then()
                    .subscribe()
                    .block();
@@ -107,8 +106,7 @@ public class SenderTest extends AbstractKafkaTest {
         int count = 4;
         Semaphore errorSemaphore = new Semaphore(0);
         try {
-            kafkaSender.createOutbound()
-                       .send(createOutboundErrorFlux(count, true, false))
+            kafkaSender.sendOutbound(createOutboundErrorFlux(count, true, false))
                        .then()
                        .doOnError(t -> errorSemaphore.release())
                        .subscribe();
@@ -127,8 +125,7 @@ public class SenderTest extends AbstractKafkaTest {
     @Test
     public void sendChain() throws Exception {
         int batch = 100;
-        kafkaSender.createOutbound()
-                   .send(Flux.range(0, batch).map(i -> createProducerRecord(i, true)))
+        kafkaSender.sendOutbound(Flux.range(0, batch).map(i -> createProducerRecord(i, true)))
                    .send(Flux.range(batch, batch).map(i -> createProducerRecord(i, true)))
                    .send(Flux.range(batch * 2, batch).map(i -> createProducerRecord(i, true)))
                    .then()
@@ -146,8 +143,7 @@ public class SenderTest extends AbstractKafkaTest {
     public void sendChainFailure() throws Exception {
         int count = 4;
         Semaphore errorSemaphore = new Semaphore(0);
-        kafkaSender.createOutbound()
-                   .send(createOutboundErrorFlux(count, true, false))
+        kafkaSender.sendOutbound(createOutboundErrorFlux(count, true, false))
                    .send(Flux.range(0, 10).map(i -> createProducerRecord(i, true)))
                    .send(Flux.range(10, 10).map(i -> createProducerRecord(i, true)))
                    .then()

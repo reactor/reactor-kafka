@@ -97,8 +97,8 @@ public class KafkaSender<K, V> implements Sender<K, V> {
 
 
     @Override
-    public SenderOutbound<K, V> createOutbound() {
-        return new KafkaOutbound<K, V>(this);
+    public SenderOutbound<K, V> sendOutbound(Publisher<? extends ProducerRecord<K, V>> records) {
+        return new KafkaOutbound<K, V>(this).send(records);
     }
 
     @Override
@@ -119,10 +119,10 @@ public class KafkaSender<K, V> implements Sender<K, V> {
             producerMono.block().close(senderOptions.closeTimeout().toMillis(), TimeUnit.MILLISECONDS);
     }
 
-    public Flux<RecordMetadata> sendProducerRecords(Publisher<? extends ProducerRecord<K, V>> records) {
-        return new Flux<RecordMetadata>() {
+    private Flux<Object> sendProducerRecords(Publisher<? extends ProducerRecord<K, V>> records) {
+        return new Flux<Object>() {
             @Override
-            public void subscribe(Subscriber<? super RecordMetadata> s) {
+            public void subscribe(Subscriber<? super Object> s) {
                 records.subscribe(new SendSubscriberNoResponse(s, senderOptions.stopOnError()));
             }
         }
@@ -284,9 +284,9 @@ public class KafkaSender<K, V> implements Sender<K, V> {
         }
     }
 
-    private class SendSubscriberNoResponse extends AbstractSendSubscriber<ProducerRecord<K, V>, RecordMetadata, Void> {
+    private class SendSubscriberNoResponse extends AbstractSendSubscriber<ProducerRecord<K, V>, Object, Void> {
 
-        SendSubscriberNoResponse(Subscriber<? super RecordMetadata> actual, boolean stopOnError) {
+        SendSubscriberNoResponse(Subscriber<? super Object> actual, boolean stopOnError) {
            super(actual, stopOnError);
         }
 
@@ -294,6 +294,8 @@ public class KafkaSender<K, V> implements Sender<K, V> {
         protected void handleResponse(RecordMetadata metadata, Exception e, Void correlation) {
             if (metadata != null)
                 actual.onNext(metadata);
+            else
+                actual.onNext(e);
         }
 
         @Override

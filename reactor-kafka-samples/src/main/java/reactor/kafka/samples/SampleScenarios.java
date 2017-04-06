@@ -51,7 +51,6 @@ import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.ReceiverRecord;
 import reactor.kafka.receiver.Receiver;
 import reactor.kafka.receiver.ReceiverOffset;
-import reactor.kafka.sender.SenderOutbound;
 import reactor.kafka.sender.Sender;
 import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.SenderRecord;
@@ -142,10 +141,10 @@ public class SampleScenarios {
                     .producerProperty(ProducerConfig.ACKS_CONFIG, "all")
                     .producerProperty(ProducerConfig.MAX_BLOCK_MS_CONFIG, Long.MAX_VALUE)
                     .producerProperty(ProducerConfig.RETRIES_CONFIG, Integer.MAX_VALUE);
-            SenderOutbound<Integer, Person> outbound = sender(senderOptions).createOutbound();
+            Sender<Integer, Person> sender = sender(senderOptions);
             Flux<Person> srcFlux = source().flux();
             return srcFlux.concatMap(p ->
-                    outbound.send(Mono.just(new ProducerRecord<>(topic1, p.id(), p)))
+                    sender.sendOutbound(Mono.just(new ProducerRecord<>(topic1, p.id(), p)))
                             .send(Mono.just(new ProducerRecord<>(topic2, p.id(), p.upperCase())))
                             .then()
                             .doOnSuccess(v -> source.commit(p.id())));
@@ -488,7 +487,8 @@ public class SampleScenarios {
         }
 
         public Sender<Integer, Person> sender(SenderOptions<Integer, Person> senderOptions) {
-            return Sender.create(senderOptions);
+            sender = Sender.create(senderOptions);
+            return sender;
         }
 
         public ReceiverOptions<Integer, Person> receiverOptions() {

@@ -141,12 +141,12 @@ option may be configured to limit the number of messages in-flight at any time.
 ==== Send without result metadata
 
 If individual results are not required for each send request, `ProducerRecord` can be sent to Kafka
-without providing correlation metadata using the send method on an `SenderOutbound` instance obtained using
-`Sender#createOutbound()`.
+without providing correlation metadata using the `sendOutbound` method. `SenderOutbound` is a fluent
+interface that enables sends to be chained together.
 
 [source,java]
 --------
-SenderOutbound<K, V> send(Publisher<? extends ProducerRecord<K, V>> records);
+SenderOutbound<K, V> sendOutbound(Publisher<? extends ProducerRecord<K, V>> records);
 --------
 
 The send sequence is initiated by subscribing to the Mono obtained from `SenderOutbound#then()`.
@@ -156,9 +156,8 @@ be sent to Kafka unless a send fails or the returned Mono is cancelled.
 
 [source,java]
 --------
-sender.createOutbound()
-      .send(Flux.range(1,  10)
-                .map(i -> new ProducerRecord<Integer, String>(topic, i, "Message_" + i))) // <1>
+sender.sendOutbound(Flux.range(1,  10)
+                        .map(i -> new ProducerRecord<Integer, String>(topic, i, "Message_" + i))) // <1>
       .then()                                                    // <2>
       .doOnError(e -> e.printStackTrace())                       // <3>
       .doOnSuccess(s -> System.out.println("Sends succeeded"))   // <4>
@@ -177,8 +176,7 @@ after the configured number of retries.
 
 [source,java]
 --------
-sender.createOutbound()
-      .send(flux1)                                               // <1>
+sender.sendOutbound(flux1)                                       // <1>
       .send(flux2)
       .send(flux3))
       .then()                                                    // <2>
