@@ -103,20 +103,24 @@ public class KafkaSender<K, V> implements Sender<K, V> {
 
     @Override
     public <T> Mono<T> doOnProducer(Function<Producer<K, V>, ? extends T> function) {
-        return producerMono.then(producer -> Mono.create(sink -> {
+        return Mono.create(sink -> {
                 try {
-                    T ret = function.apply(producerProxy(producer));
+                    T ret = function.apply(producerProxy(producer()));
                     sink.success(ret);
                 } catch (Throwable t) {
                     sink.error(t);
                 }
-            }));
+            });
     }
 
     @Override
     public void close() {
         if (hasProducer.getAndSet(false))
-            producerMono.block().close(senderOptions.closeTimeout().toMillis(), TimeUnit.MILLISECONDS);
+            producer().close(senderOptions.closeTimeout().toMillis(), TimeUnit.MILLISECONDS);
+    }
+
+    private Producer<K, V> producer() {
+        return producerMono.block();
     }
 
     private Flux<Object> sendProducerRecords(Publisher<? extends ProducerRecord<K, V>> records) {
@@ -178,7 +182,7 @@ public class KafkaSender<K, V> implements Sender<K, V> {
 
         @Override
         public void onSubscribe(Subscription s) {
-            producer = producerMono.block();
+            producer = producer();
             state.set(SubscriberState.ACTIVE);
             actual.onSubscribe(s);
         }

@@ -323,6 +323,7 @@ public class ConsumerPerformance {
             receiver = Receiver.create(receiverOptions);
             Disposable disposable = receiver
                      .receive()
+                     .limitRate(numMessages)
                      .subscribe(record -> {
                              lastConsumedTime.set(System.currentTimeMillis());
                              totalMessagesRead.incrementAndGet();
@@ -340,7 +341,7 @@ public class ConsumerPerformance {
                                  lastBytesRead.set(totalBytesRead.get());
                              }
                              receiveLatch.countDown();
-                         }, numMessages);
+                         });
             receiveLatch.await();
             disposable.dispose();
         }
