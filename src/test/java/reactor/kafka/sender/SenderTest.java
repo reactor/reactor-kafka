@@ -44,9 +44,9 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import reactor.core.publisher.BlockingSink;
 import reactor.core.publisher.EmitterProcessor;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxSink;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.kafka.AbstractKafkaTest;
@@ -362,7 +362,7 @@ public class SenderTest extends AbstractKafkaTest {
     public void sendResponseEmitter() throws Exception {
         int count = 5000;
         EmitterProcessor<Integer> emitter = EmitterProcessor.create();
-        BlockingSink<Integer> sink = emitter.connectSink();
+        FluxSink<Integer> sink = emitter.sink();
         List<List<Integer>> successfulSends = new ArrayList<>();
         Set<Integer> failedSends = new HashSet<>();
         Semaphore done = new Semaphore(0);
@@ -387,7 +387,7 @@ public class SenderTest extends AbstractKafkaTest {
                    .doOnComplete(() -> done.release())
                    .subscribe();
         for (int i = 0; i < count; i++) {
-            sink.submit(i);
+            sink.next(i);
         }
         sink.complete();
 

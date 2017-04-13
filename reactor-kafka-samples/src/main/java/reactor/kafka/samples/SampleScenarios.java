@@ -40,10 +40,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import reactor.core.Disposable;
-import reactor.core.publisher.BlockingSink;
-import reactor.core.publisher.BlockingSink.Emission;
 import reactor.core.publisher.EmitterProcessor;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -261,14 +260,11 @@ public class SampleScenarios {
             Scheduler scheduler2 = Schedulers.newSingle("sample2", true);
             sender = sender(senderOptions());
             EmitterProcessor<Person> processor = EmitterProcessor.create();
-            BlockingSink<Person> incoming = processor.connectSink();
+            FluxSink<Person> incoming = processor.sink();
             Flux<?> inFlux = Receiver.create(receiverOptions(Collections.singleton(sourceTopic)))
                                      .receiveAutoAck()
                                      .concatMap(r -> r)
-                                     .doOnNext(m -> {
-                                             Emission emission = incoming.emit(m.value());
-                                             log.debug("Emit {} {}", m.value().id(), emission);
-                                         });
+                                     .doOnNext(m -> incoming.next(m.value()));
             Flux<SenderResult<Integer>> stream1 = sender.send(processor.publishOn(scheduler1).map(p -> SenderRecord.create(process1(p, true), p.id())));
             Flux<SenderResult<Integer>> stream2 = sender.send(processor.publishOn(scheduler2).map(p -> SenderRecord.create(process2(p, true), p.id())));
             AtomicReference<Disposable> cancelRef = new AtomicReference<>();
