@@ -136,6 +136,14 @@ public class EmbeddedKafkaCluster extends ExternalResource {
                 reactor.kafka.util.TestUtils.sleep(500);
             }
         }
+        for (int i = 0; i < maxRetries; i++) {
+            try {
+                bootstrapServers();
+                break;
+            } catch (Exception e) {
+                reactor.kafka.util.TestUtils.sleep(500);
+            }
+        }
     }
 
     public void waitForTopic(String topic) {
