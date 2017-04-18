@@ -56,16 +56,16 @@ import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.ReceiverRecord;
-import reactor.kafka.receiver.Receiver;
+import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOffset;
 import reactor.kafka.receiver.ReceiverPartition;
 import reactor.kafka.receiver.internals.CommittableBatch.CommitArgs;
 
-public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceListener {
+public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, ConsumerRebalanceListener {
 
-    private static final Logger log = LoggerFactory.getLogger(KafkaReceiver.class.getName());
+    private static final Logger log = LoggerFactory.getLogger(DefaultKafkaReceiver.class.getName());
 
-    // Note: Methods added to this set should also be included in javadoc for {@link Receiver#doOnConsumer(Function)}
+    /** Note: Methods added to this set should also be included in javadoc for {@link KafkaReceiver#doOnConsumer(Function)} */
     private static final Set<String> DELEGATE_METHODS = new HashSet<>(Arrays.asList(
             "assignment",
             "subscription",
@@ -116,7 +116,7 @@ public class KafkaReceiver<K, V> implements Receiver<K, V>, ConsumerRebalanceLis
         AUTO_ACK, MANUAL_ACK, ATMOST_ONCE
     }
 
-    public KafkaReceiver(ConsumerFactory consumerFactory, ReceiverOptions<K, V> receiverOptions) {
+    public DefaultKafkaReceiver(ConsumerFactory consumerFactory, ReceiverOptions<K, V> receiverOptions) {
         fluxList = new ArrayList<>();
         subscribeDisposables = new ArrayList<>();
         requestsPending = new AtomicLong();

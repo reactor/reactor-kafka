@@ -14,13 +14,13 @@ This document is the API specification for the Reactor Kafka library.
         and very low overheads. This enables applications using Reactor to use Kafka as a message bus or
         streaming platform and integrate with other systems to provide an end-to-end reactive pipeline.
     </p>
-    <h3><a href="reactor/kafka/sender/Sender.html">Sender</a></h3>
+    <h3><a href="reactor/kafka/sender/KafkaSender.html">KafkaSender</a></h3>
     <pre>
     sender.send(Flux.range(1, 10).map(i -> SenderRecord.create(new ProducerRecord<>(topic, i, "Message_" + i)), i))
           .doOnNext(r -> log.debug("Message #{} result: {}", r.correlationMetadata(), r.recordMetadata()))
           .subscribe();
     </pre>
-    <h3><a href="reactor/kafka/receiver/Receiver.html">Receiver</a></h3>
+    <h3><a href="reactor/kafka/receiver/KafkaReceiver.html">KafkaReceiver</a></h3>
     <pre>
     receiver.receive()
             .subscribe(r -> {

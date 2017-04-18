@@ -33,7 +33,7 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.ReceiverRecord;
-import reactor.kafka.receiver.Receiver;
+import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOffset;
 
 /**
@@ -75,7 +75,7 @@ public class SampleConsumer {
         ReceiverOptions<Integer, String> options = receiverOptions.subscription(Collections.singleton(topic))
                 .addAssignListener(partitions -> log.debug("onPartitionsAssigned {}", partitions))
                 .addRevokeListener(partitions -> log.debug("onPartitionsRevoked {}", partitions));
-        Flux<ReceiverRecord<Integer, String>> kafkaFlux = Receiver.create(options).receive();
+        Flux<ReceiverRecord<Integer, String>> kafkaFlux = KafkaReceiver.create(options).receive();
         return kafkaFlux.subscribe(record -> {
                 ReceiverOffset offset = record.receiverOffset();
                 System.out.printf("Received message: topic-partition=%s offset=%d timestamp=%s key=%d value=%s\n",

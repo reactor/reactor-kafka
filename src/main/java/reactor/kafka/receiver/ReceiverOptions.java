@@ -34,7 +34,7 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigException;
 
 /**
- * Configuration properties for Reactive Kafka {@link Receiver} and its underlying {@link KafkaConsumer}.
+ * Configuration properties for Reactive Kafka {@link KafkaReceiver} and its underlying {@link KafkaConsumer}.
  */
 public class ReceiverOptions<K, V> {
 
@@ -132,7 +132,7 @@ public class ReceiverOptions<K, V> {
     /**
      * Sets the timeout for each {@link KafkaConsumer#poll(long)} operation. Since
      * the underlying Kafka consumer is not thread-safe, long poll intervals may delay
-     * commits and other operations invoked using {@link Receiver#doOnConsumer(java.util.function.Function)}.
+     * commits and other operations invoked using {@link KafkaReceiver#doOnConsumer(java.util.function.Function)}.
      * Very short timeouts may reduce batching and increase load on the broker,
      * @return options instance with new poll timeout
      */
@@ -220,7 +220,7 @@ public class ReceiverOptions<K, V> {
 
     /**
      * Sets subscription using group management to the specified collection of topics.
-     * This subscription is enabled when the receive Flux of a {@link Receiver} using this
+     * This subscription is enabled when the receive Flux of a {@link KafkaReceiver} using this
      * options instance is subscribed to. Any existing subscriptions or assignments on this
      * option are deleted.
      * @return options instance with new subscription
@@ -234,7 +234,7 @@ public class ReceiverOptions<K, V> {
 
     /**
      * Sets subscription using group management to the specified pattern.
-     * This subscription is enabled when the receive Flux of a {@link Receiver} using this
+     * This subscription is enabled when the receive Flux of a {@link KafkaReceiver} using this
      * options instance is subscribed to. Any existing subscriptions or assignments on this
      * option are deleted. Topics are dynamically assigned or removed when topics
      * matching the pattern are created or deleted.
@@ -249,7 +249,7 @@ public class ReceiverOptions<K, V> {
 
     /**
      * Sets subscription using manual assignment to the specified partitions.
-     * This assignment is enabled when the receive Flux of a {@link Receiver} using this
+     * This assignment is enabled when the receive Flux of a {@link KafkaReceiver} using this
      * options instance is subscribed to. Any existing subscriptions or assignments on this
      * option are deleted.
      * @return options instance with new partition assignment
@@ -388,7 +388,7 @@ public class ReceiverOptions<K, V> {
      * corresponding to the record was already committed.
      * <p>
      * If <code>commitAheadSize</code> is zero (default), offsets are committed synchronously before
-     * each record is dispatched for {@link Receiver#receiveAtmostOnce()}. Otherwise, commits are
+     * each record is dispatched for {@link KafkaReceiver#receiveAtmostOnce()}. Otherwise, commits are
      * performed ahead of dispatch and record dispatch is blocked only if commits haven't completed.
      * @return options instance with new commit ahead size
      */

@@ -24,7 +24,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.kafka.receiver.internals.ConsumerFactory;
-import reactor.kafka.receiver.internals.KafkaReceiver;
+import reactor.kafka.receiver.internals.DefaultKafkaReceiver;
 
 /**
  * A reactive Kafka receiver for consuming records from topic partitions
@@ -33,7 +33,7 @@ import reactor.kafka.receiver.internals.KafkaReceiver;
  * @param <K> incoming record key type
  * @param <V> incoming record value type
  */
-public interface Receiver<K, V> {
+public interface KafkaReceiver<K, V> {
 
     /**
      * Creates a reactive Kafka receiver with the specified configuration options.
@@ -44,8 +44,8 @@ public interface Receiver<K, V> {
      *        must be set on the options instance prior to creating this receiver.
      * @return new receiver instance
      */
-    public static <K, V> Receiver<K, V> create(ReceiverOptions<K, V> options) {
-        return new KafkaReceiver<>(ConsumerFactory.INSTANCE, options);
+    public static <K, V> KafkaReceiver<K, V> create(ReceiverOptions<K, V> options) {
+        return new DefaultKafkaReceiver<>(ConsumerFactory.INSTANCE, options);
     }
 
     /**
@@ -91,7 +91,7 @@ public interface Receiver<K, V> {
     Flux<ConsumerRecord<K, V>> receiveAtmostOnce();
 
     /**
-     * Invokes the specified function on the Kafka {@link Consumer} associated with this Receiver.
+     * Invokes the specified function on the Kafka {@link Consumer} associated with this {@link KafkaReceiver}.
      * The function is scheduled when the returned {@link Mono} is subscribed to. The function is
      * executed on the thread used for other consumer operations to ensure that {@link Consumer}
      * is never accessed concurrently from multiple threads.
@@ -103,7 +103,7 @@ public interface Receiver<K, V> {
      *           .doOnSuccess(partitions -> System.out.println("Partitions " + partitions));
      * }
      * </pre>
-     * Functions that are directly supported through the reactive {@link Receiver} interface
+     * Functions that are directly supported through the reactive {@link KafkaReceiver} interface
      * like <code>poll</code> and <code>commit</code> should not be invoked from <code>function</code>.
      * The methods supported by <code>doOnConsumer</code> are:
      * <ul>

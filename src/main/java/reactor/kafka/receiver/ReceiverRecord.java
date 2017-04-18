@@ -18,7 +18,7 @@ package reactor.kafka.receiver;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 /**
- * Represents an incoming record dispatched by {@link Receiver}.
+ * Represents an incoming record dispatched by {@link KafkaReceiver}.
  *
  * @param <K> Incoming record key type
  * @param <V> Incoming record value type
@@ -44,7 +44,7 @@ public class ReceiverRecord<K, V> extends ConsumerRecord<K, V> {
     /**
      * Returns an acknowledgeable offset instance that should be acknowledged after this
      * record has been consumed. Acknowledged records are automatically committed
-     * based on the commit batch size and commit interval configured for the Receiver.
+     * based on the commit batch size and commit interval configured for the {@link KafkaReceiver}.
      * Acknowledged records may be also committed using {@link ReceiverOffset#commit()}.
      *
      * @return offset to acknowledge after record is processed

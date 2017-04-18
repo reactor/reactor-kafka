@@ -53,7 +53,7 @@ import net.sourceforge.argparse4j.inf.Namespace;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
-import reactor.kafka.sender.Sender;
+import reactor.kafka.sender.KafkaSender;
 import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.SenderRecord;
 
@@ -369,14 +369,14 @@ public class ProducerPerformance {
 
     static class ReactiveProducerPerformance extends AbstractProducerPerformance {
 
-        final Sender<byte[], byte[]> sender;
+        final KafkaSender<byte[], byte[]> sender;
 
         ReactiveProducerPerformance(Map<String, Object> producerPropsOverride, String topic, int numRecords, int recordSize, long throughput) {
             super(producerPropsOverride, topic, numRecords, recordSize, throughput);
             SenderOptions<byte[], byte[]> options = SenderOptions.<byte[], byte[]>create(producerProps)
                     .scheduler(Schedulers.newSingle("prod-perf", true))
                     .maxInFlight(maxInflight());
-            sender = Sender.create(options);
+            sender = KafkaSender.create(options);
         }
 
         public Stats runTest() throws InterruptedException {

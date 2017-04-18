@@ -31,7 +31,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import reactor.core.publisher.Flux;
-import reactor.kafka.sender.Sender;
+import reactor.kafka.sender.KafkaSender;
 import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.SenderRecord;
 
@@ -53,7 +53,7 @@ public class SampleProducer {
     private static final String BOOTSTRAP_SERVERS = "localhost:9092";
     private static final String TOPIC = "demo-topic";
 
-    private final Sender<Integer, String> sender;
+    private final KafkaSender<Integer, String> sender;
     private final SimpleDateFormat dateFormat;
 
     public SampleProducer(String bootstrapServers) {
@@ -66,7 +66,7 @@ public class SampleProducer {
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
         SenderOptions<Integer, String> senderOptions = SenderOptions.create(props);
 
-        sender = Sender.create(senderOptions);
+        sender = KafkaSender.create(senderOptions);
         dateFormat = new SimpleDateFormat("HH:mm:ss:SSS z dd MMM yyyy");
     }
 

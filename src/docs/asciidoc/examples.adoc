@@ -7,16 +7,16 @@ https://github.com/reactor/reactor-kafka/tree/master/reactor-kafka-samples[sampl
 [[sample-producer]]
 === Sending records to Kafka
 
-See <<api-guide-sender,Sender API>> for details on the Sender API for sending outbound records
+See <<api-guide-sender,KafkaSender API>> for details on the KafkaSender API for sending outbound records
 to Kafka. The following code segment creates a simple pipeline that sends records to Kafka and
 processes the responses. The outbound flow is triggered when the returned Flux is subscribed to.
 
 [source,java]
 --------
-Sender.create(SenderOptions.<Integer, String>create(producerProps).maxInFlight(512))   // <1>
-      .send(outbound.map(r -> senderRecord(r)))                                        // <2>
-      .doOnNext(result -> processResponse(result))                                     // <3>
-      .doOnError(e -> processError(e));
+KafkaSender.create(SenderOptions.<Integer, String>create(producerProps).maxInFlight(512))   // <1>
+           .send(outbound.map(r -> senderRecord(r)))                                        // <2>
+           .doOnNext(result -> processResponse(result))                                     // <3>
+           .doOnError(e -> processError(e));
 --------
 
 <1> Create a sender with maximum 512 messages in-flight
@@ -26,7 +26,7 @@ Sender.create(SenderOptions.<Integer, String>create(producerProps).maxInFlight(5
 [[sample-consumer]]
 === Replaying records from Kafka topics
 
-See <<api-guide-receiver,Receiver API>> for details on the Receiver API for consuming records
+See <<api-guide-receiver,KafkaReceiver API>> for details on the KafkaReceiver API for consuming records
 from Kafka topics. The following code segment creates a Flux that replays all records on a topic
 and commits offsets after processing the messages. Manual acknowledgement provides
 at-least-once delivery semantics.
@@ -39,12 +39,12 @@ ReceiverOptions<Integer, String> options =
                    .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")  // <1>
                    .commitBatchSize(10)                                                    // <2>
                    .subscription(Collections.singleton("demo-topic"));                     // <3>
-Receiver.create(options)
-        .receive()
-        .doOnNext(r -> {
-                processRecord(r);                   // <4>
-                r.receiverOffset().acknowledge();   // <5>
-            });
+KafkaReceiver.create(options)
+             .receive()
+             .doOnNext(r -> {
+                     processRecord(r);                   // <4>
+                     r.receiverOffset().acknowledge();   // <5>
+                 });
 --------
 <1> Start consuming from first available offset on each partition if committed offsets are not available
 <2> Commit every 10 acknowledged messages
@@ -67,10 +67,10 @@ senderOptions = senderOptions
     .producerProperty(ProducerConfig.ACKS_CONFIG, "all")                  // <1>
     .producerProperty(ProducerConfig.RETRIES_CONFIG, Integer.MAX_VALUE)   // <2>
     .maxInFlight(128);                                                    // <3>
-Sender.create(senderOptions)
-    .send(source.flux().map(r -> transform(r)))                           // <4>
-    .doOnError(e-> log.error("Send failed, terminating.", e))             // <5>
-    .doOnNext(r -> source.commit(r.correlationMetadata()));               // <6>
+KafkaSender.create(senderOptions)
+           .send(source.flux().map(r -> transform(r)))                      // <4>
+           .doOnError(e-> log.error("Send failed, terminating.", e))        // <5>
+           .doOnNext(r -> source.commit(r.correlationMetadata()));          // <6>
 --------
 <1> Send is acknowledged by Kafka for acks=all after message is delivered to all in-sync replicas
 <2> Large number of retries in the producer to cope with transient failures in brokers
@@ -93,11 +93,11 @@ receiverOptions = receiverOptions
     .commitInterval(Duration.ZERO)              // <1>
     .commitBatchSize(0)                         // <2>
     .subscription(Pattern.compile(topics));     // <3>
-Receiver.create(receiverOptions)
-        .receive()
-        .publishOn(Schedulers.newSingle("sample", true))
-        .concatMap(m -> sink.store(transform(m))                                   // <4>
-                          .doOnSuccess(r -> m.receiverOffset().commit().block())); // <5>
+KafkaReceiver.create(receiverOptions)
+             .receive()
+             .publishOn(Schedulers.newSingle("sample", true))
+             .concatMap(m -> sink.store(transform(m))                                   // <4>
+                               .doOnSuccess(r -> m.receiverOffset().commit().block())); // <5>
 --------
 <1> Disable periodic commits
 <2> Disable commits by batch size
@@ -119,9 +119,9 @@ configured commit interval.
 receiverOptions = receiverOptions
     .commitInterval(Duration.ofSeconds(10))        // <1>
     .subscription(Pattern.compile(topics));
-sender.send(Receiver.create(receiverOptions)
-                    .receive()
-                    .map(m -> SenderRecord.create(transform(m.value()), m.receiverOffset())))  // <2>
+sender.send(KafkaReceiver.create(receiverOptions)
+                         .receive()
+                         .map(m -> SenderRecord.create(transform(m.value()), m.receiverOffset())))  // <2>
       .doOnNext(m -> m.correlationMetadata().acknowledge());  // <3>
 --------
 <1> Configure interval for automatic commits
@@ -133,7 +133,7 @@ sender.send(Receiver.create(receiverOptions)
 
 The code segment below demonstrates a flow with at-most once delivery. Producer does not wait for acks and
 does not perform any retries. Messages that cannot be delivered to Kafka on the first attempt
-are dropped. `Receiver` commits offsets before delivery to the application to ensure that if the consumer
+are dropped. `KafkaReceiver` commits offsets before delivery to the application to ensure that if the consumer
 restarts, messages are not redelivered. With replication factor 1 for topic partitions,
 this code can be used for at-most-once delivery.
 
@@ -145,10 +145,10 @@ senderOptions = senderOptions
     .stopOnError(false);                                   // <3>
 receiverOptions = receiverOptions
     .subscription(Collections.singleton(sourceTopic));
-Sender.create(senderOptions)
-      .send(Receiver.create(receiverOptions)
-                    .receiveAtmostOnce()                   // <3>
-                    .map(cr -> SenderRecord.create(transform(cr.value()), cr.offset())));
+KafkaSender.create(senderOptions)
+            .send(KafkaReceiver.create(receiverOptions)
+                               .receiveAtmostOnce()                   // <3>
+                               .map(cr -> SenderRecord.create(transform(cr.value()), cr.offset())));
 --------
 <1> Send with acks=0 completes when message is buffered locally, before it is delivered to Kafka broker
 <2> No retries in producer
@@ -170,9 +170,9 @@ is used to broadcast the input records from Kafka to multiple subscribers.
 
 EmitterProcessor<Person> processor = EmitterProcessor.create();         // <1>
 BlockingSink<Person> incoming = processor.connectSink();                // <2>
-inputRecords = Receiver.create(receiverOptions)
-                       .receive()
-                       .doOnNext(m -> incoming.emit(m.value()));        // <3>
+inputRecords = KafkaReceiver.create(receiverOptions)
+                            .receive()
+                            .doOnNext(m -> incoming.emit(m.value()));   // <3>
 
 outputRecords1 = processor.publishOn(scheduler1).map(p -> process1(p)); // <4>
 outputRecords2 = processor.publishOn(scheduler2).map(p -> process2(p)); // <5>
@@ -201,14 +201,14 @@ from each partition are processed on a single thread.
 --------
 
 Scheduler scheduler = Schedulers.newElastic("sample", 60, true);
-Receiver.create(receiverOptions)
-        .receive()
-        .groupBy(m -> m.receiverOffset().topicPartition())                  // <1>
-        .flatMap(partitionFlux ->
-            partitionFlux.publishOn(scheduler)
-                         .map(r -> processRecord(partitionFlux.key(), r))
-                         .sample(Duration.ofMillis(5000))                   // <2>
-                         .concatMap(offset -> offset.commit()));            // <3>
+KafkaReceiver.create(receiverOptions)
+             .receive()
+             .groupBy(m -> m.receiverOffset().topicPartition())                  // <1>
+             .flatMap(partitionFlux ->
+                 partitionFlux.publishOn(scheduler)
+                              .map(r -> processRecord(partitionFlux.key(), r))
+                              .sample(Duration.ofMillis(5000))                   // <2>
+                              .concatMap(offset -> offset.commit()));            // <3>
 --------
 <1> Group by partition to guarantee ordering
 <2> Commit periodically

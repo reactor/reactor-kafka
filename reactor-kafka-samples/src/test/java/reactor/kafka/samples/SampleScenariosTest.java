@@ -42,7 +42,7 @@ import reactor.core.publisher.Mono;
 import reactor.kafka.AbstractKafkaTest;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.ReceiverRecord;
-import reactor.kafka.receiver.Receiver;
+import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOffset;
 import reactor.kafka.samples.SampleScenarios.AtmostOnce;
 import reactor.kafka.samples.SampleScenarios.CommittableSource;
@@ -229,7 +229,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
                         partitions.forEach(p -> log.trace("Group {} partition {} position {}", groupId, p, p.position()));
                     })
                 .addRevokeListener(p -> log.debug("Group {} revoked {}", groupId, p));
-        Disposable c = Receiver.create(receiverOptions.subscription(Collections.singleton(topic)))
+        Disposable c = KafkaReceiver.create(receiverOptions.subscription(Collections.singleton(topic)))
                                  .receive()
                                  .subscribe(m -> {
                                          Person p = m.value();

@@ -37,7 +37,7 @@ public class SenderRecord<K, V, T> extends ProducerRecord<K, V> {
      * @param record the producer record to send to Kafka
      * @param correlationMetadata Additional correlation metadata that is not sent to Kafka, but is
      *        included in the response to match {@link SenderResult} to this record.
-     * @return new sender record that can be sent to Kafka using {@link Sender#send(org.reactivestreams.Publisher, boolean)}
+     * @return new sender record that can be sent to Kafka using {@link KafkaSender#send(org.reactivestreams.Publisher, boolean)}
      */
     public static <K, V, T> SenderRecord<K, V, T> create(ProducerRecord<K, V> record, T correlationMetadata) {
         return new SenderRecord<>(record.topic(), record.partition(), record.timestamp(), record.key(), record.value(), correlationMetadata);
@@ -48,7 +48,7 @@ public class SenderRecord<K, V, T> extends ProducerRecord<K, V> {
      *
      * @param topic Topic to which record is sent
      * @param partition The partition to which the record is sent. If null, the partitioner configured
-     *        for the {@link Sender} will be used to choose the partition.
+     *        for the {@link KafkaSender} will be used to choose the partition.
      * @param timestamp The timestamp of the record. If null, the current timestamp will be assigned by the producer.
      *        The timestamp will be overwritten by the broker if the topic is configured with
      *        {@link org.apache.kafka.common.record.TimestampType#LOG_APPEND_TIME}. The actual timestamp
@@ -57,7 +57,7 @@ public class SenderRecord<K, V, T> extends ProducerRecord<K, V> {
      * @param value The contents to be included in the record.
      * @param correlationMetadata Additional correlation metadata that is not sent to Kafka, but is
      *        included in the response to match {@link SenderResult} to this record.
-     * @return new sender record that can be sent to Kafka using {@link Sender#send(org.reactivestreams.Publisher, boolean)}
+     * @return new sender record that can be sent to Kafka using {@link KafkaSender#send(org.reactivestreams.Publisher, boolean)}
      */
     public static <K, V, T> SenderRecord<K, V, T> create(String topic, Integer partition, Long timestamp, K key, V value, T correlationMetadata) {
         return new SenderRecord<K, V, T>(topic, partition, timestamp, key, value, correlationMetadata);

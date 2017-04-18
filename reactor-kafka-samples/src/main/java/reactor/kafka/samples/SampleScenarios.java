@@ -48,9 +48,9 @@ import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.ReceiverRecord;
-import reactor.kafka.receiver.Receiver;
+import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOffset;
-import reactor.kafka.sender.Sender;
+import reactor.kafka.sender.KafkaSender;
 import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.SenderRecord;
 import reactor.kafka.sender.SenderResult;
@@ -140,7 +140,7 @@ public class SampleScenarios {
                     .producerProperty(ProducerConfig.ACKS_CONFIG, "all")
                     .producerProperty(ProducerConfig.MAX_BLOCK_MS_CONFIG, Long.MAX_VALUE)
                     .producerProperty(ProducerConfig.RETRIES_CONFIG, Integer.MAX_VALUE);
-            Sender<Integer, Person> sender = sender(senderOptions);
+            KafkaSender<Integer, Person> sender = sender(senderOptions);
             Flux<Person> srcFlux = source().flux();
             return srcFlux.concatMap(p ->
                     sender.sendOutbound(Mono.just(new ProducerRecord<>(topic1, p.id(), p)))
@@ -164,7 +164,7 @@ public class SampleScenarios {
             this.topic = topic;
         }
         public Flux<?> flux() {
-            return Receiver.create(receiverOptions(Collections.singletonList(topic)).commitInterval(Duration.ZERO))
+            return KafkaReceiver.create(receiverOptions(Collections.singletonList(topic)).commitInterval(Duration.ZERO))
                            .receive()
                            .publishOn(Schedulers.newSingle("sample", true))
                            .concatMap(m -> storeInDB(m.value())
@@ -193,8 +193,8 @@ public class SampleScenarios {
             this.destTopic = destTopic;
         }
         public Flux<?> flux() {
-            Sender<Integer, Person> sender = sender(senderOptions());
-            return sender.send(Receiver.create(receiverOptions(Collections.singleton(sourceTopic)))
+            KafkaSender<Integer, Person> sender = sender(senderOptions());
+            return sender.send(KafkaReceiver.create(receiverOptions(Collections.singleton(sourceTopic)))
                                        .receive()
                                        .map(m -> SenderRecord.create(transform(m.value()), m.receiverOffset())))
                          .doOnNext(m -> m.correlationMetadata().acknowledge());
@@ -209,7 +209,7 @@ public class SampleScenarios {
     /**
      * This sample demonstrates a flow with at-most once delivery. A topic with replication factor one
      * combined with a producer with acks=0 and no retries ensures that messages that could not be sent
-     * to Kafka on the first attempt are dropped. On the consumer side, {@link Receiver#receiveAtmostOnce()}
+     * to Kafka on the first attempt are dropped. On the consumer side, {@link KafkaReceiver#receiveAtmostOnce()}
      * commits offsets before delivery to the application to ensure that if the consumer restarts,
      * messages are not redelivered.
      */
@@ -228,7 +228,7 @@ public class SampleScenarios {
                     .producerProperty(ProducerConfig.RETRIES_CONFIG, "0")
                     .stopOnError(false);
             return sender(senderOptions)
-                .send(Receiver.create(receiverOptions(Collections.singleton(sourceTopic)))
+                .send(KafkaReceiver.create(receiverOptions(Collections.singleton(sourceTopic)))
                               .receiveAtmostOnce()
                               .map(cr -> SenderRecord.create(transform(cr.value()), cr.offset())));
         }
@@ -261,7 +261,7 @@ public class SampleScenarios {
             sender = sender(senderOptions());
             EmitterProcessor<Person> processor = EmitterProcessor.create();
             FluxSink<Person> incoming = processor.sink();
-            Flux<?> inFlux = Receiver.create(receiverOptions(Collections.singleton(sourceTopic)))
+            Flux<?> inFlux = KafkaReceiver.create(receiverOptions(Collections.singleton(sourceTopic)))
                                      .receiveAutoAck()
                                      .concatMap(r -> r)
                                      .doOnNext(m -> incoming.next(m.value()));
@@ -308,7 +308,7 @@ public class SampleScenarios {
         }
         public Flux<?> flux() {
             Scheduler scheduler = Schedulers.newElastic("sample", 60, true);
-            return Receiver.create(receiverOptions(Collections.singleton(topic)).commitInterval(Duration.ZERO))
+            return KafkaReceiver.create(receiverOptions(Collections.singleton(topic)).commitInterval(Duration.ZERO))
                             .receive()
                             .groupBy(m -> m.receiverOffset().topicPartition())
                             .flatMap(partitionFlux -> partitionFlux.publishOn(scheduler)
@@ -452,7 +452,7 @@ public class SampleScenarios {
         String bootstrapServers = BOOTSTRAP_SERVERS;
         String groupId = "sample-group";
         CommittableSource source;
-        Sender<Integer, Person> sender;
+        KafkaSender<Integer, Person> sender;
         List<Disposable> disposables = new ArrayList<>();
 
         AbstractScenario(String bootstrapServers) {
@@ -482,8 +482,8 @@ public class SampleScenarios {
             return SenderOptions.create(props);
         }
 
-        public Sender<Integer, Person> sender(SenderOptions<Integer, Person> senderOptions) {
-            sender = Sender.create(senderOptions);
+        public KafkaSender<Integer, Person> sender(SenderOptions<Integer, Person> senderOptions) {
+            sender = KafkaSender.create(senderOptions);
             return sender;
         }
 

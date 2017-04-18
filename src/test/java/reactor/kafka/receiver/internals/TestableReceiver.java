@@ -34,7 +34,7 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Scheduler;
 import reactor.kafka.receiver.ReceiverRecord;
-import reactor.kafka.receiver.Receiver;
+import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOffset;
 import reactor.kafka.util.TestUtils;
 
@@ -45,15 +45,15 @@ public class TestableReceiver {
     public static final TopicPartition NON_EXISTENT_PARTITION = new TopicPartition("non-existent", 0);
 
     private final Flux<ReceiverRecord<Integer, String>> kafkaFlux;
-    private final KafkaReceiver<Integer, String> kafkaReceiver;
+    private final DefaultKafkaReceiver<Integer, String> kafkaReceiver;
 
-    public TestableReceiver(Receiver<Integer, String> kafkaReceiver, Flux<ReceiverRecord<Integer, String>> kafkaFlux) {
-        this.kafkaReceiver = (KafkaReceiver<Integer, String>) kafkaReceiver;
+    public TestableReceiver(KafkaReceiver<Integer, String> kafkaReceiver, Flux<ReceiverRecord<Integer, String>> kafkaFlux) {
+        this.kafkaReceiver = (DefaultKafkaReceiver<Integer, String>) kafkaReceiver;
         this.kafkaFlux = kafkaFlux;
     }
 
-    public TestableReceiver(Receiver<Integer, String> kafkaReceiver) {
-        this.kafkaReceiver = (KafkaReceiver<Integer, String>) kafkaReceiver;
+    public TestableReceiver(KafkaReceiver<Integer, String> kafkaReceiver) {
+        this.kafkaReceiver = (DefaultKafkaReceiver<Integer, String>) kafkaReceiver;
         this.kafkaFlux = null;
     }
 
@@ -111,7 +111,7 @@ public class TestableReceiver {
     }
 
     public void injectCommitEventForRetriableException() {
-        KafkaReceiver<?, ?>.CommitEvent newEvent = kafkaReceiver.new CommitEvent() {
+        DefaultKafkaReceiver<?, ?>.CommitEvent newEvent = kafkaReceiver.new CommitEvent() {
                 protected boolean isRetriableException(Exception exception) {
                     boolean retriable = exception instanceof RetriableCommitFailedException ||
                             exception.toString().contains(Errors.UNKNOWN_TOPIC_OR_PARTITION.exception().getMessage()) ||
@@ -124,7 +124,7 @@ public class TestableReceiver {
 
     public void waitForClose() throws Exception {
         AtomicBoolean receiverClosed = TestUtils.getField(kafkaReceiver, "isClosed");
-        TestUtils.waitUntil("Receiver not closed", null, closed -> closed.get(), receiverClosed, Duration.ofMillis(10000));
+        TestUtils.waitUntil("KafkaReceiver not closed", null, closed -> closed.get(), receiverClosed, Duration.ofMillis(10000));
     }
 
     public static void setNonExistentPartition(ReceiverOffset offset) {

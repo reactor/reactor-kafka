@@ -6,8 +6,8 @@
 This section describes the reactive API for producing and consuming messages using Apache Kafka.
 There are two main interfaces in Reactor Kafka:
 
-. `reactor.kafka.Sender` for publishing messages to Kafka
-. `reactor.kafka.Receiver` for consuming messages from Kafka
+. `reactor.kafka.KafkaSender` for publishing messages to Kafka
+. `reactor.kafka.KafkaReceiver` for consuming messages from Kafka
 
 Full API for Reactor Kafka is available in the link:../../api/index.html[javadocs].
 
@@ -15,22 +15,22 @@ The project uses https://github.com/reactor/reactor-core[Reactor Core] to expose
 
 
 [[api-guide-sender]]
-=== Reactive Sender
+=== Reactive Kafka Sender
 
-Outbound messages are sent to Kafka using `reactor.kafka.Sender`. Senders are thread-safe and can be shared
-across multiple threads to improve throughput. A Sender is associated with one `KafkaProducer` that is used
+Outbound messages are sent to Kafka using `reactor.kafka.KafkaSender`. Senders are thread-safe and can be shared
+across multiple threads to improve throughput. A `KafkaSender` is associated with one `KafkaProducer` that is used
 to transport messages to Kafka.
 
-A Sender is created with an instance of sender configuration options `reactor.kafka.sender.SenderOptions`.
-Changes made to `SenderOptions` after the creation of `Sender` will not be used by the Sender.
+A KafkaSender is created with an instance of sender configuration options `reactor.kafka.sender.SenderOptions`.
+Changes made to `SenderOptions` after the creation of `KafkaSender` will not be used by the KafkaSender.
 The properties of SenderOptions such as a list of bootstrap Kafka brokers and serializers are passed down
 to the underlying `KafkaProducer`. The properties may be configured on the SenderOptions instance at creation time
-or by using the setter `SenderOptions#producerProperty`. Other configuration options for the reactive Sender like
-the maximum number of in-flight messages can also be configured before the Sender instance is created.
+or by using the setter `SenderOptions#producerProperty`. Other configuration options for the reactive KafkaSender like
+the maximum number of in-flight messages can also be configured before the KafkaSender instance is created.
 
-The generic types of `SenderOptions<K, V>` and `Sender<K, V>` are the key and value types of producer records
-published using the Sender and corresponding serializers must be set on the SenderOptions instance before
-the Sender is created.
+The generic types of `SenderOptions<K, V>` and `KafkaSender<K, V>` are the key and value types of producer records
+published using the KafkaSender and corresponding serializers must be set on the SenderOptions instance before
+the KafkaSender is created.
 
 
 [source,java]
@@ -45,19 +45,19 @@ SenderOptions<Integer, String> senderOptions =
                  .maxInFlight(1024);                           // <2>
 --------
 <1> Specify properties for underlying `KafkaProducer`
-<2> Configure options for reactive Sender
+<2> Configure options for reactive KafkaSender
 
-Once the required options have been configured on the options instance, a new `Sender` instance
+Once the required options have been configured on the options instance, a new `KafkaSender` instance
 can be created with the options already configured in `senderOptions`.
 
 [source,java]
 --------
-Sender<Integer, String> sender = Sender.create(senderOptions);
+KafkaSender<Integer, String> sender = KafkaSender.create(senderOptions);
 --------
 
-The Sender is now ready to send messages to Kafka.
+The KafkaSender is now ready to send messages to Kafka.
 The underlying `KafkaProducer` instance is created lazily when the first message is ready to be sent.
-At this point, a `Sender` instance has been created, but no connections to Kafka have been made yet.
+At this point, a `KafkaSender` instance has been created, but no connections to Kafka have been made yet.
 
 Let's now create a sequence of messages to send to Kafka. Each outbound message to be sent to Kafka
 is represented as a `SenderRecord`.  A `SenderRecord` is a Kafka
@@ -84,7 +84,7 @@ Flux<SenderRecord<Integer. String> outboundFlux =
 
 The code segment above creates a sequence of messages to send to Kafka, using the message index as
 correlation metadata in each `SenderRecord`. The outbound Flux can now be sent to Kafka using the
-`Sender` created earlier.
+`KafkaSender` created earlier.
 
 The code segment below sends the records to Kafka and prints out the response metadata received from Kafka
 and the correlation metadata for each record.  The final `subscribe()` in the code block
@@ -141,15 +141,15 @@ option may be configured to limit the number of messages in-flight at any time.
 ==== Send without result metadata
 
 If individual results are not required for each send request, `ProducerRecord` can be sent to Kafka
-without providing correlation metadata using the `sendOutbound` method. `SenderOutbound` is a fluent
+without providing correlation metadata using the `sendOutbound` method. `KafkaOutbound` is a fluent
 interface that enables sends to be chained together.
 
 [source,java]
 --------
-SenderOutbound<K, V> sendOutbound(Publisher<? extends ProducerRecord<K, V>> records);
+KafkaOutbound<K, V> sendOutbound(Publisher<? extends ProducerRecord<K, V>> records);
 --------
 
-The send sequence is initiated by subscribing to the Mono obtained from `SenderOutbound#then()`.
+The send sequence is initiated by subscribing to the Mono obtained from `KafkaOutbound#then()`.
 The returned Mono completes successfully if all the outbound records are delivered successfully. The Mono
 terminates on the first send failure. If `outboundRecords` is a non-terminating Flux, records continue to
 be sent to Kafka unless a send fails or the returned Mono is cancelled.
@@ -169,8 +169,8 @@ sender.sendOutbound(Flux.range(1,  10)
 <4> Success indicates all records were published, individual partitions or offsets not returned
 <5> Subscribe to request the actual sends
 
-Multiple sends can be chained together using a sequence of sends on the returned `SenderOutbound`.
-When the Mono returned from `SenderOutbound#then()` is subscribed to, the sends are invoked
+Multiple sends can be chained together using a sequence of sends on the returned `KafkaOutbound`.
+When the Mono returned from `KafkaOutbound#then()` is subscribed to, the sends are invoked
 in sequence in the declaration order. The sequence is cancelled if any of the sends fail
 after the configured number of retries.
 
@@ -199,11 +199,11 @@ can result in messages being delivered out of order. The producer property
 ==== Threading model
 
 `KafkaProducer` uses a separate network thread for sending requests and processing responses. To ensure
-that the producer network thread is never blocked by applications while processing results, `Sender`
+that the producer network thread is never blocked by applications while processing results, `KafkaSender`
 delivers responses to applications on a separate scheduler. By default, this is a single threaded
 pooled scheduler that is freed when no longer required. The scheduler can be overridden if required, for instance,
 to use a parallel scheduler when the Kafka sends are part of a larger pipeline. This is done on the `SenderOptions`
-instance before the Sender instance is created using:
+instance before the KafkaSender instance is created using:
 
 
 [source,java]
@@ -216,8 +216,8 @@ public SenderOptions<K, V> scheduler(Scheduler scheduler);
 The number of in-flight sends can be controlled using the `maxInFlight` option. Requests for more elements from
 upstream are limited by the configured `maxInFlight` to ensure that the total number of requests at any time for which
 responses are pending are limited. Along with `buffer.memory` and `max.block.ms` options on `KafkaProducer`,
-`maxInFlight` enables control of memory and thread usage when `Sender` is used in a reactive pipeline. This option
-can be configured on `SenderOptions` before the Sender is created. Default value is 256. For small messages,
+`maxInFlight` enables control of memory and thread usage when `KafkaSender` is used in a reactive pipeline. This option
+can be configured on `SenderOptions` before the KafkaSender is created. Default value is 256. For small messages,
  a higher value will improve throughput.
 
 
@@ -226,9 +226,9 @@ can be configured on `SenderOptions` before the Sender is created. Default value
 public SenderOptions<K, V> maxInFlight(int maxInFlight);
 --------
 
-==== Closing the Sender
+==== Closing the KafkaSender
 
-When the Sender is no longer required, the Sender instance can be closed. The underlying `KafkaProducer` is closed,
+When the KafkaSender is no longer required, the KafkaSender instance can be closed. The underlying `KafkaProducer` is closed,
 closing all client connections and freeing all memory used by the producer.
 
 [source,java]
@@ -239,9 +239,9 @@ sender.close();
 ==== Access to the underlying `KafkaProducer`
 
 Reactive applications may sometimes require access to the underlying producer instance to perform actions that are not
-exposed by the `Sender` interface. For example, an application might need to know the number of partitions in a topic
-in order to choose the partition to send a record to. Operations that are not provided directly by `Sender` like `send`
-can be run on the underlying `KafkaProducer` using `Sender#doOnProducer`.
+exposed by the `KafkaSender` interface. For example, an application might need to know the number of partitions in a topic
+in order to choose the partition to send a record to. Operations that are not provided directly by `KafkaSender` like `send`
+can be run on the underlying `KafkaProducer` using `KafkaSender#doOnProducer`.
 
 [source,java]
 --------
@@ -255,22 +255,22 @@ A `Mono` is returned by `doOnProducer` which completes with the value returned b
 
 
 [[api-guide-receiver]]
-=== Reactive Receiver
+=== Reactive Kafka Receiver
 
-Messages stored in Kafka topics are consumed using the reactive receiver `reactor.kafka.receiver.Receiver`.
-Each instance of `Receiver` is associated with a single instance of `KafkaConsumer`. `Receiver` is not thread-safe
+Messages stored in Kafka topics are consumed using the reactive receiver `reactor.kafka.receiver.KafkaReceiver`.
+Each instance of `KafkaReceiver` is associated with a single instance of `KafkaConsumer`. `KafkaReceiver` is not thread-safe
 since the underlying `KafkaConsumer` cannot be accessed concurrently by multiple threads.
 
 A receiver is created with an instance of receiver configuration options `reactor.kafka.receiver.ReceiverOptions`.
-Changes made to `ReceiverOptions` after the creation of the receiver instance will not be used by the `Receiver`.
+Changes made to `ReceiverOptions` after the creation of the receiver instance will not be used by the `KafkaReceiver`.
 The properties of ReceiverOptions such as a list of bootstrap Kafka brokers and de-serializers are passed down
 to the underlying `KafkaConsumer`. These properties may be configured on the ReceiverOptions instance at creation time
 or by using the setter `ReceiverOptions#consumerProperty`. Other configuration options for the reactive
-Receiver including subscription topics must be added to options before the Receiver instance is created.
+KafkaReceiver including subscription topics must be added to options before the KafkaReceiver instance is created.
 
-The generic types of `ReceiverOptions<K, V>` and `Receiver<K, V>` are the key and value types of consumer records
+The generic types of `ReceiverOptions<K, V>` and `KafkaReceiver<K, V>` are the key and value types of consumer records
 consumed using the receiver and corresponding de-serializers must be set on the ReceiverOptions instance before
-the Receiver is created.
+the KafkaReceiver is created.
 
 [source,java]
 --------
@@ -287,7 +287,7 @@ ReceiverOptions<Integer, String> receiverOptions =
 <1> Specify properties to be provided to `KafkaConsumer`
 <2> Topics to subscribe to
 
-Once the required configuration options have been configured on the options instance, a new `Receiver` instance
+Once the required configuration options have been configured on the options instance, a new `KafkaReceiver` instance
 can be created with these options to consume inbound messages.
 The code block below creates a receiver instance and creates an inbound Flux for the receiver.
 The underlying `KafkaConsumer` instance is created lazily later when the inbound Flux is subscribed to.
@@ -296,8 +296,8 @@ The underlying `KafkaConsumer` instance is created lazily later when the inbound
 [source,java]
 --------
 Flux<ReceiverRecord<Integer, String>> inboundFlux =
-    Receiver.create(receiverOptions)
-            .receive();
+    KafkaReceiver.create(receiverOptions)
+                 .receive();
 --------
 
 The inbound Kafka Flux is ready to be consumed. Each inbound message delivered by the Flux is represented
@@ -390,15 +390,15 @@ Flux is terminated.
 
 ==== Auto-acknowledgement of batches of records
 
-`Receiver#receiveAutoAck` returns a `Flux` of batches of records returned by each `KafkaConsumer#poll()`.
+`KafkaReceiver#receiveAutoAck` returns a `Flux` of batches of records returned by each `KafkaConsumer#poll()`.
 The records in each batch are automatically acknowledged when the Flux corresponding to the batch terminates.
 
 [source,java]
 --------
-Receiver.create(receiverOptions)
-        .receiveAutoAck()
-        .concatMap(r -> r)                                      // <1>
-        .subscribe(r -> System.out.println("Received: " + r));  // <2>
+KafkaReceiver.create(receiverOptions)
+             .receiveAutoAck()
+             .concatMap(r -> r)                                      // <1>
+             .subscribe(r -> System.out.println("Received: " + r));  // <2>
 --------
 <1> Concatenate in order
 <2> Print out each consumer record received, no explicit ack required
@@ -414,16 +414,16 @@ for at-least-once delivery of messages.
 ==== Disabling automatic commits
 
 Applications which don't require offset commits to Kafka may disable automatic commits by not acknowledging
-any records consumed using `Receiver#receive()`.
+any records consumed using `KafkaReceiver#receive()`.
 
 [source,java]
 --------
 receiverOptions = ReceiverOptions.create()
         .commitInterval(Duration.ZERO)             // <1>
         .commitBatchSize(0);                       // <2>
-Receiver.create(receiverOptions)
-        .receive()
-        .subscribe(r -> process(r));               // <3>
+KafkaReceiver.create(receiverOptions)
+             .receive()
+             .subscribe(r -> process(r));          // <3>
 --------
 <1> Disable periodic commits
 <2> Disable commits based on batch size
@@ -435,7 +435,7 @@ Applications may disable automatic commits to avoid re-delivery of records. `Con
 can be configured to "latest" to consume only new records. But this could mean that an unpredictable
 number of records are not consumed if an application fails and restarts.
 
-`Receiver#receiveAtmostOnce` can be used to consume records with at-most-once semantics with a configurable
+`KafkaReceiver#receiveAtmostOnce` can be used to consume records with at-most-once semantics with a configurable
 number of records-per-partition that may be lost if the application fails or crashes. Offsets are committed
 synchronously before the corresponding record is dispatched. Records are guaranteed not to be re-delivered
 even if the consuming application fails, but some records may not be processed if an application fails
@@ -451,9 +451,9 @@ lost per-partition is `ReceiverOptions#atmostOnceCommitCommitAheadSize + 1`.
 
 [source,java]
 --------
-Receiver.create(receiverOptions)
-        .receiveAtmostOnce()
-        .subscribe(r -> System.out.println("Received: " + r));  // <1>
+KafkaReceiver.create(receiverOptions)
+             .receiveAtmostOnce()
+             .subscribe(r -> System.out.println("Received: " + r));  // <1>
 --------
 <1> Process each consumer record, this record is not re-delivered if the processing fails
 
@@ -497,24 +497,24 @@ For example, the following code block starts consuming messages from the latest 
 receiverOptions = receiverOptions
             .addAssignListener(partitions -> partitions.forEach(p -> p.seekToEnd())) // <1>
             .subscription(Collections.singleton(topic));
-Receiver.create(receiverOptions).receive().subscribe();
+KafkaReceiver.create(receiverOptions).receive().subscribe();
 --------
 <1> Seek to the last offset in each assigned partition
 
 
 ==== Consumer lifecycle
 
-Each `Receiver` instance is associated with a `KafkaConsumer` that is created when the inbound
-Flux returned by one of the receive methods in `Receiver` is subscribed to. The consumer is kept alive until
+Each `KafkaReceiver` instance is associated with a `KafkaConsumer` that is created when the inbound
+Flux returned by one of the receive methods in `KafkaReceiver` is subscribed to. The consumer is kept alive until
 the Flux completes. When the Flux completes, all acknowledged offsets are committed and the
 underlying consumer is closed. In Kafka version 0.10.0.x, heartbeats are sent by `KafkaConsumer`
 only when applications invoke `KafkaConsumer#poll()`. Hence delays in processing messages can
-result in session timeouts causing rebalance to be triggered. To avoid this, `Receiver` triggers
+result in session timeouts causing rebalance to be triggered. To avoid this, `KafkaReceiver` triggers
 periodic heartbeats when application processing takes longer than the heartbeat interval for
 older versions of Kafka. In Kafka version 0.10.1.0 and above, `KafkaConsumer` sends
-heartbeats from a background thread to avoid this issue and `Receiver` does not track heartbeats.
+heartbeats from a background thread to avoid this issue and `KafkaReceiver` does not track heartbeats.
 
-Only one receive operation may be active in a `Receiver` at any one time. Any of the receive
+Only one receive operation may be active in a `KafkaReceiver` at any one time. Any of the receive
 methods can be invoked after the receive Flux corresponding to the last receive is terminated.
 
 

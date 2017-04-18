@@ -51,7 +51,7 @@ import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.kafka.AbstractKafkaTest;
 import reactor.kafka.receiver.internals.TestableReceiver;
-import reactor.kafka.sender.Sender;
+import reactor.kafka.sender.KafkaSender;
 import reactor.kafka.sender.SenderRecord;
 import reactor.kafka.util.TestUtils;
 import reactor.test.StepVerifier;
@@ -66,11 +66,11 @@ import static org.junit.Assert.assertNotEquals;
  * Kafka receiver integration tests using embedded Kafka brokers and consumers.
  *
  */
-public class ReceiverTest extends AbstractKafkaTest {
+public class KafkaReceiverTest extends AbstractKafkaTest {
 
-    private static final Logger log = LoggerFactory.getLogger(ReceiverTest.class.getName());
+    private static final Logger log = LoggerFactory.getLogger(KafkaReceiverTest.class.getName());
 
-    private Sender<Integer, String> kafkaSender;
+    private KafkaSender<Integer, String> kafkaSender;
 
     private Scheduler consumerScheduler;
     private Semaphore assignSemaphore = new Semaphore(0);
@@ -79,7 +79,7 @@ public class ReceiverTest extends AbstractKafkaTest {
     @Before
     public void setUp() throws Exception {
         super.setUp();
-        kafkaSender = Sender.create(senderOptions);
+        kafkaSender = KafkaSender.create(senderOptions);
         consumerScheduler = Schedulers.newParallel("test-consumer");
     }
 
@@ -106,7 +106,7 @@ public class ReceiverTest extends AbstractKafkaTest {
                 .addAssignListener(this::seekToBeginning)
                 .subscription(Collections.singletonList(topic));
         Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux =
-                Receiver.create(receiverOptions)
+                KafkaReceiver.create(receiverOptions)
                         .receive();
 
         sendReceive(kafkaFlux, count, count, 0, count * 2);
@@ -125,7 +125,7 @@ public class ReceiverTest extends AbstractKafkaTest {
                 .subscription(Collections.singletonList(topic));
 
         Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux =
-                Receiver.create(receiverOptions)
+                KafkaReceiver.create(receiverOptions)
                         .receive();
 
         sendReceiveWithSendDelay(kafkaFlux, Duration.ofMillis(100), count, count);
@@ -143,7 +143,7 @@ public class ReceiverTest extends AbstractKafkaTest {
                     })
                 .subscription(Collections.singletonList(topic));
         Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux =
-                Receiver.create(receiverOptions)
+                KafkaReceiver.create(receiverOptions)
                         .receive()
                         .doOnError(e -> log.error("KafkaFlux exception", e));
 
@@ -176,7 +176,7 @@ public class ReceiverTest extends AbstractKafkaTest {
                 .addAssignListener(this::onPartitionsAssigned)
                 .subscription(Pattern.compile("test.*"));
         Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux =
-                Receiver.create(receiverOptions)
+                KafkaReceiver.create(receiverOptions)
                         .receive();
         sendReceive(kafkaFlux, 0, 10, 0, 10);
     }
@@ -186,7 +186,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         receiverOptions = receiverOptions
                 .assignment(getTopicPartitions());
         Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux =
-                Receiver.create(receiverOptions)
+                KafkaReceiver.create(receiverOptions)
                         .receive()
                         .doOnSubscribe(s -> assignSemaphore.release());
         sendReceiveWithSendDelay(kafkaFlux, Duration.ofMillis(1000), 0, 10);
@@ -198,7 +198,7 @@ public class ReceiverTest extends AbstractKafkaTest {
                 .commitBatchSize(0)
                 .assignment(getTopicPartitions());
         Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux =
-                Receiver.create(receiverOptions)
+                KafkaReceiver.create(receiverOptions)
                         .receive()
                         .doOnNext(r -> r.receiverOffset().commit().block())
                         .doOnSubscribe(s -> assignSemaphore.release());
@@ -233,7 +233,7 @@ public class ReceiverTest extends AbstractKafkaTest {
                         revokeSemaphore.release();
                     });
         Disposable disposable =
-                Receiver.create(receiverOptions)
+                KafkaReceiver.create(receiverOptions)
                         .receive()
                         .doOnNext(m -> {
                                 assertTrue(assignedPartitions.containsKey(m.receiverOffset().topicPartition()));
@@ -252,7 +252,7 @@ public class ReceiverTest extends AbstractKafkaTest {
 
     @Test
     public void autoAck() throws Exception {
-        Receiver<Integer, String> receiver = createReceiver();
+        KafkaReceiver<Integer, String> receiver = createReceiver();
         Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux = receiver.receiveAutoAck().concatMap(r -> r);
         sendReceive(kafkaFlux, 0, 100, 0, 100);
         waitForCommits(receiver, 100);
@@ -268,7 +268,7 @@ public class ReceiverTest extends AbstractKafkaTest {
     @Test
     public void atmostOnce() throws Exception {
         receiverOptions.closeTimeout(Duration.ofMillis(1000));
-        Receiver<Integer, String> receiver = createReceiver();
+        KafkaReceiver<Integer, String> receiver = createReceiver();
         Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux = receiver.receiveAtmostOnce();
 
         sendReceive(kafkaFlux, 0, 10, 0, 10);
@@ -282,7 +282,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         receiverOptions.closeTimeout(Duration.ofMillis(1000));
         receiverOptions.commitBatchSize(1);
         receiverOptions.commitInterval(Duration.ofMillis(60000));
-        Receiver<Integer, String> receiver = createReceiver();
+        KafkaReceiver<Integer, String> receiver = createReceiver();
         Flux<ReceiverRecord<Integer, String>> fluxWithAck = receiver.receive().doOnNext(record -> record.receiverOffset().acknowledge());
         sendReceive(fluxWithAck, 0, 100, 0, 100);
 
@@ -295,7 +295,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         receiverOptions.closeTimeout(Duration.ofMillis(1000));
         receiverOptions.commitBatchSize(10);
         receiverOptions.commitInterval(Duration.ofMillis(60000));
-        Receiver<Integer, String> receiver = createReceiver();
+        KafkaReceiver<Integer, String> receiver = createReceiver();
         Flux<ReceiverRecord<Integer, String>> fluxWithAck = receiver.receive().doOnNext(record -> record.receiverOffset().acknowledge());
         sendReceive(fluxWithAck, 0, 100, 0, 100);
 
@@ -308,7 +308,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         receiverOptions.closeTimeout(Duration.ofMillis(1000));
         receiverOptions.commitBatchSize(Integer.MAX_VALUE);
         receiverOptions.commitInterval(Duration.ofMillis(1000));
-        Receiver<Integer, String> receiver = createReceiver();
+        KafkaReceiver<Integer, String> receiver = createReceiver();
         Flux<ReceiverRecord<Integer, String>> fluxWithAck = receiver.receive().doOnNext(record -> record.receiverOffset().acknowledge());
         sendReceive(fluxWithAck, 0, 100, 0, 100);
         Thread.sleep(1500);
@@ -322,7 +322,7 @@ public class ReceiverTest extends AbstractKafkaTest {
                                          .commitBatchSize(10)
                                          .commitInterval(Duration.ofMillis(60000))
                                          .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-        Receiver<Integer, String> receiver = createReceiver();
+        KafkaReceiver<Integer, String> receiver = createReceiver();
         Flux<ReceiverRecord<Integer, String>> fluxWithAck = receiver.receive().doOnNext(record -> {
                 if (receivedMessages.get(record.partition()).size() < 10)
                     record.receiverOffset().acknowledge();
@@ -347,7 +347,7 @@ public class ReceiverTest extends AbstractKafkaTest {
                 .addAssignListener(this::seekToBeginning)
                 .subscription(Collections.singletonList(topic));
         Flux<ReceiverRecord<Integer, String>> kafkaFlux =
-                Receiver.create(receiverOptions)
+                KafkaReceiver.create(receiverOptions)
                         .receive()
                         .doOnNext(record -> record.receiverOffset()
                                                   .commit()
@@ -367,7 +367,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         AtomicBoolean commitSuccess = new AtomicBoolean();
         Semaphore commitErrorSemaphore = new Semaphore(0);
         receiverOptions = receiverOptions.commitInterval(Duration.ZERO).commitBatchSize(0);
-        Receiver<Integer, String> receiver = createReceiver();
+        KafkaReceiver<Integer, String> receiver = createReceiver();
         Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux = receiver.receive()
                          .doOnNext(record -> {
                                  ReceiverOffset offset = record.receiverOffset();
@@ -394,7 +394,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         for (int i = 0; i < committedOffsets.length; i++)
             committedOffsets[i] = 0;
         receiverOptions = receiverOptions.commitInterval(Duration.ZERO).commitBatchSize(0);
-        Receiver<Integer, String> receiver = createReceiver();
+        KafkaReceiver<Integer, String> receiver = createReceiver();
         Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux = receiver.receive()
                          .doOnNext(record -> {
                                  assertEquals(committedOffsets[record.partition()], record.offset());
@@ -416,7 +416,7 @@ public class ReceiverTest extends AbstractKafkaTest {
             committedOffsets[i] = 0;
         receiverOptions = receiverOptions.commitInterval(Duration.ZERO).commitBatchSize(0)
                                  .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-        Receiver<Integer, String> receiver = createReceiver();
+        KafkaReceiver<Integer, String> receiver = createReceiver();
         Flux<ReceiverRecord<Integer, String>> inboundFlux = receiver.receive()
                 .doOnNext(record -> onReceive(record));
 
@@ -441,7 +441,7 @@ public class ReceiverTest extends AbstractKafkaTest {
             committedOffsets[i] = 0;
         receiverOptions = receiverOptions.commitInterval(Duration.ZERO).commitBatchSize(0)
                                  .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-        Receiver<Integer, String> receiver = createReceiver();
+        KafkaReceiver<Integer, String> receiver = createReceiver();
         Flux<ReceiverRecord<Integer, String>> inboundFlux = receiver.receive()
                 .doOnNext(record -> onReceive(record));
 
@@ -467,7 +467,7 @@ public class ReceiverTest extends AbstractKafkaTest {
             committedOffsets[i] = -1;
         List<ReceiverOffset> uncommitted = new ArrayList<>();
         receiverOptions = receiverOptions.commitInterval(Duration.ZERO).commitBatchSize(0);
-        Receiver<Integer, String> receiver = createReceiver();
+        KafkaReceiver<Integer, String> receiver = createReceiver();
         Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux = receiver.receive()
                          .doOnNext(record -> {
                                  ReceiverOffset offset = record.receiverOffset();
@@ -506,7 +506,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         Semaphore commitSuccessSemaphore = new Semaphore(0);
         Semaphore commitFailureSemaphore = new Semaphore(0);
         receiverOptions = receiverOptions.commitInterval(Duration.ZERO).commitBatchSize(0);
-        Receiver<Integer, String> receiver = createReceiver();
+        KafkaReceiver<Integer, String> receiver = createReceiver();
         TestableReceiver testableReceiver = new TestableReceiver(receiver);
         Flux<? extends ConsumerRecord<Integer, String>> flux = testableReceiver
                 .receiveWithManualCommitFailures(retriableException, failureCount, receiveSemaphore, commitSuccessSemaphore, commitFailureSemaphore);
@@ -558,7 +558,7 @@ public class ReceiverTest extends AbstractKafkaTest {
                                .closeTimeout(Duration.ofMillis(1000))
                                .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
 
-        Receiver<Integer, String> receiver = createReceiver();
+        KafkaReceiver<Integer, String> receiver = createReceiver();
         TestableReceiver testReceiver = new TestableReceiver(receiver);
         Semaphore onNextSemaphore = new Semaphore(0);
         Flux<ReceiverRecord<Integer, String>> flux = receiver.receive()
@@ -604,7 +604,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         CountDownLatch receiveLatch1 = new CountDownLatch(count);
         // Subscribe on partition 1
         Flux<? extends ConsumerRecord<Integer, String>> partition1Flux =
-                Receiver.create(createReceiverOptions(null, "group2")
+                KafkaReceiver.create(createReceiverOptions(null, "group2")
                                 .maxCommitAttempts(100)
                                 .addAssignListener(this::seekToBeginning)
                                 .addAssignListener(this::onPartitionsAssigned)
@@ -615,7 +615,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         subscribe(partition1Flux, receiveLatch1);
 
         // Receive from partition 0 and send to partition 1
-        Flux<ReceiverRecord<Integer, String>> flux0 = Receiver.create(receiverOptions
+        Flux<ReceiverRecord<Integer, String>> flux0 = KafkaReceiver.create(receiverOptions
                         .commitInterval(Duration.ZERO)
                         .commitBatchSize(0)
                         .addAssignListener(this::seekToBeginning)
@@ -671,7 +671,7 @@ public class ReceiverTest extends AbstractKafkaTest {
                 .addAssignListener(this::seekToBeginning)
                 .subscription(Collections.singletonList(topic));
         Flux<ReceiverRecord<Integer, String>> kafkaFlux =
-                Receiver.create(receiverOptions)
+                KafkaReceiver.create(receiverOptions)
                         .receive()
                         .doOnNext(record -> {
                                 onReceive(record);
@@ -726,7 +726,7 @@ public class ReceiverTest extends AbstractKafkaTest {
                             assignSemaphore.release();
                         })
                     .subscription(Collections.singletonList(topic));
-            Receiver<Integer, String> receiver = Receiver.create(receiverOptions);
+            KafkaReceiver<Integer, String> receiver = KafkaReceiver.create(receiverOptions);
             Flux<ConsumerRecord<Integer, String>> kafkaFlux = receiver
                             .receiveAutoAck()
                             .concatMap(r -> r);
@@ -763,7 +763,7 @@ public class ReceiverTest extends AbstractKafkaTest {
                         })
                     .addRevokeListener(p -> log.info("Revoked {} {} {}", Thread.currentThread().getName(), id, p))
                     .subscription(Collections.singletonList(topic));
-            kafkaFlux[i] = Receiver.create(receiverOptions).receive()
+            kafkaFlux[i] = KafkaReceiver.create(receiverOptions).receive()
                     .publishOn(consumerScheduler)
                     .doOnNext(record -> {
                             onReceive(record);
@@ -848,7 +848,7 @@ public class ReceiverTest extends AbstractKafkaTest {
                 .addAssignListener(this::onPartitionsAssigned)
                 .subscription(Collections.singletonList(topic));
         Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux =
-                Receiver.create(receiverOptions)
+                KafkaReceiver.create(receiverOptions)
                         .receive()
                         .publishOn(Schedulers.single())
                         .doOnNext(record -> {
@@ -873,7 +873,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         receiverOptions = receiverOptions.consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
                                          .addAssignListener(this::onPartitionsAssigned)
                                          .subscription(Collections.singletonList(topic));
-        Receiver<Integer, String> receiver = Receiver.create(receiverOptions);
+        KafkaReceiver<Integer, String> receiver = KafkaReceiver.create(receiverOptions);
         Consumer<ReceiverRecord<Integer, String>> onNext = record -> {
             receiveLatch.countDown();
             onReceive(record);
@@ -900,14 +900,14 @@ public class ReceiverTest extends AbstractKafkaTest {
         return disposable;
     }
 
-    public Receiver<Integer, String> createReceiver() {
+    public KafkaReceiver<Integer, String> createReceiver() {
         receiverOptions = receiverOptions.addAssignListener(this::onPartitionsAssigned)
                 .subscription(Collections.singletonList(topic));
-        return Receiver.create(receiverOptions);
+        return KafkaReceiver.create(receiverOptions);
     }
 
     public TestableReceiver createTestFlux() {
-        Receiver<Integer, String> receiver = createReceiver();
+        KafkaReceiver<Integer, String> receiver = createReceiver();
         Flux<ReceiverRecord<Integer, String>> kafkaFlux = receiver.receive();
         return new TestableReceiver(receiver, kafkaFlux);
     }
@@ -1041,7 +1041,7 @@ public class ReceiverTest extends AbstractKafkaTest {
             assertEquals(committedOffsets[i], receivedMessages.get(i).size());
     }
 
-    private void restartAndCheck(Receiver<Integer, String> receiver,
+    private void restartAndCheck(KafkaReceiver<Integer, String> receiver,
             int sendStartIndex, int sendCount, int maxRedelivered) throws Exception {
         Thread.sleep(500); // Give a little time for commits to complete before terminating abruptly
         new TestableReceiver(receiver).terminate();
@@ -1065,7 +1065,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         subscribeDisposables.clear();
     }
 
-    private long committedCount(Receiver<Integer, String> receiver) {
+    private long committedCount(KafkaReceiver<Integer, String> receiver) {
         long committed = 0;
         for (int j = 0; j < partitions; j++) {
             TopicPartition p = new TopicPartition(topic, j);
@@ -1076,7 +1076,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         return committed;
     }
 
-    private void waitForCommits(Receiver<Integer, String> receiver, int count) {
+    private void waitForCommits(KafkaReceiver<Integer, String> receiver, int count) {
         TestUtils.waitUntil("Commits did not complete, committed=", () -> committedCount(receiver), t -> committedCount(receiver) == count, receiver, Duration.ofSeconds(2));
     }
 }

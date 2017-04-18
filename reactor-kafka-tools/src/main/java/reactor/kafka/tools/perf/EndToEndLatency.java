@@ -66,8 +66,8 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.ReceiverRecord;
-import reactor.kafka.receiver.Receiver;
-import reactor.kafka.sender.Sender;
+import reactor.kafka.receiver.KafkaReceiver;
+import reactor.kafka.sender.KafkaSender;
 import reactor.kafka.sender.SenderOptions;
 
 public class EndToEndLatency {
@@ -327,7 +327,7 @@ public class EndToEndLatency {
     }
 
     static class ReactiveEndToEndLatency extends AbstractEndToEndLatency {
-        final Sender<byte[], byte[]> sender;
+        final KafkaSender<byte[], byte[]> sender;
         final Flux<ReceiverRecord<byte[], byte[]>> flux;
         final LinkedBlockingQueue<ConsumerRecord<byte[], byte[]>> receiveQueue;
         final Semaphore sendSemaphore = new Semaphore(0);
@@ -336,7 +336,7 @@ public class EndToEndLatency {
 
         ReactiveEndToEndLatency(Map<String, Object> consumerPropsOverride, Map<String, Object> producerPropsOverride, String bootstrapServers, String topic) {
             super(consumerPropsOverride, producerPropsOverride, bootstrapServers, topic);
-            sender = Sender.create(SenderOptions.create(producerProps));
+            sender = KafkaSender.create(SenderOptions.create(producerProps));
             ReceiverOptions<byte[], byte[]> receiverOptions = ReceiverOptions.<byte[], byte[]>create(consumerProps)
                     .addAssignListener(partitions -> {
                             if (assignSemaphore.availablePermits() == 0) {
@@ -345,7 +345,7 @@ public class EndToEndLatency {
                             }
                         })
                     .subscription(Collections.singleton(topic));
-            flux = Receiver.create(receiverOptions)
+            flux = KafkaReceiver.create(receiverOptions)
                            .receive();
             receiveQueue = new LinkedBlockingQueue<>();
             System.out.println("Running latency test using Reactive API, class=" + this.getClass().getName());

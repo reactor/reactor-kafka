@@ -24,19 +24,19 @@ import org.reactivestreams.Publisher;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.kafka.sender.internals.KafkaSender;
+import reactor.kafka.sender.internals.DefaultKafkaSender;
 import reactor.kafka.sender.internals.ProducerFactory;
 
 /**
  * Reactive producer that sends outgoing records to topic partitions of a Kafka
  * cluster. The producer is thread-safe and can be used to publish records to
- * multiple partitions. It is recommended that a single Sender is shared for each record
+ * multiple partitions. It is recommended that a single {@link KafkaSender} is shared for each record
  * type in a client application.
  *
  * @param <K> outgoing record key type
  * @param <V> outgoing record value type
  */
-public interface Sender<K, V> {
+public interface KafkaSender<K, V> {
 
     /**
      * Creates a Kafka sender that appends records to Kafka topic partitions.
@@ -44,8 +44,8 @@ public interface Sender<K, V> {
      *        after the sender is created will not be used by the sender.
      * @return new instance of Kafka sender
      */
-    public static <K, V> Sender<K, V> create(SenderOptions<K, V> options) {
-        return new KafkaSender<>(ProducerFactory.INSTANCE, options);
+    public static <K, V> KafkaSender<K, V> create(SenderOptions<K, V> options) {
+        return new DefaultKafkaSender<>(ProducerFactory.INSTANCE, options);
     }
 
     /**
@@ -91,8 +91,8 @@ public interface Sender<K, V> {
      * or to attempt sends of all records even if one or more records could not be delivered.
      * <p>
      * The outbound instance returned can be used to chain together multiple send sequences
-     * using {@link SenderOutbound#send(Publisher)}. Like {@link Flux} and {@link Mono}, subscribing
-     * to the tail {@link SenderOutbound} will schedule all parent sends in the declaration order.
+     * using {@link KafkaOutbound#send(Publisher)}. Like {@link Flux} and {@link Mono}, subscribing
+     * to the tail {@link KafkaOutbound} will schedule all parent sends in the declaration order.
      *
      * <p>
      * Example usage:
@@ -108,10 +108,10 @@ public interface Sender<K, V> {
      * @param records Outbound producer records
      * @return chainable reactive gateway for outgoing Kafka producer records
      */
-    SenderOutbound<K, V> sendOutbound(Publisher<? extends ProducerRecord<K, V>> records);
+    KafkaOutbound<K, V> sendOutbound(Publisher<? extends ProducerRecord<K, V>> records);
 
     /**
-     * Invokes the specified function on the Kafka {@link Producer} associated with this Sender.
+     * Invokes the specified function on the Kafka {@link Producer} associated with this {@link KafkaSender}.
      * The function is invoked when the returned {@link Mono} is subscribed to.
      * <p>
      * Example usage:
@@ -121,7 +121,7 @@ public interface Sender<K, V> {
      *           .doOnSuccess(partitions -> System.out.println("Partitions " + partitions));
      * }
      * </pre>
-     * Functions that are directly supported on the reactive {@link Sender} interface (eg. send)
+     * Functions that are directly supported on the reactive {@link KafkaSender} interface (eg. send)
      * should not be invoked from <code>function</code>. The methods supported by
      * <code>doOnProducer</code> are:
      * <ul>

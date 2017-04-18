@@ -57,7 +57,7 @@ import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
 import reactor.core.Disposable;
 import reactor.kafka.receiver.ReceiverOptions;
-import reactor.kafka.receiver.Receiver;
+import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverPartition;
 
 public class ConsumerPerformance {
@@ -298,7 +298,7 @@ public class ConsumerPerformance {
     }
     static class ReactiveConsumerPerformance extends AbstractConsumerPerformance {
 
-        Receiver<byte[], byte[]> receiver;
+        KafkaReceiver<byte[], byte[]> receiver;
 
         ReactiveConsumerPerformance(Map<String, Object> consumerPropsOverride, String topic, String groupId, ConsumerPerfConfig config) {
             super(consumerPropsOverride, topic, groupId, config);
@@ -320,7 +320,7 @@ public class ConsumerPerformance {
                             }
                         })
                     .subscription(Collections.singletonList(topic));
-            receiver = Receiver.create(receiverOptions);
+            receiver = KafkaReceiver.create(receiverOptions);
             Disposable disposable = receiver
                      .receive()
                      .limitRate(numMessages)

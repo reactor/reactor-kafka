@@ -29,7 +29,7 @@ import reactor.core.scheduler.Schedulers;
 import reactor.util.concurrent.QueueSupplier;
 
 /**
- * Configuration properties for reactive Kafka {@link Sender} and its underlying Kafka
+ * Configuration properties for reactive Kafka {@link KafkaSender} and its underlying Kafka
  * {@link Producer}.
  */
 public class SenderOptions<K, V> {
@@ -154,7 +154,7 @@ public class SenderOptions<K, V> {
     }
 
     /**
-     * Configures error handling behaviour for {@link Sender#send(org.reactivestreams.Publisher)}.
+     * Configures error handling behaviour for {@link KafkaSender#send(org.reactivestreams.Publisher)}.
      * If set to true, send fails when an error is encountered and only records
      * that are already in transit may be delivered after the first error. If set to false,
      * an attempt is made to send each record to Kafka, even if one or more records cannot

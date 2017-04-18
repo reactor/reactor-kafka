@@ -59,17 +59,17 @@ import reactor.test.StepVerifier;
  * Kafka sender integration tests using embedded Kafka brokers and producers.
  *
  */
-public class SenderTest extends AbstractKafkaTest {
+public class KafkaSenderTest extends AbstractKafkaTest {
 
-    private static final Logger log = LoggerFactory.getLogger(SenderTest.class.getName());
+    private static final Logger log = LoggerFactory.getLogger(KafkaSenderTest.class.getName());
 
-    private Sender<Integer, String> kafkaSender;
+    private KafkaSender<Integer, String> kafkaSender;
     private Consumer<Integer, String> consumer;
 
     @Before
     public void setUp() throws Exception {
         super.setUp();
-        kafkaSender = Sender.create(senderOptions);
+        kafkaSender = KafkaSender.create(senderOptions);
         consumer = createConsumer();
     }
 
@@ -120,7 +120,7 @@ public class SenderTest extends AbstractKafkaTest {
 
     /**
      * Good path send chaining without response. Tests that all chain sends complete
-     * successfully when the tail SenderOutbound is subscribed to.
+     * successfully when the tail KafkaOutbound is subscribed to.
      */
     @Test
     public void sendChain() throws Exception {
@@ -137,7 +137,7 @@ public class SenderTest extends AbstractKafkaTest {
 
     /**
      * Good path send chaining without response. Tests that all chain sends complete
-     * successfully when the tail SenderOutbound is subscribed to.
+     * successfully when the tail KafkaOutbound is subscribed to.
      */
     @Test
     public void sendChainFailure() throws Exception {
@@ -457,7 +457,7 @@ public class SenderTest extends AbstractKafkaTest {
 
     private void recreateSender(SenderOptions<Integer, String> senderOptions) {
         kafkaSender.close();
-        kafkaSender = Sender.create(senderOptions);
+        kafkaSender = KafkaSender.create(senderOptions);
     }
 
 }

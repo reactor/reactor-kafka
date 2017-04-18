@@ -39,8 +39,8 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Operators;
-import reactor.kafka.sender.SenderOutbound;
-import reactor.kafka.sender.Sender;
+import reactor.kafka.sender.KafkaOutbound;
+import reactor.kafka.sender.KafkaSender;
 import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.SenderRecord;
 import reactor.kafka.sender.SenderResult;
@@ -53,11 +53,11 @@ import reactor.kafka.sender.SenderResult;
  * @param <K> outgoing message key type
  * @param <V> outgoing message value type
  */
-public class KafkaSender<K, V> implements Sender<K, V> {
+public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
 
-    private static final Logger log = LoggerFactory.getLogger(KafkaSender.class.getName());
+    private static final Logger log = LoggerFactory.getLogger(DefaultKafkaSender.class.getName());
 
-    // Note: Methods added to this set should also be included in javadoc for {@link Sender#doOnProducer(Function)}
+    /** Note: Methods added to this set should also be included in javadoc for {@link KafkaSender#doOnProducer(Function)} */
     private static final Set<String> DELEGATE_METHODS = new HashSet<>(Arrays.asList(
             "partitionsFor",
             "metrics",
@@ -73,7 +73,7 @@ public class KafkaSender<K, V> implements Sender<K, V> {
      * Constructs a reactive Kafka producer with the specified configuration properties. All Kafka
      * producer properties are supported. The underlying Kafka producer is created lazily when required.
      */
-    public KafkaSender(ProducerFactory producerFactory, SenderOptions<K, V> options) {
+    public DefaultKafkaSender(ProducerFactory producerFactory, SenderOptions<K, V> options) {
         hasProducer = new AtomicBoolean();
         this.senderOptions = options.toImmutable();
         this.producerMono = Mono.fromCallable(() -> {
@@ -97,8 +97,8 @@ public class KafkaSender<K, V> implements Sender<K, V> {
 
 
     @Override
-    public SenderOutbound<K, V> sendOutbound(Publisher<? extends ProducerRecord<K, V>> records) {
-        return new KafkaOutbound<K, V>(this).send(records);
+    public KafkaOutbound<K, V> sendOutbound(Publisher<? extends ProducerRecord<K, V>> records) {
+        return new DefaultKafkaOutbound<K, V>(this).send(records);
     }
 
     @Override
@@ -345,21 +345,21 @@ public class KafkaSender<K, V> implements Sender<K, V> {
         }
     }
 
-    private static class KafkaOutbound<K, V> implements SenderOutbound<K, V> {
+    private static class DefaultKafkaOutbound<K, V> implements KafkaOutbound<K, V> {
 
-        private final KafkaSender<K, V> sender;
+        private final DefaultKafkaSender<K, V> sender;
 
-        KafkaOutbound(KafkaSender<K, V> sender) {
+        DefaultKafkaOutbound(DefaultKafkaSender<K, V> sender) {
             this.sender = sender;
         }
 
         @Override
-        public SenderOutbound<K, V> send(Publisher<? extends ProducerRecord<K, V>> records) {
+        public KafkaOutbound<K, V> send(Publisher<? extends ProducerRecord<K, V>> records) {
             return then(sender.sendProducerRecords(records).then());
         }
 
         @Override
-        public SenderOutbound<K, V> then(Publisher<Void> other) {
+        public KafkaOutbound<K, V> then(Publisher<Void> other) {
             return new KafkaOutboundThen<>(sender, this, other);
         }
 
@@ -369,11 +369,11 @@ public class KafkaSender<K, V> implements Sender<K, V> {
 
     }
 
-    private static class KafkaOutboundThen<K, V> extends KafkaOutbound<K, V> {
+    private static class KafkaOutboundThen<K, V> extends DefaultKafkaOutbound<K, V> {
 
         private final Mono<Void> thenMono;
 
-        KafkaOutboundThen(KafkaSender<K, V> sender, SenderOutbound<K, V> kafkaOutbound, Publisher<Void> thenPublisher) {
+        KafkaOutboundThen(DefaultKafkaSender<K, V> sender, KafkaOutbound<K, V> kafkaOutbound, Publisher<Void> thenPublisher) {
             super(sender);
             Mono<Void> parentMono = kafkaOutbound.then();
             if (parentMono == Mono.<Void>empty())
