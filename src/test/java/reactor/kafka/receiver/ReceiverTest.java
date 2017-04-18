@@ -884,7 +884,7 @@ public class ReceiverTest extends AbstractKafkaTest {
         };
         Disposable disposable = receiver.receive()
                 .doOnNext(onNext)
-                .onErrorResumeWith(e -> receiver.receive().doOnNext(onNext))
+                .onErrorResume(e -> receiver.receive().doOnNext(onNext))
                 .subscribe();
         subscribeDisposables.add(disposable);
         waitFoPartitionAssignment();

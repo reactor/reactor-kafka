@@ -76,9 +76,8 @@ configure(allprojects) { project ->
     mavenLocal()
     maven { url 'http://repo.spring.io/libs-release' }
     maven { url 'http://repo.spring.io/libs-snapshot' }
-    maven { url 'https://repository.apache.org/content/groups/staging' }
-    jcenter()
     mavenCentral()
+    jcenter()
   }
 
   apply plugin: 'maven'

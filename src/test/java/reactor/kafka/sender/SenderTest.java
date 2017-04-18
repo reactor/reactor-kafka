@@ -283,7 +283,7 @@ public class SenderTest extends AbstractKafkaTest {
                             if (r.exception() == null)
                                 lastSuccessful.set(r.correlationMetadata());
                         })
-                    .onErrorResumeWith(e -> {
+                    .onErrorResume(e -> {
                             waitForTopic(topic, partitions, false);
                             TestUtils.sleep(2000);
                             int next = lastSuccessful.get() + 1;

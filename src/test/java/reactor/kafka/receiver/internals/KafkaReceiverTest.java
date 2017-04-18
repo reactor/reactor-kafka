@@ -848,7 +848,7 @@ public class KafkaReceiverTest {
                         if (receivedMessages.size() == 2)
                             throw new RuntimeException("Failing onNext");
                     })
-                .onErrorResumeWith(e -> receiver.receive().doOnSubscribe(s -> receivedMessages.clear()));
+                .onErrorResume(e -> receiver.receive().doOnSubscribe(s -> receivedMessages.clear()));
 
         sendMessages(topic, 0, count);
         receiveAndVerify(inboundFlux, 10);

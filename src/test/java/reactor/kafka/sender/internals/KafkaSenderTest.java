@@ -180,9 +180,9 @@ public class KafkaSenderTest {
         OutgoingRecords outgoing2 = new OutgoingRecords(cluster).append(topic, 10).append("nonexistent", 10);
         OutgoingRecords outgoing3 = new OutgoingRecords(cluster).append("nonexistent", 10).append(topic, 10);
         Mono<Void> mono = sender
-                .sendOutbound(outgoing1.producerRecords()).then().otherwise(e -> Mono.empty())
-                .then(sender.sendOutbound(outgoing2.producerRecords()).then().otherwise(e -> Mono.empty()))
-                .then(sender.sendOutbound(outgoing3.producerRecords()).then().otherwise(e -> Mono.empty()));
+                .sendOutbound(outgoing1.producerRecords()).then().onErrorResume(e -> Mono.empty())
+                .then(sender.sendOutbound(outgoing2.producerRecords()).then().onErrorResume(e -> Mono.empty()))
+                .then(sender.sendOutbound(outgoing3.producerRecords()).then().onErrorResume(e -> Mono.empty()));
         StepVerifier.create(mono)
                     .expectComplete()
                     .verify();
@@ -583,7 +583,7 @@ public class KafkaSenderTest {
             remaining.add(i);
         AtomicInteger exceptionCount = new AtomicInteger();
         sender.send(outgoing.senderRecords())
-              .onErrorResumeWith(e -> {
+              .onErrorResume(e -> {
                       if (e instanceof LeaderNotAvailableException)
                           exceptionCount.incrementAndGet();
                       for (TopicPartition partition : cluster.partitions(topic)) {
