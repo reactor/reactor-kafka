@@ -73,7 +73,6 @@ configure(allprojects) { project ->
   group = 'io.projectreactor.kafka'
 
   repositories {
-    mavenLocal()
     maven { url 'http://repo.spring.io/libs-release' }
     maven { url 'http://repo.spring.io/libs-snapshot' }
     mavenCentral()
