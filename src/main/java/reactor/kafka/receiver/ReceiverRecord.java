@@ -20,8 +20,8 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 /**
  * Represents an incoming record dispatched by {@link Receiver}.
  *
- * @param <K> Incomimg record key type
- * @param <V> Incomimg record value type
+ * @param <K> Incoming record key type
+ * @param <V> Incoming record value type
  */
 public class ReceiverRecord<K, V> extends ConsumerRecord<K, V> {
 
