@@ -353,7 +353,7 @@ public class MockSenderTest {
     }
 
     /**
-     * Tests {@link KafkaSender#send(org.reactivestreams.Publisher, boolean) good path. Checks that
+     * Tests {@link KafkaSender#send(org.reactivestreams.Publisher)} good path. Checks that
      * responses are returned in the correct order for each partition.
      */
     @Test
@@ -363,7 +363,7 @@ public class MockSenderTest {
     }
 
     /**
-     * Tests {@link KafkaSender#send(org.reactivestreams.Publisher, boolean) error path with delayed error.
+     * Tests {@link KafkaSender#send(org.reactivestreams.Publisher)} error path with delayed error.
      * Checks that responses are returned in the correct order for each partition and that the flux
      * is failed after attempting to deliver all records.
      */
@@ -384,7 +384,7 @@ public class MockSenderTest {
     }
 
     /**
-     * Tests {@link KafkaSender#send(org.reactivestreams.Publisher, boolean) error path with stopOnError.
+     * Tests {@link KafkaSender#send(org.reactivestreams.Publisher)} error path with stopOnError.
      */
     @Test
     public void sendWithResponseStopOnError() {

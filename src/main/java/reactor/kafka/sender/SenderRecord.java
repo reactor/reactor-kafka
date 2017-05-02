@@ -32,12 +32,12 @@ public class SenderRecord<K, V, T> extends ProducerRecord<K, V> {
     private final T correlationMetadata;
 
     /**
-     * Converts a {@link ProducerRecord} a {@link SenderRecord} to send to Kafka
+     * Converts a {@link ProducerRecord} a {@link SenderRecord} to send to Kafka.
      *
      * @param record the producer record to send to Kafka
      * @param correlationMetadata Additional correlation metadata that is not sent to Kafka, but is
      *        included in the response to match {@link SenderResult} to this record.
-     * @return new sender record that can be sent to Kafka using {@link KafkaSender#send(org.reactivestreams.Publisher, boolean)}
+     * @return new sender record that can be sent to Kafka using {@link KafkaSender#send(org.reactivestreams.Publisher)}
      */
     public static <K, V, T> SenderRecord<K, V, T> create(ProducerRecord<K, V> record, T correlationMetadata) {
         return new SenderRecord<>(record.topic(), record.partition(), record.timestamp(), record.key(), record.value(), correlationMetadata);
@@ -57,7 +57,7 @@ public class SenderRecord<K, V, T> extends ProducerRecord<K, V> {
      * @param value The contents to be included in the record.
      * @param correlationMetadata Additional correlation metadata that is not sent to Kafka, but is
      *        included in the response to match {@link SenderResult} to this record.
-     * @return new sender record that can be sent to Kafka using {@link KafkaSender#send(org.reactivestreams.Publisher, boolean)}
+     * @return new sender record that can be sent to Kafka using {@link KafkaSender#send(org.reactivestreams.Publisher)}
      */
     public static <K, V, T> SenderRecord<K, V, T> create(String topic, Integer partition, Long timestamp, K key, V value, T correlationMetadata) {
         return new SenderRecord<K, V, T>(topic, partition, timestamp, key, value, correlationMetadata);

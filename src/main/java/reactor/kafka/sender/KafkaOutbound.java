@@ -20,7 +20,7 @@ import reactor.core.publisher.Mono;
  * record cannot be delivered to Kafka, the outbound publisher fails with an error. Note that some
  * of the subsequent records already in flight may still be delivered. If {@link SenderOptions#stopOnError()}
  * is false, sends of all records will be attempted before the sequence is failed. No metadata is returned
- * for individual records on success or failure. {@link KafkaSender#send(Publisher, boolean)} may be used
+ * for individual records on success or failure. {@link KafkaSender#send(Publisher)} may be used
  * to send records to Kafka when per-record completion status is required.
  * <p>
  * Example usage:

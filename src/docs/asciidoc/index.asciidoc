@@ -1,6 +1,6 @@
 = Reactor Kafka Reference Guide
 Rajini Sivaram, Mark Pollack
-:appversion: 1.0.0.BUILD_SNAPSHOT
+:appversion: 1.0.0.M2
 ifndef::host-github[:ext-relative: {outfilesuffix}]
 {appversion}
 :doctype: book
