@@ -2,8 +2,6 @@ Reactor Kafka
 ===================
 
 [![Join the chat at https://gitter.im/reactor/reactor](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/reactor/reactor?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
-[![Maven](https://maven-badges.herokuapp.com/maven-central/io.projectreactor.kafka/reactor-kafka/badge.svg?style=plastic)](http://mvnrepository.com/artifact/io.projectreactor.kafka/reactor-kafka)
-[![Bintray](https://api.bintray.com/packages/spring/jars/io.projectreactor.kafka/images/download.svg)](https://bintray.com/spring/jars/io.projectreactor.kafka/_latestVersion) 
 [![Travis CI](https://img.shields.io/travis/reactor/reactor-kafka.svg)](https://travis-ci.org/reactor/reactor-kafka)
 [![Coverage](https://img.shields.io/codecov/c/github/reactor/reactor-kafka.svg)](https://travis-ci.org/reactor/reactor-kafka)
 
