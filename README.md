@@ -38,6 +38,22 @@ See [reactor-kafka-samples/src/main/java/reactor/kafka/samples/SampleConsumer.ja
 1. Update BOOTSTRAP_SERVERS and TOPIC in SampleConsumer.java if required
 2.  Run reactor.kafka.samples.SampleConsumer (eg. from IDE as a Java application))
 
+#### To build applications using reactor-kafka API: ####
+
+With Gradle from repo.spring.io:
+```groovy
+    repositories {
+      //maven { url 'http://repo.spring.io/snapshot' }
+      maven { url 'http://repo.spring.io/milestone' }
+      mavenCentral()
+    }
+
+    dependencies {
+      //compile "io.projectreactor.kafka:reactor-kafka:1.0.0.BUILD-SNAPSHOT"
+      compile "io.projectreactor.kafka:reactor-kafka:1.0.0.M2"
+    }
+```
+
 ### Community / Support ###
 
 * [GitHub Issues](https://github.com/reactor/reactor-kafka/issues)
