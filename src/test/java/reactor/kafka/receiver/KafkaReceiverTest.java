@@ -477,7 +477,6 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
                                      offset.commit()
                                            .doOnSuccess(i -> onCommit(uncommitted, commitLatch, committedOffsets))
                                            .doOnError(e -> log.error("Commit exception", e))
-                                           .subscribe()
                                            .block();
                                  }
                              })

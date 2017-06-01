@@ -91,7 +91,6 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         Flux<Integer> source = Flux.range(0, count);
         kafkaSender.sendOutbound(source.map(i -> createProducerRecord(i, true)))
                    .then()
-                   .subscribe()
                    .block();
 
         waitForMessages(consumer, count, true);
@@ -129,7 +128,6 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                    .send(Flux.range(batch, batch).map(i -> createProducerRecord(i, true)))
                    .send(Flux.range(batch * 2, batch).map(i -> createProducerRecord(i, true)))
                    .then()
-                   .subscribe()
                    .block();
 
         waitForMessages(consumer, batch * 3, true);
