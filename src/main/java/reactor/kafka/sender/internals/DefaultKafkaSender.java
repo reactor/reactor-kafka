@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2011-2017 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,6 +44,7 @@ import reactor.kafka.sender.KafkaSender;
 import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.SenderRecord;
 import reactor.kafka.sender.SenderResult;
+import reactor.util.context.Context;
 
 /**
  * Reactive producer that sends messages to Kafka topic partitions. The producer is thread-safe
@@ -87,8 +88,8 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
     public <T> Flux<SenderResult<T>> send(Publisher<SenderRecord<K, V, T>> records) {
         return new Flux<SenderResult<T>>() {
             @Override
-            public void subscribe(Subscriber<? super SenderResult<T>> s) {
-                records.subscribe(new SendSubscriber<T>(s, senderOptions.stopOnError()));
+            public void subscribe(Subscriber<? super SenderResult<T>> s, Context ctx) {
+                Flux.from(records).subscribe(new SendSubscriber<>(s, senderOptions.stopOnError()), ctx);
             }
         }
         .doOnError(e -> log.trace("Send failed with exception {}", e))
@@ -126,8 +127,8 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
     private Flux<Object> sendProducerRecords(Publisher<? extends ProducerRecord<K, V>> records) {
         return new Flux<Object>() {
             @Override
-            public void subscribe(Subscriber<? super Object> s) {
-                records.subscribe(new SendSubscriberNoResponse(s, senderOptions.stopOnError()));
+            public void subscribe(Subscriber<? super Object> s, Context ctx) {
+                Flux.from(records).subscribe(new SendSubscriberNoResponse(s, senderOptions.stopOnError()), ctx);
             }
         }
         .doOnError(e -> log.trace("Send failed with exception {}", e))
