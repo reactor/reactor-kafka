@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2011-2017 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -300,7 +300,7 @@ public class MockSenderTest {
                 .sendOutbound(outgoing1.append(topic, 10).producerRecords())
                 .then(Mono.fromRunnable(() -> doneSemaphore1.release()))
                 .send(outgoing1.append(topic, 10).producerRecords())
-                .then(Mono.fromRunnable(() -> waitSemaphore1.acquireUninterruptibly()).publishOn(Schedulers.single()))
+                .then(Mono.<Void>fromRunnable(() -> waitSemaphore1.acquireUninterruptibly()).publishOn(Schedulers.single()))
                 .send(outgoing1.append(topic, 10).producerRecords());
 
         Semaphore waitSemaphore2 = new Semaphore(0);
@@ -311,7 +311,8 @@ public class MockSenderTest {
                 .sendOutbound(outgoing2.append(topic, 10).producerRecords())
                 .then(Mono.fromRunnable(() -> doneSemaphore2.release()))
                 .send(outgoing2.append(topic, 10).producerRecords())
-                .then(Mono.fromRunnable(() -> waitSemaphore2.acquireUninterruptibly()).publishOn(Schedulers.single()))
+                .then(Mono.<Void>fromRunnable(() -> waitSemaphore2.acquireUninterruptibly())
+                        .publishOn(Schedulers.single()))
                 .send(outgoing2.append(topic, 10).producerRecords());
 
         ExecutorService executor = Executors.newFixedThreadPool(2);
