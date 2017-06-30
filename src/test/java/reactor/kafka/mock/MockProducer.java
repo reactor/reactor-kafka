@@ -28,6 +28,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -38,6 +39,7 @@ import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
+import org.apache.kafka.common.errors.ProducerFencedException;
 
 import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.internals.ProducerFactory;
@@ -103,7 +105,7 @@ public class MockProducer implements Producer<Integer, String> {
     public List<PartitionInfo> partitionsFor(String topic) {
         return call(() -> {
                 List<PartitionInfo> partitionInfo = cluster.cluster().partitionsForTopic(topic);
-                if (partitionInfo == null)
+                if (partitionInfo == null || partitionInfo.isEmpty())
                     throw new InvalidTopicException(topic);
                 else
                     return partitionInfo;
@@ -143,7 +145,7 @@ public class MockProducer implements Producer<Integer, String> {
         List<PartitionInfo> partitionInfo = cluster.cluster().availablePartitionsForTopic(record.topic());
         TopicPartition topicPartition = new TopicPartition(record.topic(), record.partition());
         inFlightCount.decrementAndGet();
-        if (partitionInfo == null) {
+        if (partitionInfo == null || partitionInfo.isEmpty()) {
             InvalidTopicException e = new InvalidTopicException("Topic not found: " + record.topic());
             callback.onCompletion(null, e);
             throw e;
@@ -162,6 +164,27 @@ public class MockProducer implements Producer<Integer, String> {
                 throw e;
             }
         }
+
+    }
+
+    @Override
+    public void initTransactions() {
+    }
+
+    @Override
+    public void beginTransaction() throws ProducerFencedException {
+    }
+
+    @Override
+    public void sendOffsetsToTransaction(Map<TopicPartition, OffsetAndMetadata> offsets, String consumerGroupId) throws ProducerFencedException {
+    }
+
+    @Override
+    public void commitTransaction() throws ProducerFencedException {
+    }
+
+    @Override
+    public void abortTransaction() throws ProducerFencedException {
     }
 
     public static class Pool extends ProducerFactory {

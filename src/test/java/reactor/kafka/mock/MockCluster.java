@@ -48,7 +48,7 @@ public class MockCluster {
         List<Node> nodes = new ArrayList<>();
         for (int i = 0; i < brokerCount; i++)
             nodes.add(new Node(i, "host" + i, 9092));
-        cluster = new Cluster(nodes, new ArrayList<PartitionInfo>(0), Collections.<String>emptySet());
+        cluster = new Cluster("mock", nodes, new ArrayList<PartitionInfo>(0), Collections.<String>emptySet(), Collections.<String>emptySet());
         for (Map.Entry<Integer, String> entry : topics.entrySet())
             addTopic(entry.getValue(), entry.getKey());
     }

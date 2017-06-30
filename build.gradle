@@ -32,11 +32,7 @@ ext {
   gradleVersion = '3.1'
   gradleScriptDir = "${rootProject.projectDir}/gradle"
 
-  defaultKafkaVersion = "0.10.2.0"
-  def getKafkaVersion = project.hasProperty('kafkaVersion') ?
-          project.property('kafkaVersion') : "${defaultKafkaVersion}"
-
-  kafkaVersion = getKafkaVersion
+  kafkaVersion = '0.11.0.0'
   scalaVersion = '2.11'
   reactorVersion = '3.1.0.BUILD-SNAPSHOT'
   metricsVersion = '2.2.0'
