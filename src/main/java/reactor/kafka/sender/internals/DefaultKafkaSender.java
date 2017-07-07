@@ -31,11 +31,10 @@ import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.reactivestreams.Publisher;
-import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
+import reactor.core.CoreSubscriber;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Operators;
@@ -44,7 +43,6 @@ import reactor.kafka.sender.KafkaSender;
 import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.SenderRecord;
 import reactor.kafka.sender.SenderResult;
-import reactor.util.context.Context;
 
 /**
  * Reactive producer that sends messages to Kafka topic partitions. The producer is thread-safe
@@ -88,8 +86,8 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
     public <T> Flux<SenderResult<T>> send(Publisher<SenderRecord<K, V, T>> records) {
         return new Flux<SenderResult<T>>() {
             @Override
-            public void subscribe(Subscriber<? super SenderResult<T>> s, Context ctx) {
-                Flux.from(records).subscribe(new SendSubscriber<>(s, senderOptions.stopOnError()), ctx);
+            public void subscribe(CoreSubscriber<? super SenderResult<T>> s) {
+                Flux.from(records).subscribe(new SendSubscriber<>(s, senderOptions.stopOnError()));
             }
         }
         .doOnError(e -> log.trace("Send failed with exception {}", e))
@@ -127,8 +125,8 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
     private Flux<Object> sendProducerRecords(Publisher<? extends ProducerRecord<K, V>> records) {
         return new Flux<Object>() {
             @Override
-            public void subscribe(Subscriber<? super Object> s, Context ctx) {
-                Flux.from(records).subscribe(new SendSubscriberNoResponse(s, senderOptions.stopOnError()), ctx);
+            public void subscribe(CoreSubscriber<? super Object> s) {
+                Flux.from(records).subscribe(new SendSubscriberNoResponse(s, senderOptions.stopOnError()));
             }
         }
         .doOnError(e -> log.trace("Send failed with exception {}", e))
@@ -165,15 +163,15 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
         COMPLETE
     }
 
-    private abstract class AbstractSendSubscriber<Q, S, C> implements Subscriber<Q> {
-        protected final Subscriber<? super S> actual;
+    private abstract class AbstractSendSubscriber<Q, S, C> implements CoreSubscriber<Q> {
+        protected final CoreSubscriber<? super S> actual;
         private final boolean stopOnError;
         private Producer<K, V> producer;
         private AtomicInteger inflight;
         AtomicReference<SubscriberState> state;
         private AtomicReference<Throwable> firstException;
 
-        AbstractSendSubscriber(Subscriber<? super S> actual, boolean stopOnError) {
+        AbstractSendSubscriber(CoreSubscriber<? super S> actual, boolean stopOnError) {
             this.stopOnError = stopOnError;
             this.actual = actual;
             this.state = new AtomicReference<>(SubscriberState.INIT);
@@ -269,7 +267,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
 
     private class SendSubscriber<T> extends AbstractSendSubscriber<SenderRecord<K, V, T>, SenderResult<T>, T> {
 
-        SendSubscriber(Subscriber<? super SenderResult<T>> actual, boolean stopOnError) {
+        SendSubscriber(CoreSubscriber<? super SenderResult<T>> actual, boolean stopOnError) {
            super(actual, stopOnError);
         }
 
@@ -291,7 +289,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
 
     private class SendSubscriberNoResponse extends AbstractSendSubscriber<ProducerRecord<K, V>, Object, Void> {
 
-        SendSubscriberNoResponse(Subscriber<? super Object> actual, boolean stopOnError) {
+        SendSubscriberNoResponse(CoreSubscriber<? super Object> actual, boolean stopOnError) {
            super(actual, stopOnError);
         }
 
