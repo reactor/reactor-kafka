@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2011-2017 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,7 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
-import reactor.util.concurrent.QueueSupplier;
+import reactor.util.concurrent.Queues;
 
 /**
  * Configuration properties for reactive Kafka {@link KafkaSender} and its underlying Kafka
@@ -76,7 +76,7 @@ public class SenderOptions<K, V> {
 
         closeTimeout = Duration.ofMillis(Long.MAX_VALUE);
         scheduler = Schedulers.single();
-        maxInFlight = QueueSupplier.SMALL_BUFFER_SIZE;
+        maxInFlight = Queues.SMALL_BUFFER_SIZE;
         stopOnError = true;
     }
 
