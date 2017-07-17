@@ -39,6 +39,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -56,6 +57,7 @@ import reactor.core.scheduler.Schedulers;
 import reactor.kafka.sender.KafkaSender;
 import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.SenderRecord;
+import reactor.kafka.sender.SenderResult;
 
 public class ProducerPerformance {
 
@@ -72,16 +74,21 @@ public class ProducerPerformance {
             int numRecords = res.getInt("numRecords");
             int recordSize = res.getInt("recordSize");
             int throughput = res.getInt("throughput");
+            String transactionalId = res.getString("transactionalId");
+            long transactionDurationMs = res.getLong("transactionDurationMs");
             boolean useReactive = res.getBoolean("reactive");
 
             Map<String, Object> producerProps = getProperties(res.getList("producerConfig"));
 
             /* setup and run perf test */
             AbstractProducerPerformance perfTest;
-            if (!useReactive)
-                perfTest = new NonReactiveProducerPerformance(producerProps, topicName, numRecords, recordSize, throughput);
-            else
-                perfTest = new ReactiveProducerPerformance(producerProps, topicName, numRecords, recordSize, throughput);
+            if (!useReactive) {
+                perfTest = new NonReactiveProducerPerformance(producerProps, topicName,
+                        numRecords, recordSize, throughput, transactionalId, transactionDurationMs);
+            } else {
+                perfTest = new ReactiveProducerPerformance(producerProps, topicName,
+                        numRecords, recordSize, throughput, transactionalId, transactionDurationMs);
+            }
             Stats stats = perfTest.runTest();
 
             /* print final results */
@@ -149,6 +156,24 @@ public class ProducerPerformance {
               .metavar("REACTIVE")
               .setDefault(true)
               .help("if true, use reactive API");
+
+        parser.addArgument("--transactional-id")
+              .action(store())
+               .required(false)
+               .type(String.class)
+               .metavar("TRANSACTIONAL-ID")
+               .dest("transactionalId")
+               .setDefault("performance-producer-default-transactional-id")
+               .help("The transactionalId to use if transaction-duration-ms is > 0. Useful when testing the performance of concurrent transactions.");
+
+        parser.addArgument("--transaction-duration-ms")
+              .action(store())
+              .required(false)
+              .type(Long.class)
+              .metavar("TRANSACTION-DURATION")
+              .dest("transactionDurationMs")
+              .setDefault(0L)
+              .help("The max age of each transaction. The commitTransaction will be called after this this time has elapsed. Transactions are only enabled if this value is positive.");
 
         return parser;
     }
@@ -318,12 +343,16 @@ public class ProducerPerformance {
     static abstract class AbstractProducerPerformance {
         final int numRecords;
         final int recordSize;
+        final boolean transactionsEnabled;
+        final long transactionDurationMs;
         final ProducerRecord<byte[], byte[]> record;
         final Map<String, Object> producerProps;
         final ThroughputThrottler throttler;
         final Stats stats;
 
-        AbstractProducerPerformance(Map<String, Object> producerPropsOverride, String topic, int numRecords, int recordSize, long throughput) {
+        AbstractProducerPerformance(Map<String, Object> producerPropsOverride, String topic,
+                int numRecords, int recordSize, long throughput,
+                String transactionalId, long transactionDurationMs) {
             this.numRecords = numRecords;
             this.recordSize = recordSize;
 
@@ -337,6 +366,11 @@ public class ProducerPerformance {
             producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArraySerializer");
             producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArraySerializer");
 
+            this.transactionDurationMs = transactionDurationMs;
+            this.transactionsEnabled = transactionDurationMs > 0;
+            if (transactionsEnabled)
+                producerProps.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, transactionalId);
+
             stats = new Stats(numRecords, 5000);
             long startMs = System.currentTimeMillis();
             throttler = new ThroughputThrottler(throughput, startMs);
@@ -347,20 +381,41 @@ public class ProducerPerformance {
 
     static class NonReactiveProducerPerformance extends AbstractProducerPerformance {
 
-        NonReactiveProducerPerformance(Map<String, Object> producerPropsOverride, String topic, int numRecords, int recordSize, long throughput) {
-            super(producerPropsOverride, topic, numRecords, recordSize, throughput);
+        NonReactiveProducerPerformance(Map<String, Object> producerPropsOverride, String topic,
+                int numRecords, int recordSize, long throughput,
+                String transactionalId, long transactionDurationMs) {
+            super(producerPropsOverride, topic, numRecords, recordSize, throughput, transactionalId, transactionDurationMs);
         }
 
         public Stats runTest() {
             System.out.println("Running producer performance test using non-reactive API, class=" + this.getClass().getSimpleName()  + " messageSize=" + recordSize);
             KafkaProducer<byte[], byte[]> producer = new KafkaProducer<byte[], byte[]>(producerProps);
+            if (transactionsEnabled)
+                producer.initTransactions();
+
+            int currentTransactionSize = 0;
+            long transactionStartMs = 0;
             for (int i = 0; i < numRecords; i++) {
                 long sendStartMs = System.currentTimeMillis();
+                if (transactionsEnabled && currentTransactionSize == 0) {
+                    producer.beginTransaction();
+                    transactionStartMs = sendStartMs;
+                }
+
                 Callback cb = stats.nextCompletion(sendStartMs, recordSize, stats);
                 producer.send(record, cb);
+
+                currentTransactionSize++;
+                if (transactionsEnabled && transactionDurationMs <= (sendStartMs - transactionStartMs)) {
+                    producer.commitTransaction();
+                    currentTransactionSize = 0;
+                }
                 if (throttler.shouldThrottle(i, sendStartMs))
                     throttler.throttle();
             }
+            if (transactionsEnabled && currentTransactionSize != 0)
+                producer.commitTransaction();
+
             stats.complete();
             producer.close();
             return stats;
@@ -371,11 +426,14 @@ public class ProducerPerformance {
 
         final KafkaSender<byte[], byte[]> sender;
 
-        ReactiveProducerPerformance(Map<String, Object> producerPropsOverride, String topic, int numRecords, int recordSize, long throughput) {
-            super(producerPropsOverride, topic, numRecords, recordSize, throughput);
+        ReactiveProducerPerformance(Map<String, Object> producerPropsOverride, String topic,
+                int numRecords, int recordSize, long throughput,
+                String transactionalId, long transactionDurationMs) {
+            super(producerPropsOverride, topic, numRecords, recordSize, throughput, transactionalId, transactionDurationMs);
             SenderOptions<byte[], byte[]> options = SenderOptions.<byte[], byte[]>create(producerProps)
-                    .scheduler(Schedulers.newSingle("prod-perf", true))
                     .maxInFlight(maxInflight());
+            if (!transactionsEnabled)
+                options = options.scheduler(Schedulers.newSingle("prod-perf", true));
             sender = KafkaSender.create(options);
         }
 
@@ -383,7 +441,7 @@ public class ProducerPerformance {
             System.out.println("Running producer performance test using reactive API, class=" + this.getClass().getSimpleName()  + " messageSize=" + recordSize + ", maxInflight=" + maxInflight());
 
             CountDownLatch latch = new CountDownLatch(numRecords);
-            Flux<?> flux = senderFlux(latch);
+            Flux<?> flux = transactionsEnabled ? transactionalFlux(latch) : senderFlux(latch);
             Disposable disposable = flux.subscribe();
             latch.await();
             stats.complete();
@@ -394,23 +452,44 @@ public class ProducerPerformance {
         }
 
         Flux<?> senderFlux(CountDownLatch latch) {
-            Flux<RecordMetadata> flux =
-                sender.send(Flux.range(1, numRecords)
-                                .map(i -> {
-                                        long sendStartMs = System.currentTimeMillis();
-                                        if (throttler.shouldThrottle(i, sendStartMs))
-                                            throttler.throttle();
-                                        Callback cb = stats.nextCompletion(sendStartMs, recordSize, stats);
-                                        return SenderRecord.create(record, cb);
-                                    }))
-                      .map(result -> {
-                              RecordMetadata metadata = result.recordMetadata();
-                              Callback cb = result.correlationMetadata();
-                              cb.onCompletion(metadata, null);
-                              latch.countDown();
-                              return metadata;
-                          });
-            return flux;
+            return sender.send(sourceFlux())
+                         .map(result -> processResult(latch, result));
+        }
+
+        Flux<?> transactionalFlux(CountDownLatch latch) {
+            AtomicLong transactionEndMs = new AtomicLong(System.currentTimeMillis() + transactionDurationMs);
+            Flux<Flux<SenderRecord<byte[], byte[], Callback>>> sourceFlux = sourceFlux()
+                    .publishOn(sender.senderTransaction().scheduler())
+                    .windowUntil(r -> {
+                            long currentTimeMs = System.currentTimeMillis();
+                            if (currentTimeMs >= transactionEndMs.get()) {
+                                transactionEndMs.set(currentTimeMs + transactionDurationMs);
+                                return true;
+                            } else
+                                return false;
+                        });
+            return sender.sendTransactions(sourceFlux)
+                         .concatMap(r -> r)
+                         .map(result -> processResult(latch, result));
+        }
+
+        private Flux<SenderRecord<byte[], byte[], Callback>> sourceFlux() {
+            return Flux.range(1, numRecords)
+                       .map(i -> {
+                               long sendStartMs = System.currentTimeMillis();
+                               if (throttler.shouldThrottle(i, sendStartMs))
+                                   throttler.throttle();
+                               Callback cb = stats.nextCompletion(sendStartMs, recordSize, stats);
+                               return SenderRecord.create(record, cb);
+                           });
+        }
+
+        private RecordMetadata processResult(CountDownLatch latch, SenderResult<Callback> result) {
+            RecordMetadata metadata = result.recordMetadata();
+            Callback cb = result.correlationMetadata();
+            cb.onCompletion(metadata, null);
+            latch.countDown();
+            return metadata;
         }
 
         int maxInflight() {

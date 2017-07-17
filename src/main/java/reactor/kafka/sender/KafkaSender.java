@@ -15,6 +15,7 @@
  */
 package reactor.kafka.sender;
 
+import java.util.Map;
 import java.util.function.Function;
 
 import org.apache.kafka.clients.producer.Producer;
@@ -80,7 +81,15 @@ public interface KafkaSender<K, V> {
      * @return Flux of Kafka producer response record metadata along with the corresponding request correlation metadata.
      *         For records that could not be sent, the response contains an exception that indicates reason for failure.
      */
-    <T> Flux<SenderResult<T>> send(Publisher<SenderRecord<K, V, T>> records);
+    <T> Flux<SenderResult<T>> send(Publisher<? extends SenderRecord<K, V, T>> records);
+
+    /**
+     * Creates a reactive gateway for outgoing data flows to Kafka. The outbound instance
+     * returned can be used to chain together multiple send sequences
+     *
+     * @return chainable reactive gateway for outgoing records
+     */
+    KafkaOutbound<K, V> createOutbound();
 
     /**
      * Sends a sequence of records to Kafka without specifying correlation metadata. No metadata
@@ -111,6 +120,48 @@ public interface KafkaSender<K, V> {
     KafkaOutbound<K, V> sendOutbound(Publisher<? extends ProducerRecord<K, V>> records);
 
     /**
+     * Sends records from each inner publisher of <code>records</code> within a transaction.
+     * Each transaction is committed if all the records are successfully delivered to Kafka
+     * and aborted if any of the records in that batch could not be delivered.
+     * <p>
+     * Example usage:
+     * <pre>
+     * {@code
+     *     sender.sendTransactions(outboundRecords.window(10));
+     * }
+     * </pre>
+     * </p>
+     *
+     * @param records Outbound producer records along with correlation metadata to match results returned.
+     *         Records from each inner publisher are sent within a new transaction.
+     * @return Flux of Kafka producer response record metadata along with the corresponding request correlation metadata.
+     *         Each inner Flux contains results of records sent within a transaction.
+     * @throws IllegalStateException if the sender was created without setting a non-empty
+     *         {@value ProducerConfig#TRANSACTIONAL_ID_CONFIG} in {@link SenderOptions}
+     */
+    <T> Flux<Flux<SenderResult<T>>> sendTransactions(Publisher<? extends Publisher<? extends SenderRecord<K, V, T>>> records);
+
+    /**
+     * Returns the {@link SenderTransaction} instance associated with this sender,
+     * which may be used for fine-grained control over transaction states. Sender
+     * must have been created with a non-empty transactional id by setting
+     * {@value ProducerConfig#TRANSACTIONAL_ID_CONFIG} in {@link SenderOptions}.
+     *
+     * <p>
+     * <b>Threading model for transactional sender:</b>
+     * </p>
+     * Sends may be scheduled from multiple threads with a transactional sender similar
+     * to non-transactional senders. But transaction control operations and offset commits on
+     * {@link SenderTransaction} must be serialized and no sends may be performed
+     * while one of the transaction control operations is in progress.
+     *
+     * @return {@link SenderTransaction} associated with this sender
+     * @throws IllegalStateException if the sender was created without setting a non-empty
+     *         {@value ProducerConfig#TRANSACTIONAL_ID_CONFIG} in {@link SenderOptions}
+     */
+    SenderTransaction senderTransaction();
+
+    /**
      * Invokes the specified function on the Kafka {@link Producer} associated with this {@link KafkaSender}.
      * The function is invoked when the returned {@link Mono} is subscribed to.
      * <p>
@@ -125,6 +176,7 @@ public interface KafkaSender<K, V> {
      * should not be invoked from <code>function</code>. The methods supported by
      * <code>doOnProducer</code> are:
      * <ul>
+     *   <li>{@link Producer#sendOffsetsToTransaction(Map, String)}
      *   <li>{@link Producer#partitionsFor(String)}
      *   <li>{@link Producer#metrics()}
      *   <li>{@link Producer#flush()}

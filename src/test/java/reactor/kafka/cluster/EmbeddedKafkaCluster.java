@@ -75,6 +75,9 @@ public class EmbeddedKafkaCluster extends ExternalResource {
                 scala.Option.<Properties>apply(null),
                 true, false, 0, false, 0, false, 0,
                 scala.Option.<String>apply(null));
+            props.put(KafkaConfig.MinInSyncReplicasProp(), "1");
+            props.put(KafkaConfig.TransactionsTopicReplicationFactorProp(), "1");
+            props.put(KafkaConfig.TransactionsTopicMinISRProp(), "1");
             this.brokers.add(new EmbeddedKafkaBroker(props));
         }
     }
@@ -85,6 +88,10 @@ public class EmbeddedKafkaCluster extends ExternalResource {
             broker.shutdown();
         }
         brokers.clear();
+        if (this.zkClient != null) {
+            this.zkClient.close();
+            this.zkClient = null;
+        }
         if (zookeeper != null) {
             zookeeper.shutdown();
             zookeeper = null;

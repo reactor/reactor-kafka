@@ -60,6 +60,7 @@ import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOffset;
 import reactor.kafka.receiver.ReceiverPartition;
 import reactor.kafka.receiver.internals.CommittableBatch.CommitArgs;
+import reactor.kafka.sender.SenderTransaction;
 
 public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, ConsumerRebalanceListener {
 
@@ -94,6 +95,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
     private final Scheduler eventScheduler;
     private final AtomicBoolean isActive;
     private final AtomicBoolean isClosed;
+    private final AtomicBoolean awaitingTransaction;
     private AckMode ackMode;
     private AtmostOnceOffsets atmostOnceOffsets;
     private EmitterProcessor<Event<?>> eventEmitter;
@@ -113,7 +115,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
     }
 
     enum AckMode {
-        AUTO_ACK, MANUAL_ACK, ATMOST_ONCE
+        AUTO_ACK, MANUAL_ACK, ATMOST_ONCE, EXACTLY_ONCE
     }
 
     public DefaultKafkaReceiver(ConsumerFactory consumerFactory, ReceiverOptions<K, V> receiverOptions) {
@@ -124,6 +126,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
         consecutiveCommitFailures = new AtomicInteger();
         isActive = new AtomicBoolean();
         isClosed = new AtomicBoolean();
+        awaitingTransaction = new AtomicBoolean();
 
         this.consumerFactory = consumerFactory;
         this.receiverOptions = receiverOptions.toImmutable();
@@ -177,6 +180,26 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
     }
 
     @Override
+    public Flux<Flux<ConsumerRecord<K, V>>> receiveExactlyOnce(SenderTransaction senderTransaction) {
+        this.ackMode = AckMode.EXACTLY_ONCE;
+        Flux<ConsumerRecords<K, V>> flux = withDoOnRequest(createConsumerFlux());
+        return  flux.map(consumerRecords -> senderTransaction.begin()
+                                 .then(Mono.fromCallable(() -> awaitingTransaction.getAndSet(true)))
+                                 .thenMany(transactionalRecords(senderTransaction, consumerRecords)))
+                                 .publishOn(senderTransaction.scheduler());
+    }
+    private Flux<ConsumerRecord<K, V>> transactionalRecords(SenderTransaction senderTransaction, ConsumerRecords<K, V> records) {
+        if (records.isEmpty())
+            return Flux.empty();
+        CommittableBatch offsetBatch = new CommittableBatch();
+        for (ConsumerRecord<K, V> r : records)
+            offsetBatch.updateOffset(new TopicPartition(r.topic(), r.partition()), r.offset());
+        return Flux.fromIterable(records)
+                   .concatWith(senderTransaction.sendOffsets(offsetBatch.getAndClearOffsets().offsets(), receiverOptions.groupId()))
+                   .doAfterTerminate(() -> awaitingTransaction.set(false));
+    }
+
+    @Override
     public <T> Mono<T> doOnConsumer(Function<org.apache.kafka.clients.consumer.Consumer<K, V>, ? extends T> function) {
         return Mono.create(monoSink -> {
                 CustomEvent<T> event = new CustomEvent<>(function, monoSink);
@@ -209,7 +232,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
 
     private Flux<ConsumerRecords<K, V>> createConsumerFlux() {
         if (consumerFlux != null)
-            throw new IllegalStateException("Multiple subscribers are not supported for KafkaFlux");
+            throw new IllegalStateException("Multiple subscribers are not supported for KafkaReceiver flux");
 
         Consumer<Flux<?>> kafkaSubscribeOrAssign = (flux) -> receiverOptions.subscriber(this).accept(consumer);
         initEvent = new InitEvent(kafkaSubscribeOrAssign);
@@ -267,11 +290,12 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
     private void start() {
         log.debug("start");
         if (!isActive.compareAndSet(false, true))
-            throw new IllegalStateException("Multiple subscribers are not supported for KafkaFlux");
+            throw new IllegalStateException("Multiple subscribers are not supported for KafkaReceiver flux");
 
         fluxList.clear();
         requestsPending.set(0);
         consecutiveCommitFailures.set(0);
+        awaitingTransaction.set(false);
 
         eventEmitter = EmitterProcessor.create();
         eventSubmission = eventEmitter.sink(OverflowStrategy.BUFFER);
@@ -411,7 +435,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
                     // chosen by reactor.
                     commitEvent.runIfRequired(false);
                     pendingCount.decrementAndGet();
-                    if (requestsPending.get() > 0 && recordSubmission.requestedFromDownstream() > 0) {
+                    if (requestsPending.get() > 0 && recordSubmission.requestedFromDownstream() > 0 && !awaitingTransaction.get()) {
                         if (partitionsPaused.getAndSet(false))
                             consumer.resume(consumer.assignment());
                     } else {
@@ -424,7 +448,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
                         recordSubmission.next(records);
                     }
                     if (isActive.get()) {
-                        int count = ackMode == AckMode.AUTO_ACK && records.count() > 0 ? 1 : records.count();
+                        int count = ((ackMode == AckMode.AUTO_ACK || ackMode == AckMode.EXACTLY_ONCE) && records.count() > 0) ? 1 : records.count();
                         if (requestsPending.addAndGet(0 - count) > 0 || commitEvent.inProgress.get() > 0)
                             scheduleIfRequired();
                     }
@@ -462,24 +486,33 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
                 if (commitArgs != null) {
                     if (!commitArgs.offsets().isEmpty()) {
                         inProgress.incrementAndGet();
+                        switch (ackMode) {
+                            case ATMOST_ONCE:
+                                try {
+                                    consumer.commitSync(commitArgs.offsets());
+                                    handleSuccess(commitArgs, commitArgs.offsets());
+                                    atmostOnceOffsets.onCommit(commitArgs.offsets());
+                                } catch (Exception e) {
+                                    handleFailure(commitArgs, e);
+                                }
+                                inProgress.decrementAndGet();
+                                break;
+                            case EXACTLY_ONCE:
+                                // Handled separately using transactional KafkaSender
+                                break;
+                            default:
+                                consumer.commitAsync(commitArgs.offsets(), (offsets, exception) -> {
+                                        inProgress.decrementAndGet();
+                                        if (exception == null)
+                                            handleSuccess(commitArgs, offsets);
+                                        else
+                                            handleFailure(commitArgs, exception);
+                                    });
+                                pollEvent.scheduleIfRequired();
+                                break;
+                        }
                         if (ackMode != AckMode.ATMOST_ONCE) {
-                            consumer.commitAsync(commitArgs.offsets(), (offsets, exception) -> {
-                                    inProgress.decrementAndGet();
-                                    if (exception == null)
-                                        handleSuccess(commitArgs, offsets);
-                                    else
-                                        handleFailure(commitArgs, exception);
-                                });
-                            pollEvent.scheduleIfRequired();
                         } else {
-                            try {
-                                consumer.commitSync(commitArgs.offsets());
-                                handleSuccess(commitArgs, commitArgs.offsets());
-                                atmostOnceOffsets.onCommit(commitArgs.offsets());
-                            } catch (Exception e) {
-                                handleFailure(commitArgs, e);
-                            }
-                            inProgress.decrementAndGet();
                         }
                     } else {
                         handleSuccess(commitArgs, commitArgs.offsets());
@@ -615,8 +648,11 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
                             boolean forceCommit = true;
                             if (ackMode == AckMode.ATMOST_ONCE)
                                 forceCommit = atmostOnceOffsets.undoCommitAhead(committableBatch());
-                            commitEvent.runIfRequired(forceCommit);
-                            commitEvent.waitFor(closeEndTimeNanos);
+                            // For exactly-once, offsets are committed by a producer, consumer may be closed immediately
+                            if (ackMode != AckMode.EXACTLY_ONCE) {
+                                commitEvent.runIfRequired(forceCommit);
+                                commitEvent.waitFor(closeEndTimeNanos);
+                            }
 
                             long timeoutNanos = closeEndTimeNanos - System.nanoTime();
                             if (timeoutNanos < 0)
@@ -681,7 +717,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
             int commitBatchSize = receiverOptions.commitBatchSize();
             long uncommittedCount = maybeUpdateOffset();
             if (commitBatchSize > 0 && uncommittedCount >= commitBatchSize)
-                commitEvent.scheduleIfRequired();
+                scheduleIfRequired();
         }
 
         @Override
@@ -699,14 +735,17 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
                 return commitEvent.commitBatch.updateOffset(topicPartition, commitOffset);
             else
                 return commitEvent.commitBatch.batchSize();
-
         }
 
         private Mono<Void> scheduleCommit() {
             return Mono.create(emitter -> {
                     commitEvent.commitBatch.addCallbackEmitter(emitter);
-                    commitEvent.scheduleIfRequired();
+                    scheduleIfRequired();
                 });
+        }
+
+        private void scheduleIfRequired() {
+            commitEvent.scheduleIfRequired();
         }
 
         @Override

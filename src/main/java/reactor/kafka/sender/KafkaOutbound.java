@@ -65,6 +65,41 @@ public interface KafkaOutbound<K, V> extends Publisher<Void> {
     KafkaOutbound<K, V> send(Publisher<? extends ProducerRecord<K, V>> records);
 
     /**
+     * Sends records from each inner flux of <code>records</code> within a transaction.
+     * <p>
+     * Example usage:
+     * <pre>
+     * {@code
+     *     outbound.sendTransactions(outboundRecords1.window(10))
+     *             .sendTransactions(outboundRecords2.window(10))
+     *             .then();
+     * }
+     * </pre>
+     * </p>
+     * <p>
+     * When consuming and producing records within a single transaction, receiver offsets
+     * may be acknowledged as record is processed, so that all acknowledged offsets are
+     * committed in the transaction.If any of the publishers generates an error, the
+     * current transaction is aborted and the outbound chain is terminated.
+     * </p>
+     * Example usage:
+     * <pre>
+     * {@code
+     * outbound.sendTransactions(receiver.receiveExactlyOnce(sender)
+     *                             .doOnNext(record -> record.receiverOffset().acknowledge())
+     *                             .map(record -> toProducerRecord(destTopic, record))
+     *                             .window(10));
+     * }
+     *
+     * @param records Outbound producer records grouped as transactions. Records from each inner publisher
+     *         are sent within a new transaction along with any receiver offsets acknowledged or committed
+     *         by that publisher.
+     * @return new instance of KafkaOutbound that may be used to control and monitor delivery of this send
+     *         and to queue more sends to Kafka
+     */
+    KafkaOutbound<K, V> sendTransactions(Publisher<? extends Publisher<? extends ProducerRecord<K, V>>> records);
+
+    /**
      * Appends a {@link Publisher} task and returns a new {@link KafkaOutbound} to schedule further send sequences
      * to Kafka after pending send sequences are complete.
      *

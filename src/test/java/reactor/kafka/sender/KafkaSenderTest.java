@@ -15,6 +15,7 @@
  */
 package reactor.kafka.sender;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -22,6 +23,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -30,6 +32,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -38,6 +41,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.errors.ProducerFencedException;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -215,7 +219,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         int count = 4;
         Semaphore errorSemaphore = new Semaphore(0);
         recreateSender(senderOptions.stopOnError(false));
-        kafkaSender.send(createOutboundErrorFlux(count, false, false).map(r -> SenderRecord.create(r, null)))
+        kafkaSender.send(createSenderRecordErrorFlux(count, false, false))
                    .doOnError(t -> errorSemaphore.release())
                    .subscribe();
         waitForMessages(consumer, 2, true);
@@ -230,7 +234,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         int count = 4;
         Semaphore errorSemaphore = new Semaphore(0);
         try {
-            kafkaSender.send(createOutboundErrorFlux(count, true, false).map(r -> SenderRecord.create(r, null)))
+            kafkaSender.send(createSenderRecordErrorFlux(count, true, false))
                        .doOnError(t -> errorSemaphore.release())
                 .subscribe();
         } catch (Exception e) {
@@ -273,10 +277,9 @@ public class KafkaSenderTest extends AbstractKafkaTest {
     @Test
     public void sendResume() throws Exception {
         int count = 4;
-        AtomicInteger messageIndex = new AtomicInteger();
         AtomicInteger lastSuccessful = new AtomicInteger();
         Flux<SenderResult<Integer>> outboundFlux =
-            kafkaSender.send(createOutboundErrorFlux(count, false, true).map(r -> SenderRecord.create(r, messageIndex.getAndIncrement())))
+            kafkaSender.send(createSenderRecordErrorFlux(count, false, true))
                     .doOnNext(r -> {
                             if (r.exception() == null)
                                 lastSuccessful.set(r.correlationMetadata());
@@ -326,8 +329,8 @@ public class KafkaSenderTest extends AbstractKafkaTest {
     public void maxInFlight() throws Exception {
         int maxConcurrency = 4;
         senderOptions = senderOptions.producerProperty(ProducerConfig.MAX_REQUEST_SIZE_CONFIG, "100")
-                                   .producerProperty(ProducerConfig.MAX_BLOCK_MS_CONFIG, "1000")
-                                   .maxInFlight(maxConcurrency);
+                                     .producerProperty(ProducerConfig.MAX_BLOCK_MS_CONFIG, "1000")
+                                     .maxInFlight(maxConcurrency);
         recreateSender(senderOptions);
 
         int count = 100;
@@ -375,7 +378,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                 .stopOnError(false)
                 .scheduler(scheduler);
         recreateSender(senderOptions);
-        kafkaSender.send(emitter.map(i -> SenderRecord.create(new ProducerRecord<Integer, String>(topic, i % partitions, i, "Message " + i), i)))
+        kafkaSender.send(emitter.map(i -> SenderRecord.<Integer, String, Integer>create(new ProducerRecord<Integer, String>(topic, i % partitions, i, "Message " + i), i)))
                    .doOnNext(result -> {
                            int messageIdentifier = result.correlationMetadata();
                            RecordMetadata metadata = result.recordMetadata();
@@ -403,6 +406,114 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         }
     }
 
+    /**
+     * Tests idempotent sender. Verifies that only one copy of each message is sent
+     * even if there are retries due to broker failures.
+     */
+    @Test
+    public void idempotentSender() throws Exception {
+        int count = 10;
+        senderOptions = senderOptions.producerProperty(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true")
+                                     .producerProperty(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, "10000");
+        recreateSender(senderOptions);
+        kafkaSender.sendOutbound(createProducerRecords(0, count, true).delayElements(Duration.ofMillis(100)))
+                   .then()
+                   .subscribe();
+        shutdownKafkaBroker();
+        Thread.sleep(200);
+        restartKafkaBroker();
+        waitForMessages(consumer, count, true);
+        checkConsumedMessages();
+    }
+
+    @Test
+    public void transaction() throws Exception {
+        int count = 1000;
+        senderOptions = senderOptions
+                .producerProperty(ProducerConfig.TRANSACTIONAL_ID_CONFIG, testName.getMethodName())
+                .stopOnError(true);
+        recreateSender(senderOptions);
+        kafkaSender.sendTransactions(Flux.just(createSenderRecords(0, count, true)))
+                   .blockLast(Duration.ofMillis(receiveTimeoutMillis));
+        waitForMessages(consumer, count, true);
+    }
+
+    /**
+     * Verifies that only one transactional sender with a specific transactional id is
+     * allowed to send messages at any time.
+     */
+    @Test
+    public void transactionalSenderFencing() throws Exception {
+        int count = 5;
+        senderOptions = senderOptions
+                .producerProperty(ProducerConfig.TRANSACTIONAL_ID_CONFIG, testName.getMethodName())
+                .stopOnError(true);
+        recreateSender(senderOptions);
+        Map<Integer, SenderResult<Integer>> results = new ConcurrentHashMap<>();
+
+        kafkaSender.sendTransactions(Flux.just(createSenderRecords(0, count, true)))
+                   .concatMap(r -> r)
+                   .doOnNext(r -> results.put(r.correlationMetadata(), r))
+                   .blockLast(Duration.ofMillis(receiveTimeoutMillis));
+
+        KafkaSender<Integer, String> sender2 = KafkaSender.create(senderOptions);
+        sender2.senderTransaction().begin()
+               .then(sender2.send(createSenderRecords(count, count, true))
+                         .doOnNext(r -> results.put(r.correlationMetadata(), r))
+                         .then())
+               .block(Duration.ofMillis(receiveTimeoutMillis));
+
+        Semaphore done = new Semaphore(0);
+        kafkaSender.sendTransactions(Flux.just(createSenderRecords(count * 2, count, false)))
+                   .concatMap(r -> r)
+                   .doOnNext(r -> results.put(r.correlationMetadata(), r))
+                   .doOnError(e -> {
+                           assertTrue("Unexpected exception " + e, e instanceof ProducerFencedException);
+                           done.release();
+                       })
+                   .subscribe();
+        done.tryAcquire(receiveTimeoutMillis, TimeUnit.MILLISECONDS);
+
+        waitForMessages(consumer, count * 2, true);
+        for (Map.Entry<Integer, SenderResult<Integer>> entry : results.entrySet()) {
+            int index = entry.getKey();
+            SenderResult<Integer> result = entry.getValue();
+            if (index < count * 2)
+                assertNull("Invalid sender result for " + index + ":" + result, result.exception());
+            else
+                assertTrue("Invalid sender result for " + index + ":" + result, result.exception() instanceof ProducerFencedException);
+        }
+        sender2.close();
+    }
+
+    /**
+     * Verifies that ProducerFencedException is handled as a fatal exception.
+     */
+    @Test
+    public void transactionalSenderFencingMidTransaction() throws Exception {
+        int count = 5;
+        senderOptions = senderOptions
+                .producerProperty(ProducerConfig.TRANSACTIONAL_ID_CONFIG, testName.getMethodName())
+                .producerProperty(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, "1")
+                .stopOnError(true);
+        recreateSender(senderOptions);
+
+        kafkaSender.senderTransaction().begin().block();
+        kafkaSender.send(createSenderRecords(0, count, true)).blockLast(Duration.ofMillis(receiveTimeoutMillis));
+
+        KafkaSender<Integer, String> sender2 = KafkaSender.create(senderOptions);
+        sender2.sendTransactions(Flux.just(createSenderRecords(0, count, true)))
+               .concatMap(r -> r)
+               .blockLast(Duration.ofMillis(receiveTimeoutMillis));
+
+        StepVerifier.create(kafkaSender.send(createSenderRecords(count * 2, count, false)))
+                    .expectNextMatches(result -> result.exception() instanceof ProducerFencedException)
+                    .verifyError(ProducerFencedException.class);
+
+        waitForMessages(consumer, count * 2, true);
+        sender2.close();
+    }
+
     private Consumer<Integer, String> createConsumer() throws Exception {
         String groupId = testName.getMethodName();
         Map<String, Object> consumerProps = consumerProps(groupId);
@@ -424,7 +535,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
             checkConsumedMessages();
         assertEquals(expectedCount, receivedCount);
         ConsumerRecords<Integer, String> records = consumer.poll(500);
-        assertTrue("Unexpected message received: " + records, records.isEmpty());
+        assertTrue("Unexpected message received: " + records.count(), records.isEmpty());
     }
 
     private Flux<ProducerRecord<Integer, String>> createOutboundErrorFlux(int count, boolean failOnError, boolean hasRetry) {
@@ -448,6 +559,10 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                            boolean expectSuccess = hasRetry || i < failureIndex || (!failOnError && i >= restartIndex);
                            return createProducerRecord(i, expectSuccess);
                        });
+    }
+
+    private Flux<SenderRecord<Integer, String, Integer>> createSenderRecordErrorFlux(int count, boolean failOnError, boolean hasRetry) {
+        return createOutboundErrorFlux(count, failOnError, hasRetry).map(r -> SenderRecord.create(r, r.key()));
     }
 
     private Flux<SenderResult<Integer>> outboundFlux(int startIndex, int count) {

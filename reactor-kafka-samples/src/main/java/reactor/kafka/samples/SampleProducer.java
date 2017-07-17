@@ -40,8 +40,8 @@ import reactor.kafka.sender.SenderRecord;
  * To run sample producer
  * <ol>
  *   <li> Start Zookeeper and Kafka server
- *   <li> Create Kafka topic {@link #TOPIC}
  *   <li> Update {@link #BOOTSTRAP_SERVERS} and {@link #TOPIC} if required
+ *   <li> Create Kafka topic {@link #TOPIC}
  *   <li> Run {@link SampleProducer} as Java application with all dependent jars in the CLASSPATH (eg. from IDE).
  *   <li> Shutdown Kafka server and Zookeeper when no longer required
  * </ol>
@@ -71,7 +71,7 @@ public class SampleProducer {
     }
 
     public void sendMessages(String topic, int count, CountDownLatch latch) throws InterruptedException {
-        sender.send(Flux.range(1, count)
+        sender.<Integer>send(Flux.range(1, count)
                         .map(i -> SenderRecord.create(new ProducerRecord<>(topic, i, "Message_" + i), i)))
               .doOnError(e-> log.error("Send failed", e))
               .subscribe(r -> {

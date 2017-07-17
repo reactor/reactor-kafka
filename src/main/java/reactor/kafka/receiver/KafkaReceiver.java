@@ -25,6 +25,8 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.kafka.receiver.internals.ConsumerFactory;
 import reactor.kafka.receiver.internals.DefaultKafkaReceiver;
+import reactor.kafka.sender.KafkaSender;
+import reactor.kafka.sender.SenderTransaction;
 
 /**
  * A reactive Kafka receiver for consuming records from topic partitions
@@ -59,7 +61,7 @@ public interface KafkaReceiver<K, V> {
      * based on the configured commit interval and commit batch size in {@link ReceiverOptions}.
      * Records may also be committed manually using {@link ReceiverOffset#commit()}.
      *
-     * @return Flux of inbound records that are committed only after acknowledgement
+     * @return Flux of inbound receiver records that are committed only after acknowledgement
      */
     Flux<ReceiverRecord<K, V>> receive();
 
@@ -91,6 +93,34 @@ public interface KafkaReceiver<K, V> {
     Flux<ConsumerRecord<K, V>> receiveAtmostOnce();
 
     /**
+     * Returns a {@link Flux} of consumer record batches that may be used for exactly once
+     * delivery semantics. A new transaction is started for each inner Flux and it is the
+     * responsibility of the consuming application to commit or abort the transaction
+     * using {@link SenderTransaction#commit()} or {@link SenderTransaction#abort()}
+     * after processing the Flux. The next batch of consumer records will be delivered only
+     * after the previous flux terminates. Offsets of records dispatched on each inner Flux
+     * are committed using the provided <code>senderTransaction</code> within the transaction
+     * started for that Flux.
+     * <p>
+     * See @link {@link KafkaSender#senderTransaction()} for details on configuring a transactional
+     * sender and the threading model required for transactional/exactly-once semantics.
+     * </p>
+     * Example usage:
+     * <pre>
+     * {@code
+     * receiver.receiveExactlyOnce(senderTransaction)
+     *         .concatMap(f -> sender.send(f.map(r -> toSenderRecord(r)).then(senderTransaction.commit()))
+     *         .onErrorResume(e -> senderTransaction.abort().then(Mono.error(e)));
+     * }
+     * </pre>
+     *
+     * @param senderTransaction Sender transaction instance used to begin new transaction for each
+     *        inner Flux and commit offsets within that transaction
+     * @return Flux of consumer record batches processed within a transaction
+     */
+    Flux<Flux<ConsumerRecord<K, V>>> receiveExactlyOnce(SenderTransaction senderTransaction);
+
+    /**
      * Invokes the specified function on the Kafka {@link Consumer} associated with this {@link KafkaReceiver}.
      * The function is scheduled when the returned {@link Mono} is subscribed to. The function is
      * executed on the thread used for other consumer operations to ensure that {@link Consumer}
@@ -100,7 +130,7 @@ public interface KafkaReceiver<K, V> {
      * <pre>
      * {@code
      *     receiver.doOnConsumer(consumer -> consumer.partitionsFor(topic))
-     *           .doOnSuccess(partitions -> System.out.println("Partitions " + partitions));
+     *             .doOnSuccess(partitions -> System.out.println("Partitions " + partitions));
      * }
      * </pre>
      * Functions that are directly supported through the reactive {@link KafkaReceiver} interface

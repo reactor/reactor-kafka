@@ -25,11 +25,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.After;
 import org.junit.Before;
@@ -47,6 +49,7 @@ import reactor.kafka.receiver.ReceiverOffset;
 import reactor.kafka.samples.SampleScenarios.AtmostOnce;
 import reactor.kafka.samples.SampleScenarios.CommittableSource;
 import reactor.kafka.samples.SampleScenarios.FanOut;
+import reactor.kafka.samples.SampleScenarios.KafkaExactlyOnce;
 import reactor.kafka.samples.SampleScenarios.KafkaTransform;
 import reactor.kafka.samples.SampleScenarios.PartitionProcessor;
 import reactor.kafka.samples.SampleScenarios.KafkaSink;
@@ -164,6 +167,58 @@ public class SampleScenariosTest extends AbstractKafkaTest {
     }
 
     @Test
+    public void exactlyOnce() throws Exception {
+        List<Person> expected = new ArrayList<>();
+        List<Person> received = new ArrayList<>();
+        String sourceTopic = topic;
+        String destTopic = "testtopic2";
+        createNewTopic(destTopic, partitions);
+        KafkaExactlyOnce flow = new KafkaExactlyOnce(bootstrapServers, sourceTopic, destTopic) {
+            public ReceiverOptions<Integer, Person> receiverOptions() {
+                return super.receiverOptions().consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+            }
+        };
+        disposables.add(flow.flux().subscribe());
+        subscribeToDestTopic("test-group", destTopic, received);
+        sendMessages(sourceTopic, 500, expected);
+        for (Person p : expected)
+            p.email(flow.transform(p).value().email());
+        waitForMessages(expected, received);
+    }
+
+    @Test
+    public void exactlyOnceAbort() throws Exception {
+        int count = 60;
+        List<Person> expected = new ArrayList<>();
+        List<Person> received = new ArrayList<>();
+        AtomicInteger transformCounter = new AtomicInteger();
+        String sourceTopic = topic;
+        String destTopic = "testtopic2";
+        createNewTopic(destTopic, partitions);
+        sendMessages(sourceTopic, count, expected);
+        KafkaExactlyOnce flow = new KafkaExactlyOnce(bootstrapServers, sourceTopic, destTopic) {
+            public ReceiverOptions<Integer, Person> receiverOptions() {
+                return super.receiverOptions()
+                            .consumerProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "10")
+                            .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
+                            .consumerProperty(ConsumerConfig.ISOLATION_LEVEL_CONFIG, "read_committed");
+            }
+            @Override
+            public ProducerRecord<Integer, Person> transform(Person p) {
+                if (transformCounter.incrementAndGet() == count / 2 + 3)
+                    throw new RuntimeException("Test exception");
+                return super.transform(p);
+            }
+        };
+        disposables.add(flow.flux().subscribe());
+        subscribeToDestTopic("test-group", destTopic, flow.receiverOptions(), received);
+        int expectedCount = count / 2;
+        TestUtils.waitUntil("Incorrect number of messages received, expected=" + expectedCount + ", received=",
+                () -> received.size(), r -> r.size() >= expectedCount, received, Duration.ofMillis(receiveTimeoutMillis));
+        assertEquals(expectedCount, received.size());
+    }
+
+    @Test
     public void fanOut() throws Exception {
         List<Person> expected1 = new ArrayList<>();
         List<Person> expected2 = new ArrayList<>();
@@ -221,7 +276,11 @@ public class SampleScenariosTest extends AbstractKafkaTest {
 
     private void subscribeToDestTopic(String groupId, String topic, List<Person> received) {
         KafkaSource source = new KafkaSource(bootstrapServers, topic);
-        ReceiverOptions<Integer, Person> receiverOptions = source.receiverOptions()
+        subscribeToDestTopic(groupId, topic, source.receiverOptions(), received);
+    }
+
+    private void subscribeToDestTopic(String groupId, String topic, ReceiverOptions<Integer, Person> receiverOptions, List<Person> received) {
+        receiverOptions = receiverOptions
                 .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
                 .consumerProperty(ConsumerConfig.GROUP_ID_CONFIG, groupId)
                 .addAssignListener(partitions -> {

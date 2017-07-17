@@ -21,8 +21,13 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 
+import javax.naming.AuthenticationException;
+
+import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.common.config.ConfigException;
+import org.apache.kafka.common.errors.ProducerFencedException;
 
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -75,7 +80,7 @@ public class SenderOptions<K, V> {
         properties = new HashMap<>();
 
         closeTimeout = Duration.ofMillis(Long.MAX_VALUE);
-        scheduler = Schedulers.single();
+        scheduler = null;
         maxInFlight = Queues.SMALL_BUFFER_SIZE;
         stopOnError = true;
     }
@@ -146,7 +151,8 @@ public class SenderOptions<K, V> {
     /**
      * Returns stopOnError configuration which indicates if a send operation
      * should be terminated when an error is encountered. If set to false, send
-     * is attempted for all records in a sequence even if send of one of the records fails.
+     * is attempted for all records in a sequence even if send of one of the records fails
+     * with a non-fatal exception.
      * @return boolean indicating if send sequences should fail on first error
      */
     public boolean stopOnError() {
@@ -158,9 +164,10 @@ public class SenderOptions<K, V> {
      * If set to true, send fails when an error is encountered and only records
      * that are already in transit may be delivered after the first error. If set to false,
      * an attempt is made to send each record to Kafka, even if one or more records cannot
-     * be delivered after the configured number of retries. This flag should be set along with
-     * {@link ProducerConfig#RETRIES_CONFIG} and {@link ProducerConfig#ACKS_CONFIG} to configure
-     * the required quality-of-service. By default, stopOnError is true.
+     * be delivered after the configured number of retries due to a non-fatal exception.
+     * This flag should be set along with {@link ProducerConfig#RETRIES_CONFIG} and
+     * {@link ProducerConfig#ACKS_CONFIG} to configure the required quality-of-service.
+     * By default, stopOnError is true.
      * @param stopOnError true to stop each send sequence on first failure
      * @return sender options with the new stopOnError flag.
      */
@@ -187,10 +194,47 @@ public class SenderOptions<K, V> {
     }
 
     /**
+     * Senders created from this options will be transactional if a transactional id is
+     * configured using {@link ProducerConfig#TRANSACTIONAL_ID_CONFIG}. If transactional,
+     * {@link KafkaProducer#initTransactions()} is invoked on the producer to initialize
+     * transactions before any operations are performed on the sender. If scheduler is overridden
+     * using {@link #scheduler(reactor.core.scheduler.Scheduler)}, the configured scheduler
+     * must be single-threaded. Otherwise, the behaviour is undefined and may result in unexpected
+     * exceptions.
+     */
+    public boolean isTransactional() {
+        String transactionalId = transactionalId();
+        return transactionalId != null && !transactionalId.isEmpty();
+    }
+
+    /**
+     * Returns the configured transactional id
+     * @return transactional id
+     */
+    public String transactionalId() {
+        return (String) properties.get(ProducerConfig.TRANSACTIONAL_ID_CONFIG);
+    }
+
+    public boolean fatalException(Throwable t) {
+        return t instanceof AuthenticationException ||
+                t instanceof ProducerFencedException;
+    }
+
+    void validate() {
+        if (isTransactional()) {
+            if (!stopOnError)
+                throw new ConfigException("Transactional senders must be created with stopOnError=true");
+            if (scheduler != null)
+                throw new ConfigException("Scheduler cannot be overridden for transactional senders");
+        }
+    }
+
+    /**
      * Returns a new immutable instance with the configuration properties of this instance.
      * @return new immutable instance of sender options
      */
     public SenderOptions<K, V> toImmutable() {
+        validate();
         SenderOptions<K, V> options = new SenderOptions<K, V>() {
 
             @Override
@@ -226,7 +270,11 @@ public class SenderOptions<K, V> {
         };
         options.properties.putAll(properties);
         options.closeTimeout = closeTimeout;
-        options.scheduler = scheduler;
+        String transactionalId = transactionalId();
+        if (transactionalId != null)
+            options.scheduler = Schedulers.newSingle(transactionalId);
+        else
+            options.scheduler = scheduler == null ? Schedulers.single() : scheduler;
         options.maxInFlight = maxInFlight;
         options.stopOnError = stopOnError;
         return options;

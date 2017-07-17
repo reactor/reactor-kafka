@@ -36,12 +36,14 @@ import static org.junit.Assert.assertTrue;
 
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
+import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
+import org.apache.kafka.common.errors.ProducerFencedException;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -384,6 +386,24 @@ public class MockSenderTest {
         assertEquals(10, outgoing.onNextCount.get());
     }
 
+    @Test
+    public void sendWithResponseCallbackFailure() {
+        int maxInflight = 2;
+        SenderOptions<Integer, String> options = SenderOptions.create();
+        sender = new DefaultKafkaSender<>(producerFactory, options.maxInFlight(maxInflight).stopOnError(false));
+        producer.enableInFlightCheck();
+        OutgoingRecords outgoing = outgoingRecords.append(topic, 10);
+        sender.send(outgoing.senderRecords())
+              .doOnNext(r -> {
+                      sendResponses.add(r);
+                      if (sendResponses.size() == 5)
+                          throw new RuntimeException("test");
+                  })
+              .concatMap(r -> Mono.just(r))
+              .subscribe();
+        TestUtils.sleep(5000);
+    }
+
     /**
      * Tests {@link KafkaSender#send(org.reactivestreams.Publisher)} error path with stopOnError.
      */
@@ -608,6 +628,73 @@ public class MockSenderTest {
         assertTrue("Sends not retried " + exceptionCount, exceptionCount.intValue() >= 1);
     }
 
+    @Test
+    public void commitTransaction() throws Exception {
+        int count = 5;
+        String transactionId = "commitTransaction";
+        SenderOptions<Integer, String> senderOptions = SenderOptions.<Integer, String>create()
+                .producerProperty(ProducerConfig.TRANSACTIONAL_ID_CONFIG, transactionId)
+                .stopOnError(true);
+
+        sender = new DefaultKafkaSender<>(producerFactory, senderOptions);
+        OutgoingRecords outgoing = outgoingRecords.append(topic, count);
+
+        StepVerifier.create(sender.senderTransaction().begin())
+                    .verifyComplete();
+
+        StepVerifier.create(sender.send(outgoing.senderRecords())
+                                  .doOnNext(result -> assertTrue(Thread.currentThread().getName().contains(transactionId))))
+                    .expectNextCount(count)
+                    .then(() -> {
+                            for (TopicPartition partition : cluster.partitions(topic))
+                                assertEquals(0, cluster.log(partition).size());
+                        })
+                    .verifyComplete();
+
+        StepVerifier.create(sender.senderTransaction().commit())
+                    .verifyComplete();
+        outgoing.verify(cluster, topic, true);
+    }
+
+    @Test
+    public void abortTransaction() throws Exception {
+        int count = 5;
+        SenderOptions<Integer, String> senderOptions = SenderOptions.<Integer, String>create()
+                .producerProperty(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "transactionalSender")
+                .stopOnError(true);
+
+        sender = new DefaultKafkaSender<>(producerFactory, senderOptions);
+        OutgoingRecords outgoing = outgoingRecords.append(topic, count);
+
+        StepVerifier.create(sender.senderTransaction().begin())
+                    .verifyComplete();
+
+        StepVerifier.create(sender.send(outgoing.senderRecords()).then(sender.senderTransaction().abort()))
+                    .then(() -> {
+                            for (TopicPartition partition : cluster.partitions(topic))
+                                assertEquals(0, cluster.log(partition).size());
+                        })
+                    .verifyComplete();
+    }
+
+    @Test
+    public void illegalTransactionState() throws Exception {
+        SenderOptions<Integer, String> senderOptions = SenderOptions.<Integer, String>create()
+                .producerProperty(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "transactionalSender")
+                .stopOnError(true);
+        sender = new DefaultKafkaSender<>(producerFactory, senderOptions);
+        sender.senderTransaction().begin().block();
+        sender.senderTransaction().commit().block();
+
+        producer.fenceProducer();
+        StepVerifier.create(sender.senderTransaction().begin())
+                    .verifyError(ProducerFencedException.class);
+        StepVerifier.create(sender.senderTransaction().commit())
+                    .verifyError(ProducerFencedException.class);
+        StepVerifier.create(sender.senderTransaction().abort())
+                    .verifyError(ProducerFencedException.class);
+    }
+
     /**
      * Tests invocation of methods on KafkaProducer using {@link KafkaSender#doOnProducer(java.util.function.Function)}
      */
@@ -659,7 +746,6 @@ public class MockSenderTest {
      * Tests {@link KafkaProducer#partitionsFor(String)} good path.
      */
     @Test
-    @SuppressWarnings("unchecked")
     public void partitionsFor() {
         sender = new DefaultKafkaSender<>(producerFactory, SenderOptions.create());
         StepVerifier.create(sender.doOnProducer(producer -> producer.partitionsFor(topic)))
@@ -741,7 +827,7 @@ public class MockSenderTest {
                 RecordMetadata metadata = null;
                 Exception e = null;
                 if (!fail)
-                    metadata = new RecordMetadata(partition, 0, partitionResponses.size(), 0, 0, 0, 0);
+                    metadata = new RecordMetadata(partition, 0, partitionResponses.size(), 0, (Long) 0L, 0, 0);
                 else
                     e = new InvalidTopicException("Topic not found: " + topic);
                 partitionResponses.add(new DefaultKafkaSender.Response<Integer>(metadata, e, correlation));
