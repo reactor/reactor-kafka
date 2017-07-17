@@ -507,12 +507,7 @@ KafkaReceiver.create(receiverOptions).receive().subscribe();
 Each `KafkaReceiver` instance is associated with a `KafkaConsumer` that is created when the inbound
 Flux returned by one of the receive methods in `KafkaReceiver` is subscribed to. The consumer is kept alive until
 the Flux completes. When the Flux completes, all acknowledged offsets are committed and the
-underlying consumer is closed. In Kafka version 0.10.0.x, heartbeats are sent by `KafkaConsumer`
-only when applications invoke `KafkaConsumer#poll()`. Hence delays in processing messages can
-result in session timeouts causing rebalance to be triggered. To avoid this, `KafkaReceiver` triggers
-periodic heartbeats when application processing takes longer than the heartbeat interval for
-older versions of Kafka. In Kafka version 0.10.1.0 and above, `KafkaConsumer` sends
-heartbeats from a background thread to avoid this issue and `KafkaReceiver` does not track heartbeats.
+underlying consumer is closed.
 
 Only one receive operation may be active in a `KafkaReceiver` at any one time. Any of the receive
 methods can be invoked after the receive Flux corresponding to the last receive is terminated.

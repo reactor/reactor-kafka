@@ -653,9 +653,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
 
     /**
      * Tests that delays in message processing dont cause session timeouts.
-     * With 0.10.1.0 and higher, Kafka consumer heartbeat thread should keep the
-     * session alive and with lower versions of the Kafka client, KafkaReceiver
-     * sends heartbeats if required.
+     * Kafka consumer heartbeat thread should keep the session alive.
      */
     @Test
     public void messageProcessingDelay() throws Exception {
