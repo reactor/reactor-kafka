@@ -26,7 +26,7 @@ This enables exchange of data between threads with well-defined memory usage, av
 
 === Reactive API for Kafka
 
-link:index.html[Reactor Kafka] is a reactive API for Kafka based on Reactor and the Kafka Producer/Consumer API.
+link:../api/index.html[Reactor Kafka] is a reactive API for Kafka based on Reactor and the Kafka Producer/Consumer API.
 Reactor Kafka API enables messages to be published to Kafka and consumed from Kafka using functional APIs
 with non-blocking back-pressure and very low overheads. This enables applications using Reactor to use
 Kafka as a message bus or streaming platform and integrate with other systems to provide an end-to-end reactive pipeline.

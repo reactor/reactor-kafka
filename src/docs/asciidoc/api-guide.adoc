@@ -6,10 +6,10 @@
 This section describes the reactive API for producing and consuming messages using Apache Kafka.
 There are two main interfaces in Reactor Kafka:
 
-. `reactor.kafka.KafkaSender` for publishing messages to Kafka
-. `reactor.kafka.KafkaReceiver` for consuming messages from Kafka
+. `reactor.kafka.sender.KafkaSender` for publishing messages to Kafka
+. `reactor.kafka.receiver.KafkaReceiver` for consuming messages from Kafka
 
-Full API for Reactor Kafka is available in the link:../../api/index.html[javadocs].
+Full API for Reactor Kafka is available in the link:../api/index.html[javadocs].
 
 The project uses https://github.com/reactor/reactor-core[Reactor Core] to expose a https://github.com/reactive-streams/reactive-streams-jvm["Reactive Streams"] API.
 
@@ -17,7 +17,7 @@ The project uses https://github.com/reactor/reactor-core[Reactor Core] to expose
 [[api-guide-sender]]
 === Reactive Kafka Sender
 
-Outbound messages are sent to Kafka using `reactor.kafka.KafkaSender`. Senders are thread-safe and can be shared
+Outbound messages are sent to Kafka using `reactor.kafka.sender.KafkaSender`. Senders are thread-safe and can be shared
 across multiple threads to improve throughput. A `KafkaSender` is associated with one `KafkaProducer` that is used
 to transport messages to Kafka.
 
@@ -77,9 +77,9 @@ provides a hands-on tutorial on using the Reactor classes `Flux` and `Mono`.
 
 [source,java]
 --------
-Flux<SenderRecord<Integer. String> outboundFlux =
+Flux<SenderRecord<Integer, String, Integer>> outboundFlux =
     Flux.range(1, 10)
-        .map(i -> SenderRecord.create(topic, partition, timestamp, i, "Message_" + i, i);
+        .map(i -> SenderRecord.create(topic, partition, timestamp, i, "Message_" + i, i));
 --------
 
 The code segment above creates a sequence of messages to send to Kafka, using the message index as
@@ -178,7 +178,7 @@ after the configured number of retries.
 --------
 sender.sendOutbound(flux1)                                       // <1>
       .send(flux2)
-      .send(flux3))
+      .send(flux3)
       .then()                                                    // <2>
       .doOnError(e -> e.printStackTrace())                       // <3>
       .doOnSuccess(s -> System.out.println("Sends succeeded"))   // <4>
@@ -344,7 +344,7 @@ Partitions may be manually assigned to the receiver without using Kafka consumer
 
 [source,java]
 --------
-receiverOptions = receiverOptions.assignment(Collections.singleton(new TopicPartition(topic, 0)); // <1>
+receiverOptions = receiverOptions.assignment(Collections.singleton(new TopicPartition(topic, 0))); // <1>
 --------
 <1> Consume from partition 0 of specified topic
 
@@ -418,7 +418,7 @@ any records consumed using `KafkaReceiver#receive()`.
 
 [source,java]
 --------
-receiverOptions = ReceiverOptions.create()
+receiverOptions = ReceiverOptions.<Integer, String>create()
         .commitInterval(Duration.ZERO)             // <1>
         .commitBatchSize(0);                       // <2>
 KafkaReceiver.create(receiverOptions)
