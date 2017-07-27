@@ -37,7 +37,8 @@ public class ReceiverRecord<K, V> extends ConsumerRecord<K, V> {
                 consumerRecord.serializedKeySize(),
                 consumerRecord.serializedValueSize(),
                 consumerRecord.key(),
-                consumerRecord.value());
+                consumerRecord.value(),
+                consumerRecord.headers());
         this.receiverOffset = receiverOffset;
     }
 

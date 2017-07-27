@@ -99,6 +99,44 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     }
 
     @Test
+    public void sendReceiveWithHeaders() throws Exception {
+        int count = 10;
+        int partition = 0;
+        List<ReceiverRecord<Integer, String>> receiverRecords = new ArrayList<>();
+        Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux = createReceiver()
+                .receive()
+                .doOnNext(r -> receiverRecords.add(r));
+        CountDownLatch latch = new CountDownLatch(count);
+        subscribe(kafkaFlux, latch);
+        List<SenderRecord<Integer, String, Integer>> senderRecords = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            int key = i;
+            String value = String.valueOf(i);
+            long timestamp = System.currentTimeMillis();
+            int correlationMetadata = i;
+            SenderRecord<Integer, String, Integer> record = SenderRecord.create(topic, partition, timestamp, key, value, correlationMetadata);
+            record.headers().add("header1", new byte[] {(byte) 0});
+            record.headers().add("header2", value.getBytes());
+            senderRecords.add(record);
+        }
+        kafkaSender.send(Flux.fromIterable(senderRecords))
+                   .blockLast();
+        waitForMessages(latch);
+        assertEquals(count, receiverRecords.size());
+        for (int i = 0; i < count; i++) {
+            SenderRecord<Integer, String, Integer> senderRecord = senderRecords.get(i);
+            ReceiverRecord<Integer, String> receiverRecord = receiverRecords.get(i);
+            assertEquals(senderRecord.key(), receiverRecord.key());
+            assertEquals(senderRecord.value(), receiverRecord.value());
+            assertEquals(topic, receiverRecord.topic());
+            assertEquals(partition, receiverRecord.partition());
+            assertEquals(senderRecord.timestamp().longValue(), receiverRecord.timestamp());
+            assertEquals(2, receiverRecord.headers().toArray().length);
+            assertEquals(senderRecord.headers(), receiverRecord.headers());
+        }
+    }
+
+    @Test
     public void seekToBeginning() throws Exception {
         int count = 10;
         sendMessages(0, count);
