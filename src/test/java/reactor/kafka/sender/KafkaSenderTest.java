@@ -282,6 +282,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                                 lastSuccessful.set(r.correlationMetadata());
                         })
                     .onErrorResume(e -> {
+                            embeddedKafka.waitForBrokers();
                             waitForTopic(topic, partitions, false);
                             TestUtils.sleep(2000);
                             int next = lastSuccessful.get() + 1;
