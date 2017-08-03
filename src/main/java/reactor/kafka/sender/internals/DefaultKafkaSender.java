@@ -46,7 +46,7 @@ import reactor.core.publisher.UnicastProcessor;
 import reactor.core.scheduler.Scheduler;
 import reactor.kafka.sender.KafkaOutbound;
 import reactor.kafka.sender.KafkaSender;
-import reactor.kafka.sender.SenderTransaction;
+import reactor.kafka.sender.TransactionManager;
 import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.SenderRecord;
 import reactor.kafka.sender.SenderResult;
@@ -122,12 +122,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
     }
 
     @Override
-    public KafkaOutbound<K, V> sendOutbound(Publisher<? extends ProducerRecord<K, V>> records) {
-        return new DefaultKafkaOutbound<K, V>(this).send(records);
-    }
-
-    @Override
-    public <T> Flux<Flux<SenderResult<T>>> sendTransactions(Publisher<? extends Publisher<? extends SenderRecord<K, V, T>>> transactionRecords) {
+    public <T> Flux<Flux<SenderResult<T>>> sendTransactionally(Publisher<? extends Publisher<? extends SenderRecord<K, V, T>>> transactionRecords) {
         UnicastProcessor<Object> processor = UnicastProcessor.create();
         return Flux.from(transactionRecords)
                    .publishOn(senderOptions.scheduler(), false, 1)
@@ -138,7 +133,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
     }
 
     @Override
-    public SenderTransaction senderTransaction() {
+    public TransactionManager transactionManager() {
         if (transaction == null)
             throw new IllegalStateException("Transactions are not enabled");
         return transaction;
@@ -181,25 +176,25 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
     }
 
     private Mono<Void> transaction(Publisher<? extends ProducerRecord<K, V>> transactionRecords) {
-        return senderTransaction()
+        return transactionManager()
                 .begin()
                 .thenMany(sendProducerRecords(transactionRecords))
-                .concatWith(senderTransaction().commit())
-                .onErrorResume(e -> senderTransaction().abort().then(Mono.error(e)))
+                .concatWith(transactionManager().commit())
+                .onErrorResume(e -> transactionManager().abort().then(Mono.error(e)))
                 .publishOn(senderOptions.scheduler())
                 .then();
     }
 
     private <T> Flux<SenderResult<T>> transaction(Publisher<? extends SenderRecord<K, V, T>> transactionRecords, UnicastProcessor<Object> transactionBoundary) {
-        return senderTransaction()
+        return transactionManager()
                 .begin()
                 .thenMany(send(transactionRecords))
-                .concatWith(senderTransaction().commit())
+                .concatWith(transactionManager().commit())
                 .concatWith(Mono.create(sink -> {
                         transactionBoundary.onNext(this);
                         sink.success();
                     }))
-                .onErrorResume(e -> senderTransaction().abort().then(Mono.error(e)))
+                .onErrorResume(e -> transactionManager().abort().then(Mono.error(e)))
                 .publishOn(senderOptions.scheduler());
     }
 
@@ -247,8 +242,6 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
             this.state = new AtomicReference<>(SubscriberState.INIT);
             inflight = new AtomicInteger();
             firstException = new AtomicReference<>();
-            if (Thread.interrupted()) // Clear any interrupts
-                log.trace("Previous operation on this scheduler was interrupted");
         }
 
         @Override
@@ -262,6 +255,9 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
             if (checkComplete(m))
                 return;
             inflight.incrementAndGet();
+            if (Thread.interrupted()) // Clear any interrupts
+                log.trace("Previous operation on this scheduler was interrupted");
+
             C correlationMetadata = correlationMetadata(m);
             try {
                 if (senderOptions.isTransactional())
@@ -435,7 +431,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
         }
 
         @Override
-        public KafkaOutbound<K, V> sendTransactions(Publisher<? extends Publisher<? extends ProducerRecord<K, V>>> transactionRecords) {
+        public KafkaOutbound<K, V> sendTransactionally(Publisher<? extends Publisher<? extends ProducerRecord<K, V>>> transactionRecords) {
             return then(Flux.from(transactionRecords)
                             .publishOn(sender.senderOptions.scheduler())
                             .concatMapDelayError(records -> sender.transaction(records), false, 1));
@@ -470,7 +466,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
         }
     }
 
-    private class DefaultKafkaTransaction implements SenderTransaction {
+    private class DefaultKafkaTransaction implements TransactionManager {
 
         @Override
         public <T> Mono<T> begin() {

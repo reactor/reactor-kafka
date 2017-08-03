@@ -22,6 +22,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -56,6 +57,7 @@ import reactor.kafka.samples.SampleScenarios.KafkaSink;
 import reactor.kafka.samples.SampleScenarios.KafkaSinkChain;
 import reactor.kafka.samples.SampleScenarios.KafkaSource;
 import reactor.kafka.samples.SampleScenarios.Person;
+import reactor.kafka.samples.SampleScenarios.TransactionalSend;
 import reactor.kafka.util.TestUtils;
 
 public class SampleScenariosTest extends AbstractKafkaTest {
@@ -164,6 +166,32 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         for (Person p : expected)
             p.email(flow.transform(p).value().email());
         waitForMessages(expected, received);
+    }
+
+    @Test
+    public void transactionalSend() throws Exception {
+        List<Person> expected1 = new ArrayList<>();
+        List<Person> received1 = new ArrayList<>();
+        List<Person> received2 = new ArrayList<>();
+        String destTopic1 = "desttopic1";
+        createNewTopic(destTopic1, partitions);
+        String destTopic2 = "desttopic2";
+        createNewTopic(destTopic2, partitions);
+        subscribeToDestTopic("test-group", destTopic1, received1);
+        subscribeToDestTopic("test-group", destTopic2, received2);
+        TransactionalSend sink = new TransactionalSend(bootstrapServers, destTopic1, destTopic2);
+        sink.source(createTestSource(10, expected1));
+        for (Person p : expected1)
+            p.email(p.firstName().toLowerCase(Locale.ROOT) + "@kafka.io");
+        List<Person> expected2 = new ArrayList<>();
+        for (Person p : expected1) {
+            Person p2 = new Person(p.id(), p.firstName(), p.lastName());
+            p2.email(p.lastName().toLowerCase(Locale.ROOT) + "@reactor.io");
+            expected2.add(p2);
+        }
+        sink.runScenario();
+        waitForMessages(expected1, received1);
+        waitForMessages(expected2, received2);
     }
 
     @Test

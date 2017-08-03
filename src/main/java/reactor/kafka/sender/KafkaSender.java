@@ -20,7 +20,6 @@ import java.util.function.Function;
 
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
-import org.apache.kafka.clients.producer.ProducerRecord;
 import org.reactivestreams.Publisher;
 
 import reactor.core.publisher.Flux;
@@ -83,41 +82,6 @@ public interface KafkaSender<K, V> {
      */
     <T> Flux<SenderResult<T>> send(Publisher<? extends SenderRecord<K, V, T>> records);
 
-    /**
-     * Creates a reactive gateway for outgoing data flows to Kafka. The outbound instance
-     * returned can be used to chain together multiple send sequences
-     *
-     * @return chainable reactive gateway for outgoing records
-     */
-    KafkaOutbound<K, V> createOutbound();
-
-    /**
-     * Sends a sequence of records to Kafka without specifying correlation metadata. No metadata
-     * is returned for individual records on success or failure. The send operation succeeds if all
-     * records are successfully delivered to Kafka based on the configured ack mode and fails if any
-     * of the records could not be delivered after the configured number of retries.
-     * {@link SenderOptions#stopOnError()} can be configured to stop the send sequence on first failure
-     * or to attempt sends of all records even if one or more records could not be delivered.
-     * <p>
-     * The outbound instance returned can be used to chain together multiple send sequences
-     * using {@link KafkaOutbound#send(Publisher)}. Like {@link Flux} and {@link Mono}, subscribing
-     * to the tail {@link KafkaOutbound} will schedule all parent sends in the declaration order.
-     *
-     * <p>
-     * Example usage:
-     * <pre>
-     * {@code
-     *     kafkaSender.sendOutbound(flux1)
-     *                .send(flux2)
-     *                .send(flux3)
-     *                .subscribe();
-     * }
-     * </pre>
-     *
-     * @param records Outbound producer records
-     * @return chainable reactive gateway for outgoing Kafka producer records
-     */
-    KafkaOutbound<K, V> sendOutbound(Publisher<? extends ProducerRecord<K, V>> records);
 
     /**
      * Sends records from each inner publisher of <code>records</code> within a transaction.
@@ -127,7 +91,7 @@ public interface KafkaSender<K, V> {
      * Example usage:
      * <pre>
      * {@code
-     *     sender.sendTransactions(outboundRecords.window(10));
+     *     sender.sendTransactionally(outboundRecords.window(10));
      * }
      * </pre>
      * </p>
@@ -139,10 +103,10 @@ public interface KafkaSender<K, V> {
      * @throws IllegalStateException if the sender was created without setting a non-empty
      *         {@value ProducerConfig#TRANSACTIONAL_ID_CONFIG} in {@link SenderOptions}
      */
-    <T> Flux<Flux<SenderResult<T>>> sendTransactions(Publisher<? extends Publisher<? extends SenderRecord<K, V, T>>> records);
+    <T> Flux<Flux<SenderResult<T>>> sendTransactionally(Publisher<? extends Publisher<? extends SenderRecord<K, V, T>>> records);
 
     /**
-     * Returns the {@link SenderTransaction} instance associated with this sender,
+     * Returns the {@link TransactionManager} instance associated with this sender,
      * which may be used for fine-grained control over transaction states. Sender
      * must have been created with a non-empty transactional id by setting
      * {@value ProducerConfig#TRANSACTIONAL_ID_CONFIG} in {@link SenderOptions}.
@@ -152,14 +116,37 @@ public interface KafkaSender<K, V> {
      * </p>
      * Sends may be scheduled from multiple threads with a transactional sender similar
      * to non-transactional senders. But transaction control operations and offset commits on
-     * {@link SenderTransaction} must be serialized and no sends may be performed
+     * {@link TransactionManager} must be serialized and no sends may be performed
      * while one of the transaction control operations is in progress.
      *
-     * @return {@link SenderTransaction} associated with this sender
+     * @return {@link TransactionManager} associated with this sender
      * @throws IllegalStateException if the sender was created without setting a non-empty
      *         {@value ProducerConfig#TRANSACTIONAL_ID_CONFIG} in {@link SenderOptions}
      */
-    SenderTransaction senderTransaction();
+    TransactionManager transactionManager();
+
+    /**
+     * Creates a reactive gateway for outgoing Kafka records. Outgoing sends can be chained
+     * using {@link KafkaOutbound#send(Publisher)} or {@link KafkaSender#sendTransactionally(Publisher)}.
+     * Like {@link Flux} and {@link Mono}, subscribing to the tail {@link SenderOutbound} will
+     * schedule all parent sends in the declaration order.
+     *
+     * <p>
+     * Example usage:
+     * <pre>
+     * {@code
+     *     kafkaSender.createOutbound()
+     *                .send(flux1)
+     *                .send(flux2)
+     *                .send(flux3)
+     *                .then()
+     *                .subscribe();
+     * }
+     * </pre>
+     *
+     * @return chainable reactive gateway for outgoing Kafka producer records
+     */
+    KafkaOutbound<K, V> createOutbound();
 
     /**
      * Invokes the specified function on the Kafka {@link Producer} associated with this {@link KafkaSender}.

@@ -26,7 +26,8 @@ import reactor.core.publisher.Mono;
  * Example usage:
  * <pre>
  * {@code
- *     kafkaSender.sendOutbound(flux1)
+ *     kafkaSender.createOutbound()
+ *       .send(flux1)
  *       .send(flux2)
  *       .send(flux3)
  *       .subscribe();
@@ -70,8 +71,8 @@ public interface KafkaOutbound<K, V> extends Publisher<Void> {
      * Example usage:
      * <pre>
      * {@code
-     *     outbound.sendTransactions(outboundRecords1.window(10))
-     *             .sendTransactions(outboundRecords2.window(10))
+     *     outbound.sendTransactionally(outboundRecords1.window(10))
+     *             .sendTransactionally(outboundRecords2.window(10))
      *             .then();
      * }
      * </pre>
@@ -85,7 +86,7 @@ public interface KafkaOutbound<K, V> extends Publisher<Void> {
      * Example usage:
      * <pre>
      * {@code
-     * outbound.sendTransactions(receiver.receiveExactlyOnce(sender)
+     * outbound.sendTransactionally(receiver.receiveExactlyOnce(sender)
      *                             .doOnNext(record -> record.receiverOffset().acknowledge())
      *                             .map(record -> toProducerRecord(destTopic, record))
      *                             .window(10));
@@ -97,7 +98,7 @@ public interface KafkaOutbound<K, V> extends Publisher<Void> {
      * @return new instance of KafkaOutbound that may be used to control and monitor delivery of this send
      *         and to queue more sends to Kafka
      */
-    KafkaOutbound<K, V> sendTransactions(Publisher<? extends Publisher<? extends ProducerRecord<K, V>>> records);
+    KafkaOutbound<K, V> sendTransactionally(Publisher<? extends Publisher<? extends ProducerRecord<K, V>>> records);
 
     /**
      * Appends a {@link Publisher} task and returns a new {@link KafkaOutbound} to schedule further send sequences

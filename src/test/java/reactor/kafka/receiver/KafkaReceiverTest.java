@@ -47,7 +47,6 @@ import org.slf4j.LoggerFactory;
 
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Hooks;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -56,7 +55,7 @@ import reactor.kafka.receiver.internals.TestableReceiver;
 import reactor.kafka.sender.KafkaSender;
 import reactor.kafka.sender.SenderRecord;
 import reactor.kafka.sender.SenderResult;
-import reactor.kafka.sender.SenderTransaction;
+import reactor.kafka.sender.TransactionManager;
 import reactor.kafka.util.TestUtils;
 import reactor.test.StepVerifier;
 
@@ -845,9 +844,6 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         int maxProcessingMs = 5;
         this.receiveTimeoutMillis = maxProcessingMs * count + 5000;
 
-        //Hooks.onOperator(p -> p.ifParallelFlux().log("reactor.", Level.INFO, true,
-        //        SignalType.ON_NEXT));
-
         Disposable disposable =
             kafkaFlux.groupBy(m -> m.receiverOffset().topicPartition())
                      .subscribe(partitionFlux -> subscribeDisposables.add(partitionFlux.publishOn(scheduler).subscribe(record -> {
@@ -875,8 +871,6 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
             assertEquals("Concurrent executions on partition", 0, concurrentPartitionExecutions.get());
             checkConsumedMessages(0, count);
             assertNotEquals("No concurrent executions across partitions", 0, concurrentExecutions.get());
-
-            Hooks.resetOnOperator();
         } finally {
             scheduler.dispose();
         }
@@ -943,7 +937,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         subscribe(createReceiver().receive(), latch);
 
         KafkaSender<Integer, String> txSender = createTransactionalSender();
-        txSender.sendTransactions(Flux.just(createSenderRecords(0, count, true)))
+        txSender.sendTransactionally(Flux.just(createSenderRecords(0, count, true)))
                 .doOnNext(result -> assertEquals(count, latch.getCount()))
                 .blockLast();
 
@@ -964,7 +958,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         checkConsumedMessages(0, count);
 
         KafkaSender<Integer, String> txSender = createTransactionalSender();
-        SenderTransaction txn = txSender.senderTransaction();
+        TransactionManager txn = txSender.transactionManager();
         txn.begin()
             .thenMany(txSender.send(createSenderRecords(count, count, true)))
             .blockLast();
@@ -990,7 +984,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         waitForMessages(latch1); // non-transactional messages received
 
         KafkaSender<Integer, String> txSender = createTransactionalSender();
-        txSender.sendTransactions(Flux.just(createSenderRecords(count, count, true)))
+        txSender.sendTransactionally(Flux.just(createSenderRecords(count, count, true)))
                 .then().block();
         waitForMessages(latch2); // transactional messages received before commit
 
@@ -1005,7 +999,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         createNewTopic(destTopic, partitions);
 
         int count = 10;
-        kafkaSender.sendOutbound(createProducerRecords(0, count, true)).then().block();
+        kafkaSender.createOutbound().send(createProducerRecords(0, count, true)).then().block();
 
         String sourceConsumerGroupId = "source_consumer";
         receiverOptions = receiverOptions.consumerProperty(ConsumerConfig.ISOLATION_LEVEL_CONFIG, "read_committed")
@@ -1015,7 +1009,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         KafkaReceiver<Integer, String> receiver = createReceiver();
 
         receiveAndSendTransactions(receiver, txSender, destTopic, count, 4)
-            .onErrorResume(e -> txSender.senderTransaction().abort().thenMany(receiveAndSendTransactions(receiver, txSender, destTopic, count - 2, -1)))
+            .onErrorResume(e -> txSender.transactionManager().abort().thenMany(receiveAndSendTransactions(receiver, txSender, destTopic, count - 2, -1)))
             .blockLast(Duration.ofMillis(receiveTimeoutMillis));
 
         // Check that exactly 'count' messages is committed on destTopic, with one copy of each message
@@ -1042,16 +1036,16 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
 
 
         KafkaSender<Integer, String> txSender = createTransactionalSender();
-        txSender.senderTransaction().begin()
+        txSender.transactionManager().begin()
                 .thenMany(txSender.send(createSenderRecords(0, count, false)))
-                .then(txSender.senderTransaction().abort())
+                .then(txSender.transactionManager().abort())
                 .then().block();
 
         sendMessages(count, count);
         waitForMessages(latch1);  // non-transactional messages received if no commits pending
         checkConsumedMessages(count, count);
 
-        txSender.sendTransactions(Flux.just(createSenderRecords(count * 2, count, true)))
+        txSender.sendTransactionally(Flux.just(createSenderRecords(count * 2, count, true)))
                 .then().subscribe();
         waitForMessages(latch2);
         checkConsumedMessages(count, count * 3);
@@ -1158,7 +1152,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     }
 
     private void sendMessages(int startIndex, int count) {
-        Disposable disposable = kafkaSender.sendOutbound(Flux.range(startIndex, count)
+        Disposable disposable = kafkaSender.createOutbound().send(Flux.range(startIndex, count)
                                                              .map(i -> createProducerRecord(i, true)))
                                            .then()
                                            .subscribe();
@@ -1169,7 +1163,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         CountDownLatch latch = new CountDownLatch(count);
         Flux.range(startIndex, count)
             .map(i -> createProducerRecord(i, true))
-            .concatMap(record -> kafkaSender.sendOutbound(Mono.just(record)).then()
+            .concatMap(record -> kafkaSender.createOutbound().send(Mono.just(record)).then()
                                             .doOnSuccess(metadata -> latch.countDown())
                                             .retry(100))
             .subscribe();
@@ -1256,12 +1250,12 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     private Flux<SenderResult<Integer>> receiveAndSendTransactions(KafkaReceiver<Integer, String> receiver,
             KafkaSender<Integer, String> sender, String destTopic, int count, int exceptionIndex) {
         AtomicInteger index = new AtomicInteger();
-        SenderTransaction senderTransaction = sender.senderTransaction();
-        return receiver.receiveExactlyOnce(senderTransaction)
+        TransactionManager transactionManager = sender.transactionManager();
+        return receiver.receiveExactlyOnce(transactionManager)
                 .concatMap(f -> sender.send(f.map(r -> toSenderRecord(destTopic, r, r.key())).doOnNext(r -> {
                         if (index.incrementAndGet() == exceptionIndex)
                             throw new RuntimeException("Test exception");
-                    })).concatWith(senderTransaction.commit()))
+                    })).concatWith(transactionManager.commit()))
                 .take(count);
     }
 }

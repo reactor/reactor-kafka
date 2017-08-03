@@ -459,7 +459,7 @@ public class ProducerPerformance {
         Flux<?> transactionalFlux(CountDownLatch latch) {
             AtomicLong transactionEndMs = new AtomicLong(System.currentTimeMillis() + transactionDurationMs);
             Flux<Flux<SenderRecord<byte[], byte[], Callback>>> sourceFlux = sourceFlux()
-                    .publishOn(sender.senderTransaction().scheduler())
+                    .publishOn(sender.transactionManager().scheduler())
                     .windowUntil(r -> {
                             long currentTimeMs = System.currentTimeMillis();
                             if (currentTimeMs >= transactionEndMs.get()) {
@@ -468,7 +468,7 @@ public class ProducerPerformance {
                             } else
                                 return false;
                         });
-            return sender.sendTransactions(sourceFlux)
+            return sender.sendTransactionally(sourceFlux)
                          .concatMap(r -> r)
                          .map(result -> processResult(latch, result));
         }

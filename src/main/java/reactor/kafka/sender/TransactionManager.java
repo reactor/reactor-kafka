@@ -24,7 +24,7 @@ import org.apache.kafka.common.TopicPartition;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 
-public interface SenderTransaction {
+public interface TransactionManager {
 
     /**
      * Begins a new transaction. See {@link KafkaProducer#beginTransaction()} for more details.
@@ -33,10 +33,10 @@ public interface SenderTransaction {
      * Example usage:
      * <pre>
      * {@code
-     * senderTransaction = kafkaSender.senderTransaction();
-     * senderTransaction.begin()
-     *                  .then(kafkaSender.send(outboundFlux))
-     *                  .then(senderTransaction.commit());
+     * transactionManager = kafkaSender.transactionManager();
+     * transactionManager.begin()
+     *                   .then(kafkaSender.send(outboundFlux))
+     *                   .then(transactionManager.commit());
      * }
      * </pre>
      * @return empty Mono that completes when the transaction has started

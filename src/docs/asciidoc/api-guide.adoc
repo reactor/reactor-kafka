@@ -141,12 +141,12 @@ option may be configured to limit the number of messages in-flight at any time.
 ==== Send without result metadata
 
 If individual results are not required for each send request, `ProducerRecord` can be sent to Kafka
-without providing correlation metadata using the `sendOutbound` method. `KafkaOutbound` is a fluent
+without providing correlation metadata using the `KafkaOutbound` interface. `KafkaOutbound` is a fluent
 interface that enables sends to be chained together.
 
 [source,java]
 --------
-KafkaOutbound<K, V> sendOutbound(Publisher<? extends ProducerRecord<K, V>> records);
+KafkaOutbound<K, V> send(Publisher<? extends ProducerRecord<K, V>> outboundRecords);
 --------
 
 The send sequence is initiated by subscribing to the Mono obtained from `KafkaOutbound#then()`.
@@ -156,8 +156,9 @@ be sent to Kafka unless a send fails or the returned Mono is cancelled.
 
 [source,java]
 --------
-sender.sendOutbound(Flux.range(1,  10)
-                        .map(i -> new ProducerRecord<Integer, String>(topic, i, "Message_" + i))) // <1>
+sender.createOutbound()
+      .send(Flux.range(1,  10)
+                .map(i -> new ProducerRecord<Integer, String>(topic, i, "Message_" + i))) // <1>
       .then()                                                    // <2>
       .doOnError(e -> e.printStackTrace())                       // <3>
       .doOnSuccess(s -> System.out.println("Sends succeeded"))   // <4>
@@ -169,14 +170,15 @@ sender.sendOutbound(Flux.range(1,  10)
 <4> Success indicates all records were published, individual partitions or offsets not returned
 <5> Subscribe to request the actual sends
 
-Multiple sends can be chained together using a sequence of sends on the returned `KafkaOutbound`.
+Multiple sends can be chained together using a sequence of sends on `KafkaOutbound`.
 When the Mono returned from `KafkaOutbound#then()` is subscribed to, the sends are invoked
 in sequence in the declaration order. The sequence is cancelled if any of the sends fail
 after the configured number of retries.
 
 [source,java]
 --------
-sender.sendOutbound(flux1)                                       // <1>
+sender.createOutbound()
+      .send(flux1)                                               // <1>
       .send(flux2)
       .send(flux3)
       .then()                                                    // <2>

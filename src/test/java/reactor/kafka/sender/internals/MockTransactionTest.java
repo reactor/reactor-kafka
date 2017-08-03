@@ -54,7 +54,7 @@ import reactor.kafka.sender.KafkaSender;
 import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.SenderRecord;
 import reactor.kafka.sender.SenderResult;
-import reactor.kafka.sender.SenderTransaction;
+import reactor.kafka.sender.TransactionManager;
 import reactor.kafka.util.TestUtils;
 import reactor.test.StepVerifier;
 
@@ -123,7 +123,7 @@ public class MockTransactionTest {
         sendMessages(srcTopic, 0, count);
 
         int transactionCount = count / maxPollRecords;
-        Flux<SenderResult<Integer>> flux = receiver.receiveExactlyOnce(sender.senderTransaction())
+        Flux<SenderResult<Integer>> flux = receiver.receiveExactlyOnce(sender.transactionManager())
                 .concatMap(f -> sendAndCommit(destTopic, f, -1));
 
         Disposable disposable = flux.subscribe();
@@ -144,18 +144,18 @@ public class MockTransactionTest {
         sendMessages(srcTopic, 0, count);
 
         int transactionCount = count / maxPollRecords;
-        SenderTransaction senderTransaction = sender.senderTransaction();
+        TransactionManager transactionManager = sender.transactionManager();
         Flux<?> receiveAndSend = receiver.receive()
-                .publishOn(senderTransaction.scheduler())
+                .publishOn(transactionManager.scheduler())
                 .take(count)
                 .window(maxPollRecords)
                 .concatMapDelayError(f -> {
-                        Transaction t = new Transaction(senderTransaction, groupId);
+                        Transaction t = new Transaction(transactionManager, groupId);
                         return sender.send(f.map(r -> toSenderRecord(destTopic, r, t)))
                                      .then(t.commitAndBegin());
                     }, false, 1);
 
-        StepVerifier.create(senderTransaction.begin().thenMany(receiveAndSend).then(senderTransaction.commit()))
+        StepVerifier.create(transactionManager.begin().thenMany(receiveAndSend).then(transactionManager.commit()))
                     .verifyComplete();
         verifyTransaction(count, count);
 
@@ -174,10 +174,10 @@ public class MockTransactionTest {
         int count = 30;
         sendMessages(srcTopic, 0, count);
 
-        SenderTransaction senderTransaction = sender.senderTransaction();
-        Flux<SenderResult<Integer>> flux = receiver.receiveExactlyOnce(senderTransaction)
+        TransactionManager transactionManager = sender.transactionManager();
+        Flux<SenderResult<Integer>> flux = receiver.receiveExactlyOnce(transactionManager)
                 .concatMap(f ->  sendAndCommit(destTopic, f, 15))
-                .onErrorResume(e -> senderTransaction.abort().then(Mono.error(e)));
+                .onErrorResume(e -> transactionManager.abort().then(Mono.error(e)));
 
         StepVerifier.create(flux.then())
                     .verifyErrorMessage("Test exception");
@@ -194,13 +194,13 @@ public class MockTransactionTest {
         int count = 30;
         sendMessages(srcTopic, 0, count);
 
-        SenderTransaction senderTransaction = sender.senderTransaction();
+        TransactionManager transactionManager = sender.transactionManager();
         Flux<?> receiveAndSend = receiver.receive()
-                .publishOn(senderTransaction.scheduler())
+                .publishOn(transactionManager.scheduler())
                 .take(count)
                 .window(20)
                 .concatMapDelayError(f -> {
-                        Transaction t = new Transaction(senderTransaction, groupId);
+                        Transaction t = new Transaction(transactionManager, groupId);
                         return sender.send(f.map(r -> {
                                 if (r.key() == 25)
                                     throw new RuntimeException("Test exception");
@@ -209,9 +209,9 @@ public class MockTransactionTest {
                             }))
                             .then(t.commitAndBegin());
                     }, false, 1)
-                .onErrorResume(e -> senderTransaction.abort().then(Mono.error(e)));
+                .onErrorResume(e -> transactionManager.abort().then(Mono.error(e)));
 
-        StepVerifier.create(sender.senderTransaction().begin().thenMany(receiveAndSend))
+        StepVerifier.create(sender.transactionManager().begin().thenMany(receiveAndSend))
                     .verifyErrorMessage("Test exception");
         verifyTransaction(count, 20);
 
@@ -224,7 +224,7 @@ public class MockTransactionTest {
 
     /**
      * Tests transaction good path with messages to multiple partitions as well as offset commits
-     * triggered using {@link KafkaSender#senderTransaction().addOffset(ReceiverOffset, String)}
+     * triggered using {@link KafkaSender#transactionManager().addOffset(ReceiverOffset, String)}
      * included within each transaction.
      */
     @Test
@@ -234,11 +234,11 @@ public class MockTransactionTest {
         consumerFactory.addConsumer(new MockConsumer(cluster));
         sendMessages(srcTopic, 0, count);
 
-        Flux<SenderResult<Integer>> flux = receiver.receiveExactlyOnce(sender.senderTransaction())
+        Flux<SenderResult<Integer>> flux = receiver.receiveExactlyOnce(sender.transactionManager())
                 .concatMap(f -> sendAndCommit(destTopic, f, failureKey))
-                .onErrorResume(e -> sender.senderTransaction().abort().then(Mono.error(e)));
+                .onErrorResume(e -> sender.transactionManager().abort().then(Mono.error(e)));
         KafkaReceiver<Integer, String> receiver2 = new DefaultKafkaReceiver<Integer, String>(consumerFactory, receiverOptions);
-        Flux<SenderResult<Integer>> errorResumeFlux = receiver2.receiveExactlyOnce(sender.senderTransaction())
+        Flux<SenderResult<Integer>> errorResumeFlux = receiver2.receiveExactlyOnce(sender.transactionManager())
                 .concatMap(f -> sendAndCommit(destTopic, f, -1));
 
         Disposable disposable = flux.onErrorResume(e -> errorResumeFlux).subscribe();
@@ -309,7 +309,7 @@ public class MockTransactionTest {
                     throw new RuntimeException("Test exception");
                 else
                     return toSenderRecord(destTopic, r);
-            })).concatWith(sender.senderTransaction().commit());
+            })).concatWith(sender.transactionManager().commit());
     }
 
     private void waitForTransactions(int transactionCount) {
@@ -318,19 +318,19 @@ public class MockTransactionTest {
     }
 
     private static class Transaction {
-        final SenderTransaction senderTransaction;
+        final TransactionManager transactionManager;
         final Map<TopicPartition, OffsetAndMetadata> offsets = new HashMap<>();
         final String consumerGroupId;
 
-        Transaction(SenderTransaction senderTransaction, String consumerGroupId) {
-            this.senderTransaction = senderTransaction;
+        Transaction(TransactionManager transactionManager, String consumerGroupId) {
+            this.transactionManager = transactionManager;
             this.consumerGroupId = consumerGroupId;
         }
         Mono<Void> commit() {
-            return senderTransaction.sendOffsets(offsets, consumerGroupId).then(senderTransaction.commit());
+            return transactionManager.sendOffsets(offsets, consumerGroupId).then(transactionManager.commit());
         }
         Mono<Void> commitAndBegin() {
-            return commit().then(senderTransaction.begin());
+            return commit().then(transactionManager.begin());
         }
         void addOffset(ConsumerRecord<?, ?> record) {
             offsets.put(new TopicPartition(record.topic(), record.partition()), new OffsetAndMetadata(record.offset() + 1));

@@ -93,7 +93,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
     public void sendNoResponse() throws Exception {
         int count = 1000;
         Flux<Integer> source = Flux.range(0, count);
-        kafkaSender.sendOutbound(source.map(i -> createProducerRecord(i, true)))
+        kafkaSender.createOutbound().send(source.map(i -> createProducerRecord(i, true)))
                    .then()
                    .block();
 
@@ -109,7 +109,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         int count = 4;
         Semaphore errorSemaphore = new Semaphore(0);
         try {
-            kafkaSender.sendOutbound(createOutboundErrorFlux(count, true, false))
+            kafkaSender.createOutbound().send(createOutboundErrorFlux(count, true, false))
                        .then()
                        .doOnError(t -> errorSemaphore.release())
                        .subscribe();
@@ -128,7 +128,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
     @Test
     public void sendChain() throws Exception {
         int batch = 100;
-        kafkaSender.sendOutbound(Flux.range(0, batch).map(i -> createProducerRecord(i, true)))
+        kafkaSender.createOutbound().send(Flux.range(0, batch).map(i -> createProducerRecord(i, true)))
                    .send(Flux.range(batch, batch).map(i -> createProducerRecord(i, true)))
                    .send(Flux.range(batch * 2, batch).map(i -> createProducerRecord(i, true)))
                    .then()
@@ -145,7 +145,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
     public void sendChainFailure() throws Exception {
         int count = 4;
         Semaphore errorSemaphore = new Semaphore(0);
-        kafkaSender.sendOutbound(createOutboundErrorFlux(count, true, false))
+        kafkaSender.createOutbound().send(createOutboundErrorFlux(count, true, false))
                    .send(Flux.range(0, 10).map(i -> createProducerRecord(i, true)))
                    .send(Flux.range(10, 10).map(i -> createProducerRecord(i, true)))
                    .then()
@@ -416,7 +416,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         senderOptions = senderOptions.producerProperty(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true")
                                      .producerProperty(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, "10000");
         recreateSender(senderOptions);
-        kafkaSender.sendOutbound(createProducerRecords(0, count, true).delayElements(Duration.ofMillis(100)))
+        kafkaSender.createOutbound().send(createProducerRecords(0, count, true).delayElements(Duration.ofMillis(100)))
                    .then()
                    .subscribe();
         shutdownKafkaBroker();
@@ -433,7 +433,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                 .producerProperty(ProducerConfig.TRANSACTIONAL_ID_CONFIG, testName.getMethodName())
                 .stopOnError(true);
         recreateSender(senderOptions);
-        kafkaSender.sendTransactions(Flux.just(createSenderRecords(0, count, true)))
+        kafkaSender.sendTransactionally(Flux.just(createSenderRecords(0, count, true)))
                    .blockLast(Duration.ofMillis(receiveTimeoutMillis));
         waitForMessages(consumer, count, true);
     }
@@ -451,20 +451,20 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         recreateSender(senderOptions);
         Map<Integer, SenderResult<Integer>> results = new ConcurrentHashMap<>();
 
-        kafkaSender.sendTransactions(Flux.just(createSenderRecords(0, count, true)))
+        kafkaSender.sendTransactionally(Flux.just(createSenderRecords(0, count, true)))
                    .concatMap(r -> r)
                    .doOnNext(r -> results.put(r.correlationMetadata(), r))
                    .blockLast(Duration.ofMillis(receiveTimeoutMillis));
 
         KafkaSender<Integer, String> sender2 = KafkaSender.create(senderOptions);
-        sender2.senderTransaction().begin()
+        sender2.transactionManager().begin()
                .then(sender2.send(createSenderRecords(count, count, true))
                          .doOnNext(r -> results.put(r.correlationMetadata(), r))
                          .then())
                .block(Duration.ofMillis(receiveTimeoutMillis));
 
         Semaphore done = new Semaphore(0);
-        kafkaSender.sendTransactions(Flux.just(createSenderRecords(count * 2, count, false)))
+        kafkaSender.sendTransactionally(Flux.just(createSenderRecords(count * 2, count, false)))
                    .concatMap(r -> r)
                    .doOnNext(r -> results.put(r.correlationMetadata(), r))
                    .doOnError(e -> {
@@ -498,11 +498,11 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                 .stopOnError(true);
         recreateSender(senderOptions);
 
-        kafkaSender.senderTransaction().begin().block();
+        kafkaSender.transactionManager().begin().block();
         kafkaSender.send(createSenderRecords(0, count, true)).blockLast(Duration.ofMillis(receiveTimeoutMillis));
 
         KafkaSender<Integer, String> sender2 = KafkaSender.create(senderOptions);
-        sender2.sendTransactions(Flux.just(createSenderRecords(0, count, true)))
+        sender2.sendTransactionally(Flux.just(createSenderRecords(0, count, true)))
                .concatMap(r -> r)
                .blockLast(Duration.ofMillis(receiveTimeoutMillis));
 

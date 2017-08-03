@@ -60,7 +60,7 @@ import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOffset;
 import reactor.kafka.receiver.ReceiverPartition;
 import reactor.kafka.receiver.internals.CommittableBatch.CommitArgs;
-import reactor.kafka.sender.SenderTransaction;
+import reactor.kafka.sender.TransactionManager;
 
 public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, ConsumerRebalanceListener {
 
@@ -180,22 +180,22 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
     }
 
     @Override
-    public Flux<Flux<ConsumerRecord<K, V>>> receiveExactlyOnce(SenderTransaction senderTransaction) {
+    public Flux<Flux<ConsumerRecord<K, V>>> receiveExactlyOnce(TransactionManager transactionManager) {
         this.ackMode = AckMode.EXACTLY_ONCE;
         Flux<ConsumerRecords<K, V>> flux = withDoOnRequest(createConsumerFlux());
-        return  flux.map(consumerRecords -> senderTransaction.begin()
+        return  flux.map(consumerRecords -> transactionManager.begin()
                                  .then(Mono.fromCallable(() -> awaitingTransaction.getAndSet(true)))
-                                 .thenMany(transactionalRecords(senderTransaction, consumerRecords)))
-                                 .publishOn(senderTransaction.scheduler());
+                                 .thenMany(transactionalRecords(transactionManager, consumerRecords)))
+                                 .publishOn(transactionManager.scheduler());
     }
-    private Flux<ConsumerRecord<K, V>> transactionalRecords(SenderTransaction senderTransaction, ConsumerRecords<K, V> records) {
+    private Flux<ConsumerRecord<K, V>> transactionalRecords(TransactionManager transactionManager, ConsumerRecords<K, V> records) {
         if (records.isEmpty())
             return Flux.empty();
         CommittableBatch offsetBatch = new CommittableBatch();
         for (ConsumerRecord<K, V> r : records)
             offsetBatch.updateOffset(new TopicPartition(r.topic(), r.partition()), r.offset());
         return Flux.fromIterable(records)
-                   .concatWith(senderTransaction.sendOffsets(offsetBatch.getAndClearOffsets().offsets(), receiverOptions.groupId()))
+                   .concatWith(transactionManager.sendOffsets(offsetBatch.getAndClearOffsets().offsets(), receiverOptions.groupId()))
                    .doAfterTerminate(() -> awaitingTransaction.set(false));
     }
 

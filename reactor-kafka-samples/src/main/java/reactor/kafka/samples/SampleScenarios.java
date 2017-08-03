@@ -145,7 +145,8 @@ public class SampleScenarios {
             KafkaSender<Integer, Person> sender = sender(senderOptions);
             Flux<Person> srcFlux = source().flux();
             return srcFlux.concatMap(p ->
-                    sender.sendOutbound(Mono.just(new ProducerRecord<>(topic1, p.id(), p)))
+                    sender.createOutbound()
+                          .send(Mono.just(new ProducerRecord<>(topic1, p.id(), p)))
                           .send(Mono.just(new ProducerRecord<>(topic2, p.id(), p.upperCase())))
                           .then()
                           .doOnSuccess(v -> source.commit(p.id())))
@@ -277,16 +278,15 @@ public class SampleScenarios {
         @Override
         public SenderOptions<Integer, Person> senderOptions() {
             return super.senderOptions()
-                        .scheduler(scheduler)
                         .producerProperty(ProducerConfig.ACKS_CONFIG, "all")
-                        .producerProperty(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "KafkaExactlyOnce");
+                        .producerProperty(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "TransactionalSend");
         }
         @Override
         public Flux<?> flux() {
             sender = sender(senderOptions());
             Flux<Person> srcFlux = source().flux();
             return sender
-                    .sendTransactions(srcFlux.map(p -> records(p)))
+                    .sendTransactionally(srcFlux.map(p -> records(p)))
                     .concatMap(r -> r)
                     .doOnNext(r -> log.info("Sent record successfully {}", r))
                     .doOnError(e-> log.error("Send failed, terminating.", e))
@@ -350,14 +350,14 @@ public class SampleScenarios {
             KafkaSender<Integer, Person> sender = sender(senderOptions());
             ReceiverOptions<Integer, Person> receiverOptions = receiverOptions(Collections.singleton(sourceTopic));
             KafkaReceiver<Integer, Person> receiver = KafkaReceiver.create(receiverOptions);
-            return receiver.receiveExactlyOnce(sender.senderTransaction())
+            return receiver.receiveExactlyOnce(sender.transactionManager())
                     .concatMap(f -> sendAndCommit(f))
-                    .onErrorResume(e -> sender.senderTransaction().abort().then(Mono.error(e)))
+                    .onErrorResume(e -> sender.transactionManager().abort().then(Mono.error(e)))
                     .doOnCancel(() -> close());
         }
         private Flux<SenderResult<Integer>> sendAndCommit(Flux<ConsumerRecord<Integer, Person>> flux) {
             return sender.send(flux.map(r -> SenderRecord.<Integer, Person, Integer>create(transform(r.value()), r.key())))
-                    .concatWith(sender.senderTransaction().commit());
+                    .concatWith(sender.transactionManager().commit());
         }
     }
 
@@ -508,6 +508,7 @@ public class SampleScenarios {
                     "id='" + id + '\'' +
                     ", firstName='" + firstName + '\'' +
                     ", lastName='" + lastName + '\'' +
+                    ", email='" + email + '\'' +
                     '}';
         }
         private boolean stringEquals(String str1, String str2) {
