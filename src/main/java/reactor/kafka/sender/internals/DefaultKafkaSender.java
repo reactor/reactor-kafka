@@ -177,6 +177,8 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
             this.state = new AtomicReference<>(SubscriberState.INIT);
             inflight = new AtomicInteger();
             firstException = new AtomicReference<>();
+            if (Thread.interrupted()) // Clear any interrupts
+                log.trace("Previous operation on this scheduler was interrupted");
         }
 
         @Override
