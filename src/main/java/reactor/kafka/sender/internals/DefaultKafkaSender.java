@@ -74,7 +74,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
     private final Mono<Producer<K, V>> producerMono;
     private final AtomicBoolean hasProducer;
     private final SenderOptions<K, V> senderOptions;
-    private final DefaultKafkaTransaction transaction;
+    private final DefaultTransactionManager transactionManager;
     private Producer<K, V> producerProxy;
 
     /**
@@ -96,9 +96,9 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
             .cache();
         if (senderOptions.isTransactional()) {
             this.producerMono = producerMono.publishOn(senderOptions.scheduler());
-            this.transaction = new DefaultKafkaTransaction();
+            this.transactionManager = new DefaultTransactionManager();
         } else {
-            this.transaction = null;
+            this.transactionManager = null;
             this.producerMono = producerMono;
         }
     }
@@ -134,9 +134,9 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
 
     @Override
     public TransactionManager transactionManager() {
-        if (transaction == null)
+        if (transactionManager == null)
             throw new IllegalStateException("Transactions are not enabled");
-        return transaction;
+        return transactionManager;
     }
 
     @Override
@@ -466,7 +466,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
         }
     }
 
-    private class DefaultKafkaTransaction implements TransactionManager {
+    private class DefaultTransactionManager implements TransactionManager {
 
         @Override
         public <T> Mono<T> begin() {
