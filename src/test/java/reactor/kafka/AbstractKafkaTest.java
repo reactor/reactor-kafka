@@ -41,9 +41,13 @@ import org.junit.rules.TestName;
 import kafka.admin.AdminUtils;
 import kafka.cluster.Partition;
 import kafka.utils.ZkUtils;
+import reactor.core.publisher.Flux;
 import reactor.kafka.cluster.EmbeddedKafkaCluster;
+import reactor.kafka.receiver.ReceiverOffset;
 import reactor.kafka.receiver.ReceiverOptions;
+import reactor.kafka.receiver.ReceiverRecord;
 import reactor.kafka.sender.SenderOptions;
+import reactor.kafka.sender.SenderRecord;
 import reactor.kafka.util.TestUtils;
 import scala.Option;
 
@@ -127,6 +131,15 @@ public class AbstractKafkaTest {
         return new ProducerRecord<Integer, String>(topic, partition, index, "Message " + index);
     }
 
+    public Flux<ProducerRecord<Integer, String>> createProducerRecords(int startIndex, int count, boolean expectSuccess) {
+        return Flux.range(startIndex, count).map(i -> createProducerRecord(i, expectSuccess));
+    }
+
+    public Flux<SenderRecord<Integer, String, Integer>> createSenderRecords(int startIndex, int count, boolean expectSuccess) {
+        return Flux.range(startIndex, count)
+                   .map(i -> SenderRecord.create(createProducerRecord(i, expectSuccess), i));
+    }
+
     public void onReceive(ConsumerRecord<Integer, String> record) {
         receivedMessages.get(record.partition()).add(record.key());
     }
@@ -160,13 +173,11 @@ public class AbstractKafkaTest {
     }
 
     public String createNewTopic(String newTopic, int partitions) {
-        this.topic = newTopic;
-        this.partitions = partitions;
         ZkUtils zkUtils = new ZkUtils(embeddedKafka.zkClient(), null, false);
         Properties props = new Properties();
-        AdminUtils.createTopic(zkUtils, topic, partitions, 1, props, null);
-        waitForTopic(topic, partitions, true);
-        return topic;
+        AdminUtils.createTopic(zkUtils, newTopic, partitions, 1, props, null);
+        waitForTopic(newTopic, partitions, true);
+        return newTopic;
     }
 
     public void deleteTopic(String topic) {
@@ -190,7 +201,7 @@ public class AbstractKafkaTest {
         embeddedKafka.shutdownBroker(brokerId);
     }
 
-    public void restartKafkaBroker() throws Exception {
+    public void restartKafkaBroker() {
         embeddedKafka.restartBroker(brokerId);
         waitForTopic(topic, partitions, false);
         for (int i = 0; i < partitions; i++)
@@ -210,6 +221,14 @@ public class AbstractKafkaTest {
 
     public void clearReceivedMessages() {
         receivedMessages.forEach(l -> l.clear());
+    }
+
+    public SenderRecord<Integer, String, ReceiverOffset> toSenderRecord(String destTopic, ReceiverRecord<Integer, String> record) {
+        return SenderRecord.<Integer, String, ReceiverOffset>create(destTopic, record.partition(), null, record.key(), record.value(), record.receiverOffset());
+    }
+
+    public SenderRecord<Integer, String, Integer> toSenderRecord(String destTopic, ConsumerRecord<Integer, String> record, Integer correlationMetadata) {
+        return SenderRecord.<Integer, String, Integer>create(destTopic, record.partition(), null, record.key(), record.value(), correlationMetadata);
     }
 
     protected int count(List<List<Integer>> list) {

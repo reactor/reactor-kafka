@@ -20,6 +20,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -27,19 +28,25 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.TopicPartition;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscription;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import reactor.core.CoreSubscriber;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Operators;
+import reactor.core.publisher.UnicastProcessor;
+import reactor.core.scheduler.Scheduler;
 import reactor.kafka.sender.KafkaOutbound;
 import reactor.kafka.sender.KafkaSender;
+import reactor.kafka.sender.TransactionManager;
 import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.SenderRecord;
 import reactor.kafka.sender.SenderResult;
@@ -58,6 +65,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
 
     /** Note: Methods added to this set should also be included in javadoc for {@link KafkaSender#doOnProducer(Function)} */
     private static final Set<String> DELEGATE_METHODS = new HashSet<>(Arrays.asList(
+            "sendOffsetsToTransaction",
             "partitionsFor",
             "metrics",
             "flush"
@@ -66,6 +74,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
     private final Mono<Producer<K, V>> producerMono;
     private final AtomicBoolean hasProducer;
     private final SenderOptions<K, V> senderOptions;
+    private final DefaultKafkaTransaction transaction;
     private Producer<K, V> producerProxy;
 
     /**
@@ -73,66 +82,121 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
      * producer properties are supported. The underlying Kafka producer is created lazily when required.
      */
     public DefaultKafkaSender(ProducerFactory producerFactory, SenderOptions<K, V> options) {
-        hasProducer = new AtomicBoolean();
+        this.hasProducer = new AtomicBoolean();
         this.senderOptions = options.toImmutable();
-        this.producerMono = Mono.fromCallable(() -> {
-                return producerFactory.createProducer(senderOptions);
+        Mono<Producer<K, V>> producerMono = Mono.fromCallable(() -> {
+                Producer<K, V> producer = producerFactory.createProducer(senderOptions);
+                if (senderOptions.isTransactional()) {
+                    log.info("Initializing transactions for producer {}", senderOptions.transactionalId());
+                    producer.initTransactions();
+                }
+                return producer;
             })
-            .cache()
-            .doOnSubscribe(s -> hasProducer.set(true));
-    }
-
-    @Override
-    public <T> Flux<SenderResult<T>> send(Publisher<SenderRecord<K, V, T>> records) {
-        return new Flux<SenderResult<T>>() {
-            @Override
-            public void subscribe(CoreSubscriber<? super SenderResult<T>> s) {
-                Flux.from(records).subscribe(new SendSubscriber<>(s, senderOptions.stopOnError()));
-            }
+            .doOnSubscribe(s -> hasProducer.set(true))
+            .cache();
+        if (senderOptions.isTransactional()) {
+            this.producerMono = producerMono.publishOn(senderOptions.scheduler());
+            this.transaction = new DefaultKafkaTransaction();
+        } else {
+            this.transaction = null;
+            this.producerMono = producerMono;
         }
-        .doOnError(e -> log.trace("Send failed with exception {}", e))
-        .publishOn(senderOptions.scheduler(), senderOptions.maxInFlight());
     }
 
+    @Override
+    public <T> Flux<SenderResult<T>> send(Publisher<? extends SenderRecord<K, V, T>> records) {
+        return producerMono.flatMapMany(producer -> new Flux<SenderResult<T>>() {
+                @Override
+                public void subscribe(CoreSubscriber<? super SenderResult<T>> s) {
+                    Flux<SenderRecord<K, V, T>> senderRecords = Flux.from(records);
+                    senderRecords.subscribe(new SendSubscriber<>(producer, s, senderOptions.stopOnError()));
+                }
+            }
+        .doOnError(e -> log.trace("Send failed with exception {}", e))
+        .publishOn(senderOptions.scheduler(), senderOptions.maxInFlight()));
+    }
 
     @Override
-    public KafkaOutbound<K, V> sendOutbound(Publisher<? extends ProducerRecord<K, V>> records) {
-        return new DefaultKafkaOutbound<K, V>(this).send(records);
+    public KafkaOutbound<K, V> createOutbound() {
+        return new DefaultKafkaOutbound<K, V>(this);
+    }
+
+    @Override
+    public <T> Flux<Flux<SenderResult<T>>> sendTransactionally(Publisher<? extends Publisher<? extends SenderRecord<K, V, T>>> transactionRecords) {
+        UnicastProcessor<Object> processor = UnicastProcessor.create();
+        return Flux.from(transactionRecords)
+                   .publishOn(senderOptions.scheduler(), false, 1)
+                   .concatMapDelayError(records -> transaction(records, processor), false, 1)
+                   .window(processor)
+                   .doOnTerminate(() -> processor.onComplete())
+                   .doOnCancel(() -> processor.onComplete());
+    }
+
+    @Override
+    public TransactionManager transactionManager() {
+        if (transaction == null)
+            throw new IllegalStateException("Transactions are not enabled");
+        return transaction;
     }
 
     @Override
     public <T> Mono<T> doOnProducer(Function<Producer<K, V>, ? extends T> function) {
-        return Mono.create(sink -> {
-                try {
-                    T ret = function.apply(producerProxy(producer()));
-                    sink.success(ret);
-                } catch (Throwable t) {
-                    sink.error(t);
-                }
-            });
+        return producerMono.flatMap(producer ->
+                Mono.create(sink -> {
+                        try {
+                            T ret = function.apply(producerProxy(producer));
+                            sink.success(ret);
+                        } catch (Throwable t) {
+                            sink.error(t);
+                        }
+                    }));
     }
 
     @Override
     public void close() {
-        if (hasProducer.getAndSet(false))
-            producer().close(senderOptions.closeTimeout().toMillis(), TimeUnit.MILLISECONDS);
-    }
-
-    private Producer<K, V> producer() {
-        return producerMono.block();
+        if (hasProducer.getAndSet(false)) {
+            producerMono.doOnNext(producer -> producer.close(senderOptions.closeTimeout().toMillis(), TimeUnit.MILLISECONDS))
+                        .block();
+            if (senderOptions.isTransactional())
+                senderOptions.scheduler().dispose();
+        }
     }
 
     private Flux<Object> sendProducerRecords(Publisher<? extends ProducerRecord<K, V>> records) {
-        return new Flux<Object>() {
-            @Override
-            public void subscribe(CoreSubscriber<? super Object> s) {
-                Flux.from(records).subscribe(new SendSubscriberNoResponse(s, senderOptions.stopOnError()));
-            }
-        }
-        .doOnError(e -> log.trace("Send failed with exception {}", e))
-        .publishOn(senderOptions.scheduler(), senderOptions.maxInFlight());
+        return producerMono.flatMapMany(producer ->
+                new Flux<Object>() {
+
+                    @Override
+                    public void subscribe(CoreSubscriber<? super Object> s) {
+                        Flux.from(records).subscribe(new SendSubscriberNoResponse(producer, s, senderOptions.stopOnError()));
+                    }
+                }
+                .doOnError(e -> log.trace("Send failed with exception {}", e))
+                .publishOn(senderOptions.scheduler(), senderOptions.maxInFlight()));
     }
 
+    private Mono<Void> transaction(Publisher<? extends ProducerRecord<K, V>> transactionRecords) {
+        return transactionManager()
+                .begin()
+                .thenMany(sendProducerRecords(transactionRecords))
+                .concatWith(transactionManager().commit())
+                .onErrorResume(e -> transactionManager().abort().then(Mono.error(e)))
+                .publishOn(senderOptions.scheduler())
+                .then();
+    }
+
+    private <T> Flux<SenderResult<T>> transaction(Publisher<? extends SenderRecord<K, V, T>> transactionRecords, UnicastProcessor<Object> transactionBoundary) {
+        return transactionManager()
+                .begin()
+                .thenMany(send(transactionRecords))
+                .concatWith(transactionManager().commit())
+                .concatWith(Mono.create(sink -> {
+                        transactionBoundary.onNext(this);
+                        sink.success();
+                    }))
+                .onErrorResume(e -> transactionManager().abort().then(Mono.error(e)))
+                .publishOn(senderOptions.scheduler());
+    }
 
     @SuppressWarnings("unchecked")
     private synchronized Producer<K, V> producerProxy(Producer<K, V> producer) {
@@ -166,24 +230,22 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
     private abstract class AbstractSendSubscriber<Q, S, C> implements CoreSubscriber<Q> {
         protected final CoreSubscriber<? super S> actual;
         private final boolean stopOnError;
-        private Producer<K, V> producer;
+        private final Producer<K, V> producer;
         private AtomicInteger inflight;
         AtomicReference<SubscriberState> state;
         private AtomicReference<Throwable> firstException;
 
-        AbstractSendSubscriber(CoreSubscriber<? super S> actual, boolean stopOnError) {
+        AbstractSendSubscriber(Producer<K, V> producer, CoreSubscriber<? super S> actual, boolean stopOnError) {
+            this.producer = producer;
             this.stopOnError = stopOnError;
             this.actual = actual;
             this.state = new AtomicReference<>(SubscriberState.INIT);
             inflight = new AtomicInteger();
             firstException = new AtomicReference<>();
-            if (Thread.interrupted()) // Clear any interrupts
-                log.trace("Previous operation on this scheduler was interrupted");
         }
 
         @Override
         public void onSubscribe(Subscription s) {
-            producer = producer();
             state.set(SubscriberState.ACTIVE);
             actual.onSubscribe(s);
         }
@@ -193,10 +255,17 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
             if (checkComplete(m))
                 return;
             inflight.incrementAndGet();
+            if (Thread.interrupted()) // Clear any interrupts
+                log.trace("Previous operation on this scheduler was interrupted");
+
             C correlationMetadata = correlationMetadata(m);
             try {
+                if (senderOptions.isTransactional())
+                    log.trace("Transactional send initiated for producer {} in state {} inflight {}: {}", senderOptions.transactionalId(), state, inflight, m);
                 producer.send(producerRecord(m), (metadata, exception) -> {
                         try {
+                            if (senderOptions.isTransactional())
+                                log.trace("Transactional send completed for producer {} in state {} inflight {}: {}", senderOptions.transactionalId(), state, inflight, m);
                             if (exception == null)
                                 handleMetadata(metadata, correlationMetadata);
                             else
@@ -216,6 +285,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
 
         @Override
         public void onError(Throwable t) {
+            log.trace("Sender failed with exception {}", t);
             if (state.compareAndSet(SubscriberState.ACTIVE, SubscriberState.COMPLETE) ||
                     state.compareAndSet(SubscriberState.OUTBOUND_DONE, SubscriberState.COMPLETE)) {
                 actual.onError(t);
@@ -250,15 +320,16 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
             firstException.compareAndSet(null, e);
             if (!complete) {
                 handleResponse(null, e, correlation);
-                if (abort)
+                if (abort || senderOptions.fatalException(e))
                     onError(e);
             }
         }
 
         public <T> boolean checkComplete(T t) {
             boolean complete = state.get() == SubscriberState.COMPLETE;
-            if (complete && firstException.get() == null)
+            if (complete && firstException.get() == null) {
                 Operators.onNextDropped(t);
+            }
             return complete;
         }
 
@@ -269,8 +340,8 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
 
     private class SendSubscriber<T> extends AbstractSendSubscriber<SenderRecord<K, V, T>, SenderResult<T>, T> {
 
-        SendSubscriber(CoreSubscriber<? super SenderResult<T>> actual, boolean stopOnError) {
-           super(actual, stopOnError);
+        SendSubscriber(Producer<K, V> producer, CoreSubscriber<? super SenderResult<T>> actual, boolean stopOnError) {
+           super(producer, actual, stopOnError);
         }
 
         @Override
@@ -291,8 +362,8 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
 
     private class SendSubscriberNoResponse extends AbstractSendSubscriber<ProducerRecord<K, V>, Object, Void> {
 
-        SendSubscriberNoResponse(CoreSubscriber<? super Object> actual, boolean stopOnError) {
-           super(actual, stopOnError);
+        SendSubscriberNoResponse(Producer<K, V> producer, CoreSubscriber<? super Object> actual, boolean stopOnError) {
+           super(producer, actual, stopOnError);
         }
 
         @Override
@@ -348,7 +419,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
 
     private static class DefaultKafkaOutbound<K, V> implements KafkaOutbound<K, V> {
 
-        private final DefaultKafkaSender<K, V> sender;
+        final DefaultKafkaSender<K, V> sender;
 
         DefaultKafkaOutbound(DefaultKafkaSender<K, V> sender) {
             this.sender = sender;
@@ -360,6 +431,13 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
         }
 
         @Override
+        public KafkaOutbound<K, V> sendTransactionally(Publisher<? extends Publisher<? extends ProducerRecord<K, V>>> transactionRecords) {
+            return then(Flux.from(transactionRecords)
+                            .publishOn(sender.senderOptions.scheduler())
+                            .concatMapDelayError(records -> sender.transaction(records), false, 1));
+        }
+
+        @Override
         public KafkaOutbound<K, V> then(Publisher<Void> other) {
             return new KafkaOutboundThen<>(sender, this, other);
         }
@@ -367,7 +445,6 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
         public Mono<Void> then() {
             return Mono.empty();
         }
-
     }
 
     private static class KafkaOutboundThen<K, V> extends DefaultKafkaOutbound<K, V> {
@@ -386,6 +463,52 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
         @Override
         public Mono<Void> then() {
             return thenMono;
+        }
+    }
+
+    private class DefaultKafkaTransaction implements TransactionManager {
+
+        @Override
+        public <T> Mono<T> begin() {
+            return producerMono.flatMap(p -> Mono.create(sink -> {
+                    p.beginTransaction();
+                    log.debug("Begin a new transaction for producer {}", senderOptions.transactionalId());
+                    sink.success();
+                }));
+        }
+
+        @Override
+        public <T> Mono<T> sendOffsets(Map<TopicPartition, OffsetAndMetadata> offsets, String consumerGroupId) {
+            return producerMono.flatMap(producer -> Mono.create(sink -> {
+                    if (!offsets.isEmpty()) {
+                        producer.sendOffsetsToTransaction(offsets, consumerGroupId);
+                        log.trace("Sent offsets to transaction for producer {}, offsets: {}", senderOptions.transactionalId(), offsets);
+                    }
+                    sink.success();
+                }));
+        }
+
+        @Override
+        public <T> Mono<T> commit() {
+            return producerMono.flatMap(producer -> Mono.create(sink -> {
+                    producer.commitTransaction();
+                    log.debug("Commit current transaction for producer {}", senderOptions.transactionalId());
+                    sink.success();
+                }));
+        }
+
+        @Override
+        public <T> Mono<T> abort() {
+            return producerMono.flatMap(p -> Mono.create(sink -> {
+                    p.abortTransaction();
+                    log.debug("Abort current transaction for producer {}", senderOptions.transactionalId());
+                    sink.success();
+                }));
+        }
+
+        @Override
+        public Scheduler scheduler() {
+            return senderOptions.scheduler();
         }
     }
 }

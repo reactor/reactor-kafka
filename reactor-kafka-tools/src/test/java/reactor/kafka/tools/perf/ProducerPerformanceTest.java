@@ -49,12 +49,12 @@ public class ProducerPerformanceTest extends AbstractKafkaTest {
     @Test
     public void performanceRegressionTest() throws Exception {
 
-        NonReactiveProducerPerformance nonReactive = new NonReactiveProducerPerformance(producerProps(), topic, numMessages, messageSize, -1);
+        NonReactiveProducerPerformance nonReactive = new NonReactiveProducerPerformance(producerProps(), topic, numMessages, messageSize, -1, null, 0);
         Stats nrStats = TestUtils.execute(() -> nonReactive.runTest(), timeoutMs);
         nrStats.printTotal();
         assertEquals(numMessages, (int) nrStats.count());
 
-        ReactiveProducerPerformance reactive = new ReactiveProducerPerformance(producerProps(), topic, numMessages, messageSize, -1);
+        ReactiveProducerPerformance reactive = new ReactiveProducerPerformance(producerProps(), topic, numMessages, messageSize, -1, null, 0);
         Stats rStats = TestUtils.execute(() -> reactive.runTest(), timeoutMs);
         rStats.printTotal();
         assertEquals(numMessages, (int) rStats.count());

@@ -100,7 +100,7 @@ class CommittableBatch {
         return String.valueOf(consumedOffsets);
     }
 
-    static class CommitArgs {
+    public static class CommitArgs {
         private Map<TopicPartition, OffsetAndMetadata> offsets;
         private List<MonoSink<Void>> callbackEmitters;
         CommitArgs(Map<TopicPartition, OffsetAndMetadata> offsets, List<MonoSink<Void>> callbackEmitters) {
@@ -108,7 +108,7 @@ class CommittableBatch {
             this.callbackEmitters = callbackEmitters;
         }
 
-        Map<TopicPartition, OffsetAndMetadata> offsets() {
+        public Map<TopicPartition, OffsetAndMetadata> offsets() {
             return offsets;
         }
         List<MonoSink<Void>> callbackEmitters() {

@@ -29,6 +29,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
@@ -114,7 +115,8 @@ public class SampleScenarios {
                             int id = r.correlationMetadata();
                             log.trace("Successfully stored person with id {} in Kafka", id);
                             source.commit(id);
-                        });
+                        })
+                    .doOnCancel(() -> close());
         }
     }
 
@@ -143,10 +145,12 @@ public class SampleScenarios {
             KafkaSender<Integer, Person> sender = sender(senderOptions);
             Flux<Person> srcFlux = source().flux();
             return srcFlux.concatMap(p ->
-                    sender.sendOutbound(Mono.just(new ProducerRecord<>(topic1, p.id(), p)))
-                            .send(Mono.just(new ProducerRecord<>(topic2, p.id(), p.upperCase())))
-                            .then()
-                            .doOnSuccess(v -> source.commit(p.id())));
+                    sender.createOutbound()
+                          .send(Mono.just(new ProducerRecord<>(topic1, p.id(), p)))
+                          .send(Mono.just(new ProducerRecord<>(topic2, p.id(), p.upperCase())))
+                          .then()
+                          .doOnSuccess(v -> source.commit(p.id())))
+                    .doOnCancel(() -> close());
         }
     }
 
@@ -158,23 +162,31 @@ public class SampleScenarios {
      */
     public static class KafkaSource extends AbstractScenario {
         private final String topic;
+        private final Scheduler scheduler;
 
         public KafkaSource(String bootstrapServers, String topic) {
             super(bootstrapServers);
             this.topic = topic;
+            this.scheduler = Schedulers.newSingle("sample", true);
         }
         public Flux<?> flux() {
             return KafkaReceiver.create(receiverOptions(Collections.singletonList(topic)).commitInterval(Duration.ZERO))
                            .receive()
-                           .publishOn(Schedulers.newSingle("sample", true))
+                           .publishOn(scheduler)
                            .concatMap(m -> storeInDB(m.value())
                                           .doOnSuccess(r -> m.receiverOffset().commit().block()))
-                           .retry();
+                           .retry()
+                           .doOnCancel(() -> close());
         }
         public Mono<Void> storeInDB(Person person) {
             log.info("Successfully processed person with id {} from Kafka", person.id());
             return Mono.empty();
         }
+        public void close() {
+            super.close();
+            scheduler.dispose();
+        }
+
     }
 
     /**
@@ -194,10 +206,12 @@ public class SampleScenarios {
         }
         public Flux<?> flux() {
             KafkaSender<Integer, Person> sender = sender(senderOptions());
-            return sender.send(KafkaReceiver.create(receiverOptions(Collections.singleton(sourceTopic)))
-                                       .receive()
-                                       .map(m -> SenderRecord.create(transform(m.value()), m.receiverOffset())))
-                         .doOnNext(m -> m.correlationMetadata().acknowledge());
+            return KafkaReceiver.create(receiverOptions(Collections.singleton(sourceTopic)))
+                                .receive()
+                                .map(m -> SenderRecord.create(transform(m.value()), m.receiverOffset()))
+                                .as(sender::send)
+                                .doOnNext(m -> m.correlationMetadata().acknowledge())
+                                .doOnCancel(() -> close());
         }
         public ProducerRecord<Integer, Person> transform(Person p) {
             Person transformed = new Person(p.id(), p.firstName(), p.lastName());
@@ -222,20 +236,128 @@ public class SampleScenarios {
             this.sourceTopic = sourceTopic;
             this.destTopic = destTopic;
         }
+        @Override
+        public SenderOptions<Integer, Person> senderOptions() {
+            return super.senderOptions()
+                        .producerProperty(ProducerConfig.ACKS_CONFIG, "0")
+                        .producerProperty(ProducerConfig.RETRIES_CONFIG, "0")
+                        .stopOnError(false);
+        }
         public Flux<?> flux() {
-            SenderOptions<Integer, Person> senderOptions = senderOptions()
-                    .producerProperty(ProducerConfig.ACKS_CONFIG, "0")
-                    .producerProperty(ProducerConfig.RETRIES_CONFIG, "0")
-                    .stopOnError(false);
-            return sender(senderOptions)
-                .send(KafkaReceiver.create(receiverOptions(Collections.singleton(sourceTopic)))
-                              .receiveAtmostOnce()
-                              .map(cr -> SenderRecord.create(transform(cr.value()), cr.offset())));
+            KafkaSender<Integer, Person> sender = sender(senderOptions());
+            return KafkaReceiver.create(receiverOptions(Collections.singleton(sourceTopic)))
+                                .receiveAtmostOnce()
+                                .map(cr -> SenderRecord.create(transform(cr.value()), cr.offset()))
+                                .as(sender::send)
+                                .doOnCancel(() -> close());
         }
         public ProducerRecord<Integer, Person> transform(Person p) {
             Person transformed = new Person(p.id(), p.firstName(), p.lastName());
             transformed.email(p.firstName().toLowerCase(Locale.ROOT) + "@kafka.io");
             return new ProducerRecord<>(destTopic, p.id(), transformed);
+        }
+    }
+
+    /**
+     * This sample demonstrates the use of transactions to send data to multiple topic partitions,
+     * such that if one of the sends fails, the transaction is aborted and the data from uncommitted
+     * transactions are not visible to consumers configured with {@link ConsumerConfig#ISOLATION_LEVEL_CONFIG}
+     * <code>read_committed</code>.
+     *
+     */
+    public static class TransactionalSend extends AbstractScenario {
+        private final String destTopic1;
+        private final String destTopic2;
+        private Scheduler scheduler = Schedulers.newSingle("transaction-scheduler", true);
+
+        public TransactionalSend(String bootstrapServers, String destTopic1, String destTopic2) {
+            super(bootstrapServers);
+            this.destTopic1 = destTopic1;
+            this.destTopic2 = destTopic2;
+        }
+        @Override
+        public SenderOptions<Integer, Person> senderOptions() {
+            return super.senderOptions()
+                        .producerProperty(ProducerConfig.ACKS_CONFIG, "all")
+                        .producerProperty(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "TransactionalSend");
+        }
+        @Override
+        public Flux<?> flux() {
+            sender = sender(senderOptions());
+            Flux<Person> srcFlux = source().flux();
+            return sender
+                    .sendTransactionally(srcFlux.map(p -> records(p)))
+                    .concatMap(r -> r)
+                    .doOnNext(r -> log.info("Sent record successfully {}", r))
+                    .doOnError(e-> log.error("Send failed, terminating.", e))
+                    .doOnCancel(() -> close());
+        }
+        private Flux<SenderRecord<Integer, Person, Integer>> records(Person p) {
+            Person p1 = new Person(p.id(), p.firstName(), p.lastName());
+            p1.email(p.firstName().toLowerCase(Locale.ROOT) + "@kafka.io");
+            SenderRecord<Integer, Person, Integer> record1 = SenderRecord.create(destTopic1, null, null, p.id(), p1, p.id());
+            Person p2 = new Person(p.id(), p.firstName(), p.lastName());
+            p2.email(p.lastName().toLowerCase(Locale.ROOT) + "@reactor.io");
+            SenderRecord<Integer, Person, Integer> record2 = SenderRecord.create(destTopic2, null, null, p.id(), p2, p.id());
+            return Flux.just(record1, record2);
+        }
+        @Override
+        public void close() {
+            super.close();
+            scheduler.dispose();
+        }
+    }
+    /**
+     * This sample demonstrates an exactly/once transactional flow where messages are received
+     * from partitions of a source topic, transformed and sent to a destination topic using a
+     * transactional sender. Consumers with {@link ConsumerConfig#ISOLATION_LEVEL_CONFIG}
+     * <code>read_committed</code> will consume exactly one copy of each message from the
+     * destination topic after the messages are committed by the sender. Offsets for the
+     * source partitions are committed using the transactional sender to ensure that even
+     * if exceptions are encountered, the flow restarts from the last committed state.
+     *
+     */
+    public static class KafkaExactlyOnce extends AbstractScenario {
+        protected final String sourceTopic;
+        protected final String destTopic;
+
+        public KafkaExactlyOnce(String bootstrapServers, String sourceTopic, String destTopic) {
+            super(bootstrapServers);
+            this.sourceTopic = sourceTopic;
+            this.destTopic = destTopic;
+        }
+        @Override
+        public SenderOptions<Integer, Person> senderOptions() {
+            return super.senderOptions()
+                        .producerProperty(ProducerConfig.ACKS_CONFIG, "all")
+                        .producerProperty(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "KafkaExactlyOnce");
+        }
+        @Override
+        public ReceiverOptions<Integer, Person> receiverOptions() {
+            return super.receiverOptions()
+                    .consumerProperty(ConsumerConfig.ISOLATION_LEVEL_CONFIG, "read_committed");
+        }
+        public ProducerRecord<Integer, Person> transform(Person p) {
+            Person transformed = new Person(p.id(), p.firstName(), p.lastName());
+            transformed.email(email(p));
+            return new ProducerRecord<>(destTopic, p.id(), transformed);
+        }
+        public String email(Person p) {
+            return p.firstName().toLowerCase(Locale.ROOT) + "@kafka.io";
+        }
+        @Override
+        public Flux<?> flux() {
+            KafkaSender<Integer, Person> sender = sender(senderOptions());
+            ReceiverOptions<Integer, Person> receiverOptions = receiverOptions(Collections.singleton(sourceTopic));
+            KafkaReceiver<Integer, Person> receiver = KafkaReceiver.create(receiverOptions);
+            return receiver.receiveExactlyOnce(sender.transactionManager())
+                    .concatMap(f -> sendAndCommit(f))
+                    .onErrorResume(e -> sender.transactionManager().abort().then(Mono.error(e)))
+                    .doOnCancel(() -> close());
+        }
+        private Flux<SenderResult<Integer>> sendAndCommit(Flux<ConsumerRecord<Integer, Person>> flux) {
+            return sender.send(flux.map(r -> SenderRecord.<Integer, Person, Integer>create(transform(r.value()), r.key())))
+                    .concatWith(sender.transactionManager().commit());
         }
     }
 
@@ -248,6 +370,8 @@ public class SampleScenarios {
         private final String sourceTopic;
         private final String destTopic1;
         private final String destTopic2;
+        private Scheduler scheduler1 = Schedulers.newSingle("sample1", true);
+        private Scheduler scheduler2 = Schedulers.newSingle("sample2", true);
 
         public FanOut(String bootstrapServers, String sourceTopic, String destTopic1, String destTopic2) {
             super(bootstrapServers);
@@ -256,8 +380,6 @@ public class SampleScenarios {
             this.destTopic2 = destTopic2;
         }
         public Flux<?> flux() {
-            Scheduler scheduler1 = Schedulers.newSingle("sample1", true);
-            Scheduler scheduler2 = Schedulers.newSingle("sample2", true);
             sender = sender(senderOptions());
             EmitterProcessor<Person> processor = EmitterProcessor.create();
             FluxSink<Person> incoming = processor.sink();
@@ -275,7 +397,10 @@ public class SampleScenarios {
             };
             return Flux.merge(stream1, stream2)
                        .doOnSubscribe(s -> cancelRef.set(inFlux.subscribe()))
-                       .doOnCancel(() -> cancel.accept(cancelRef));
+                       .doOnCancel(() -> {
+                               cancel.accept(cancelRef);
+                               close();
+                           });
         }
         public ProducerRecord<Integer, Person> process1(Person p, boolean debug) {
             if (debug)
@@ -290,6 +415,11 @@ public class SampleScenarios {
             Person transformed = new Person(p.id(), p.firstName(), p.lastName());
             transformed.email(p.lastName().toLowerCase(Locale.ROOT) + "@reactor.io");
             return new ProducerRecord<>(destTopic2, p.id(), transformed);
+        }
+        public void close() {
+            super.close();
+            scheduler1.dispose();
+            scheduler2.dispose();
         }
     }
 
@@ -314,7 +444,8 @@ public class SampleScenarios {
                             .flatMap(partitionFlux -> partitionFlux.publishOn(scheduler)
                                                                    .map(r -> processRecord(partitionFlux.key(), r))
                                                                    .sample(Duration.ofMillis(5000))
-                                                                   .concatMap(offset -> offset.commit()));
+                                                                   .concatMap(offset -> offset.commit()))
+                            .doOnCancel(() -> close());
         }
         public ReceiverOffset processRecord(TopicPartition topicPartition, ReceiverRecord<Integer, Person> message) {
             log.info("Processing record {} from partition {} in thread{}",
@@ -377,6 +508,7 @@ public class SampleScenarios {
                     "id='" + id + '\'' +
                     ", firstName='" + firstName + '\'' +
                     ", lastName='" + lastName + '\'' +
+                    ", email='" + email + '\'' +
                     '}';
         }
         private boolean stringEquals(String str1, String str2) {

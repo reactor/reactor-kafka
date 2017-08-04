@@ -36,12 +36,14 @@ import static org.junit.Assert.assertTrue;
 
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
+import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
+import org.apache.kafka.common.errors.ProducerFencedException;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -115,7 +117,7 @@ public class MockSenderTest {
     @Test
     public void producerClose() {
         sender = new DefaultKafkaSender<>(producerFactory, SenderOptions.create());
-        sender.sendOutbound(outgoingRecords.append(topic, 10).producerRecords()).then().block();
+        sender.createOutbound().send(outgoingRecords.append(topic, 10).producerRecords()).then().block();
         assertEquals(Arrays.asList(producer), producerFactory.producersInUse());
         assertFalse("Producer closed after send", producer.isClosed());
         sender.close();
@@ -123,7 +125,7 @@ public class MockSenderTest {
     }
 
     /**
-     * Tests {@link KafkaSender#sendOutbound(org.reactivestreams.Publisher)} good path.
+     * Tests {@link KafkaOutbound#send(org.reactivestreams.Publisher)} good path.
      * Checks that {@link KafkaOutbound#then()} completes successfully when all
      * records are successfully sent to Kafka.
      */
@@ -134,7 +136,7 @@ public class MockSenderTest {
     }
 
     /**
-     * Tests {@link KafkaSender#sendOutbound(org.reactivestreams.Publisher)} error path.
+     * Tests {@link KafkaOutbound#send(org.reactivestreams.Publisher)} error path.
      * Checks that {@link KafkaOutbound#then()} fails if a record cannot be delivered to Kafka.
      */
     @Test
@@ -144,14 +146,14 @@ public class MockSenderTest {
         sender = new DefaultKafkaSender<>(producerFactory, options.maxInFlight(maxInflight));
         producer.enableInFlightCheck();
         OutgoingRecords outgoing = outgoingRecords.append("nonexistent", 10);
-        StepVerifier.create(sender.sendOutbound(outgoing.producerRecords()).then())
+        StepVerifier.create(sender.createOutbound().send(outgoing.producerRecords()).then())
                     .expectError(InvalidTopicException.class)
                     .verify();
         assertEquals(maxInflight, outgoing.onNextCount.get());
     }
 
     /**
-     * Tests {@link KafkaSender#sendOutbound(org.reactivestreams.Publisher)} error path
+     * Tests {@link KafkaOutbound#send(org.reactivestreams.Publisher)} error path
      * with stopOnError=false.
      */
     @Test
@@ -160,7 +162,7 @@ public class MockSenderTest {
         sender = new DefaultKafkaSender<>(producerFactory, options.stopOnError(false).maxInFlight(2));
 
         OutgoingRecords outgoing = outgoingRecords.append("nonexistent", 10).append(topic, 10);
-        StepVerifier.create(sender.sendOutbound(outgoing.producerRecords()))
+        StepVerifier.create(sender.createOutbound().send(outgoing.producerRecords()))
                     .expectError(InvalidTopicException.class)
                     .verify();
         assertEquals(20, outgoing.onNextCount.get());
@@ -168,7 +170,7 @@ public class MockSenderTest {
     }
 
     /**
-     * Tests multiple {@link KafkaSender#sendOutbound(org.reactivestreams.Publisher)}
+     * Tests multiple {@link KafkaOutbound#send(org.reactivestreams.Publisher)}
      * with stopOnError=false to ignore all errors.
      */
     @Test
@@ -180,9 +182,9 @@ public class MockSenderTest {
         OutgoingRecords outgoing2 = new OutgoingRecords(cluster).append(topic, 10).append("nonexistent", 10);
         OutgoingRecords outgoing3 = new OutgoingRecords(cluster).append("nonexistent", 10).append(topic, 10);
         Mono<Void> mono = sender
-                .sendOutbound(outgoing1.producerRecords()).then().onErrorResume(e -> Mono.empty())
-                .then(sender.sendOutbound(outgoing2.producerRecords()).then().onErrorResume(e -> Mono.empty()))
-                .then(sender.sendOutbound(outgoing3.producerRecords()).then().onErrorResume(e -> Mono.empty()));
+                .createOutbound().send(outgoing1.producerRecords()).then().onErrorResume(e -> Mono.empty())
+                .then(sender.createOutbound().send(outgoing2.producerRecords()).then().onErrorResume(e -> Mono.empty()))
+                .then(sender.createOutbound().send(outgoing3.producerRecords()).then().onErrorResume(e -> Mono.empty()));
         StepVerifier.create(mono)
                     .expectComplete()
                     .verify();
@@ -248,7 +250,8 @@ public class MockSenderTest {
     @Test
     public void sendChain() {
         sender = new DefaultKafkaSender<>(producerFactory, SenderOptions.create());
-        KafkaOutbound<Integer, String> chain = sender.sendOutbound(outgoingRecords.append(topic, 10).producerRecords())
+        KafkaOutbound<Integer, String> chain = sender.createOutbound()
+                .send(outgoingRecords.append(topic, 10).producerRecords())
                 .send(outgoingRecords.append(topic, 10).producerRecords())
                 .send(outgoingRecords.append(topic, 10).producerRecords());
         StepVerifier.create(chain)
@@ -265,7 +268,7 @@ public class MockSenderTest {
     public void sendChainThen() {
         AtomicInteger thenCount = new AtomicInteger();
         sender = new DefaultKafkaSender<>(producerFactory, SenderOptions.create());
-        KafkaOutbound<Integer, String> chain = sender.sendOutbound(outgoingRecords.append(topic, 10).producerRecords())
+        KafkaOutbound<Integer, String> chain = sender.createOutbound().send(outgoingRecords.append(topic, 10).producerRecords())
                 .then(Mono.fromRunnable(() -> {
                         thenCount.incrementAndGet();
                         assertEquals(10, outgoingRecords.onNextCount.get());
@@ -296,8 +299,8 @@ public class MockSenderTest {
         Semaphore doneSemaphore1 = new Semaphore(0);
         OutgoingRecords outgoing1 = new OutgoingRecords(cluster);
         outgoing1.nextMessageID.set(1000);
-        KafkaOutbound<Integer, String> chain1 = sender
-                .sendOutbound(outgoing1.append(topic, 10).producerRecords())
+        KafkaOutbound<Integer, String> chain1 = sender.createOutbound()
+                .send(outgoing1.append(topic, 10).producerRecords())
                 .then(Mono.fromRunnable(() -> doneSemaphore1.release()))
                 .send(outgoing1.append(topic, 10).producerRecords())
                 .then(Mono.<Void>fromRunnable(() -> waitSemaphore1.acquireUninterruptibly()).publishOn(Schedulers.single()))
@@ -307,8 +310,8 @@ public class MockSenderTest {
         Semaphore doneSemaphore2 = new Semaphore(0);
         OutgoingRecords outgoing2 = new OutgoingRecords(cluster);
         outgoing2.nextMessageID.set(2000);
-        KafkaOutbound<Integer, String> chain2 = sender
-                .sendOutbound(outgoing2.append(topic, 10).producerRecords())
+        KafkaOutbound<Integer, String> chain2 = sender.createOutbound()
+                .send(outgoing2.append(topic, 10).producerRecords())
                 .then(Mono.fromRunnable(() -> doneSemaphore2.release()))
                 .send(outgoing2.append(topic, 10).producerRecords())
                 .then(Mono.<Void>fromRunnable(() -> waitSemaphore2.acquireUninterruptibly())
@@ -344,7 +347,8 @@ public class MockSenderTest {
         SenderOptions<Integer, String> options = SenderOptions.create();
         sender = new DefaultKafkaSender<>(producerFactory, options.maxInFlight(maxInflight));
         producer.enableInFlightCheck();
-        KafkaOutbound<Integer, String> chain = sender.sendOutbound(outgoingRecords.append("nonexistent", 10).producerRecords())
+        KafkaOutbound<Integer, String> chain = sender.createOutbound()
+                .send(outgoingRecords.append("nonexistent", 10).producerRecords())
                 .send(outgoingRecords.append(topic, 10).producerRecords())
                 .send(outgoingRecords.append(topic, 10).producerRecords());
         StepVerifier.create(chain.then())
@@ -382,6 +386,24 @@ public class MockSenderTest {
                     .verify();
         outgoing.verify(sendResponses);
         assertEquals(10, outgoing.onNextCount.get());
+    }
+
+    @Test
+    public void sendWithResponseCallbackFailure() {
+        int maxInflight = 2;
+        SenderOptions<Integer, String> options = SenderOptions.create();
+        sender = new DefaultKafkaSender<>(producerFactory, options.maxInFlight(maxInflight).stopOnError(false));
+        producer.enableInFlightCheck();
+        OutgoingRecords outgoing = outgoingRecords.append(topic, 10);
+        sender.send(outgoing.senderRecords())
+              .doOnNext(r -> {
+                      sendResponses.add(r);
+                      if (sendResponses.size() == 5)
+                          throw new RuntimeException("test");
+                  })
+              .concatMap(r -> Mono.just(r))
+              .subscribe();
+        TestUtils.sleep(5000);
     }
 
     /**
@@ -462,7 +484,7 @@ public class MockSenderTest {
         sender = new DefaultKafkaSender<>(producerFactory, senderOptions);
         OutgoingRecords outgoing = outgoingRecords.append(topic, 10);
         Semaphore semaphore = new Semaphore(0);
-        sender.sendOutbound(outgoing.producerRecords())
+        sender.createOutbound().send(outgoing.producerRecords())
               .then()
               .doOnSuccess(r -> {
                       try {
@@ -608,6 +630,73 @@ public class MockSenderTest {
         assertTrue("Sends not retried " + exceptionCount, exceptionCount.intValue() >= 1);
     }
 
+    @Test
+    public void commitTransaction() throws Exception {
+        int count = 5;
+        String transactionId = "commitTransaction";
+        SenderOptions<Integer, String> senderOptions = SenderOptions.<Integer, String>create()
+                .producerProperty(ProducerConfig.TRANSACTIONAL_ID_CONFIG, transactionId)
+                .stopOnError(true);
+
+        sender = new DefaultKafkaSender<>(producerFactory, senderOptions);
+        OutgoingRecords outgoing = outgoingRecords.append(topic, count);
+
+        StepVerifier.create(sender.transactionManager().begin())
+                    .verifyComplete();
+
+        StepVerifier.create(sender.send(outgoing.senderRecords())
+                                  .doOnNext(result -> assertTrue(Thread.currentThread().getName().contains(transactionId))))
+                    .expectNextCount(count)
+                    .then(() -> {
+                            for (TopicPartition partition : cluster.partitions(topic))
+                                assertEquals(0, cluster.log(partition).size());
+                        })
+                    .verifyComplete();
+
+        StepVerifier.create(sender.transactionManager().commit())
+                    .verifyComplete();
+        outgoing.verify(cluster, topic, true);
+    }
+
+    @Test
+    public void abortTransaction() throws Exception {
+        int count = 5;
+        SenderOptions<Integer, String> senderOptions = SenderOptions.<Integer, String>create()
+                .producerProperty(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "transactionalSender")
+                .stopOnError(true);
+
+        sender = new DefaultKafkaSender<>(producerFactory, senderOptions);
+        OutgoingRecords outgoing = outgoingRecords.append(topic, count);
+
+        StepVerifier.create(sender.transactionManager().begin())
+                    .verifyComplete();
+
+        StepVerifier.create(sender.send(outgoing.senderRecords()).then(sender.transactionManager().abort()))
+                    .then(() -> {
+                            for (TopicPartition partition : cluster.partitions(topic))
+                                assertEquals(0, cluster.log(partition).size());
+                        })
+                    .verifyComplete();
+    }
+
+    @Test
+    public void illegalTransactionState() throws Exception {
+        SenderOptions<Integer, String> senderOptions = SenderOptions.<Integer, String>create()
+                .producerProperty(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "transactionalSender")
+                .stopOnError(true);
+        sender = new DefaultKafkaSender<>(producerFactory, senderOptions);
+        sender.transactionManager().begin().block();
+        sender.transactionManager().commit().block();
+
+        producer.fenceProducer();
+        StepVerifier.create(sender.transactionManager().begin())
+                    .verifyError(ProducerFencedException.class);
+        StepVerifier.create(sender.transactionManager().commit())
+                    .verifyError(ProducerFencedException.class);
+        StepVerifier.create(sender.transactionManager().abort())
+                    .verifyError(ProducerFencedException.class);
+    }
+
     /**
      * Tests invocation of methods on KafkaProducer using {@link KafkaSender#doOnProducer(java.util.function.Function)}
      */
@@ -659,7 +748,6 @@ public class MockSenderTest {
      * Tests {@link KafkaProducer#partitionsFor(String)} good path.
      */
     @Test
-    @SuppressWarnings("unchecked")
     public void partitionsFor() {
         sender = new DefaultKafkaSender<>(producerFactory, SenderOptions.create());
         StepVerifier.create(sender.doOnProducer(producer -> producer.partitionsFor(topic)))
@@ -691,7 +779,7 @@ public class MockSenderTest {
 
     private void sendNoResponseAndVerify(KafkaSender<Integer, String> sender, String topic, int count) {
         OutgoingRecords outgoing = outgoingRecords.append(topic, count);
-        StepVerifier.create(sender.sendOutbound(outgoing.producerRecords()))
+        StepVerifier.create(sender.createOutbound().send(outgoing.producerRecords()))
                     .expectComplete()
                     .verify();
         outgoing.verify(cluster, topic, true);
@@ -741,7 +829,7 @@ public class MockSenderTest {
                 RecordMetadata metadata = null;
                 Exception e = null;
                 if (!fail)
-                    metadata = new RecordMetadata(partition, 0, partitionResponses.size(), 0, 0, 0, 0);
+                    metadata = new RecordMetadata(partition, 0, partitionResponses.size(), 0, (Long) 0L, 0, 0);
                 else
                     e = new InvalidTopicException("Topic not found: " + topic);
                 partitionResponses.add(new DefaultKafkaSender.Response<Integer>(metadata, e, correlation));

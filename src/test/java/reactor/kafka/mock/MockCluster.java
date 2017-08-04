@@ -36,13 +36,17 @@ import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 public class MockCluster {
 
     private final ConcurrentHashMap<TopicPartition, List<Message>> logs;
+    private final ConcurrentHashMap<TopicPartition, List<Message>> uncommittedMessages;
     private final Map<String, Map<TopicPartition, Long>> committedOffsets;
+    private final Map<String, Map<TopicPartition, Long>> pendingOffsets;
     private final Set<Node> failedNodes;
     private Cluster cluster;
 
     public MockCluster(int brokerCount, Map<Integer, String> topics) {
         logs = new ConcurrentHashMap<>();
+        uncommittedMessages = new ConcurrentHashMap<>();
         committedOffsets = new HashMap<>();
+        pendingOffsets = new HashMap<>();
         failedNodes = new HashSet<>();
         List<Node> nodes = new ArrayList<>();
         for (int i = 0; i < brokerCount; i++)
@@ -61,6 +65,7 @@ public class MockCluster {
             TopicPartition topicPartition = new TopicPartition(topic, i);
             partitionInfo.put(topicPartition, new PartitionInfo(topic, i, node, replicas, replicas));
             logs.put(topicPartition, new ArrayList<>());
+            uncommittedMessages.put(topicPartition, new ArrayList<>());
         }
         cluster = cluster.withPartitions(partitionInfo);
     }
@@ -101,13 +106,50 @@ public class MockCluster {
     }
 
     public long appendMessage(ProducerRecord<Integer, String> record) {
+        return appendMessage(record, true);
+    }
+
+    public long appendMessage(ProducerRecord<Integer, String> record, boolean commit) {
         TopicPartition topicPartition = new TopicPartition(record.topic(), record.partition());
         List<Message> log = log(topicPartition);
         if (log == null)
             throw new LeaderNotAvailableException("Partition not available: " + topicPartition);
         Message message = new Message(record.key(), record.value(), record.timestamp());
-        log.add(message);
-        return log.size() - 1;
+        List<Message> uncommitted = uncommittedMessages.get(topicPartition);
+        uncommitted.add(message);
+        if (commit)
+            commitTransaction();
+        return log.size() + uncommitted.size() - 1;
+    }
+
+    public void commitTransaction() {
+        for (Map.Entry<TopicPartition, List<Message>> entry : uncommittedMessages.entrySet()) {
+            TopicPartition topicPartition = entry.getKey();
+            List<Message> messages = entry.getValue();
+            List<Message> log = log(topicPartition);
+            if (log == null)
+                throw new LeaderNotAvailableException("Partition not available: " + topicPartition);
+            log.addAll(messages);
+            messages.clear();
+        }
+        committedOffsets.putAll(pendingOffsets);
+        pendingOffsets.clear();
+    }
+
+    public void abortTransaction() {
+        for (List<Message> uncommitted : uncommittedMessages.values()) {
+            uncommitted.clear();
+        }
+        pendingOffsets.clear();
+    }
+
+    public void addOffsetToTransaction(String groupId, TopicPartition partition, long offset) {
+        Map<TopicPartition, Long> offsets = pendingOffsets.get(groupId);
+        if (offsets == null) {
+            offsets = new HashMap<>();
+            pendingOffsets.put(groupId, offsets);
+        }
+        offsets.put(partition, offset);
     }
 
     public void commitOffset(String groupId, TopicPartition partition, long offset) {

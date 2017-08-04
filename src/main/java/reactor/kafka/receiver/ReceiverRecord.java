@@ -27,6 +27,7 @@ public class ReceiverRecord<K, V> extends ConsumerRecord<K, V> {
 
     private ReceiverOffset receiverOffset;
 
+    @SuppressWarnings("deprecation")
     public ReceiverRecord(ConsumerRecord<K, V> consumerRecord, ReceiverOffset receiverOffset) {
         super(consumerRecord.topic(),
                 consumerRecord.partition(),

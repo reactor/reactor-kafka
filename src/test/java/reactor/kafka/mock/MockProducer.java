@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
@@ -27,6 +28,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.junit.Assert.assertTrue;
 
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.Callback;
@@ -53,6 +56,14 @@ public class MockProducer implements Producer<Integer, String> {
     private long sendDelayMs;
     private boolean closed;
     private boolean inFlightCheckEnabled;
+
+    private boolean transactionInitialized;
+    private boolean transactionInFlight;
+    private boolean producerFenced;
+    public int beginCount;
+    public int commitCount;
+    public int abortCount;
+    public int sendOffsetsCount;
 
     public MockProducer(MockCluster cluster) {
         executor = Executors.newSingleThreadScheduledExecutor();
@@ -155,8 +166,8 @@ public class MockProducer implements Producer<Integer, String> {
             throw e;
         } else {
             try {
-                long offset = cluster.appendMessage(record);
-                RecordMetadata metadata = new RecordMetadata(topicPartition, 0, offset, System.currentTimeMillis(), 0, 4, record.value().length());
+                long offset = cluster.appendMessage(record, !senderOptions.isTransactional());
+                RecordMetadata metadata = new RecordMetadata(topicPartition, 0, offset, System.currentTimeMillis(), (Long) 0L, 4, record.value().length());
                 callback.onCompletion(metadata, null);
                 return metadata;
             } catch (Exception e) {
@@ -169,22 +180,85 @@ public class MockProducer implements Producer<Integer, String> {
 
     @Override
     public void initTransactions() {
+        verifyProducerState();
+        if (this.transactionInitialized) {
+            throw new IllegalStateException("MockProducer has already been initialized for transactions.");
+        }
+        this.transactionInitialized = true;
     }
 
     @Override
     public void beginTransaction() throws ProducerFencedException {
+        verifyProducerState();
+        verifyTransactionsInitialized();
+        this.transactionInFlight = true;
+        this.beginCount++;
     }
 
     @Override
-    public void sendOffsetsToTransaction(Map<TopicPartition, OffsetAndMetadata> offsets, String consumerGroupId) throws ProducerFencedException {
+    public void sendOffsetsToTransaction(Map<TopicPartition, OffsetAndMetadata> offsets,
+                                         String consumerGroupId) throws ProducerFencedException {
+        verifyProducerState();
+        verifyTransactionsInitialized();
+        verifyNoTransactionInFlight();
+        Objects.requireNonNull(consumerGroupId);
+        if (offsets.size() == 0) {
+            return;
+        }
+        for (Map.Entry<TopicPartition, OffsetAndMetadata> entry : offsets.entrySet())
+            cluster.addOffsetToTransaction(consumerGroupId, entry.getKey(), entry.getValue().offset());
+        this.sendOffsetsCount++;
     }
 
     @Override
     public void commitTransaction() throws ProducerFencedException {
+        verifyProducerState();
+        verifyTransactionsInitialized();
+        verifyNoTransactionInFlight();
+
+        flush();
+        this.transactionInFlight = false;
+        cluster.commitTransaction();
+        this.commitCount++;
     }
 
     @Override
     public void abortTransaction() throws ProducerFencedException {
+        verifyProducerState();
+        verifyTransactionsInitialized();
+        verifyNoTransactionInFlight();
+        flush();
+        this.cluster.abortTransaction();
+        this.transactionInFlight = false;
+        cluster.abortTransaction();
+        this.abortCount++;
+    }
+
+    public void fenceProducer() {
+        verifyProducerState();
+        if (!this.transactionInitialized)
+            throw new IllegalStateException("MockProducer hasn't been initialized for transactions.");
+        this.producerFenced = true;
+    }
+
+    private void verifyProducerState() {
+        if (this.closed)
+            throw new IllegalStateException("MockProducer is already closed.");
+        if (this.producerFenced)
+            throw new ProducerFencedException("MockProducer is fenced.");
+    }
+
+    private void verifyTransactionsInitialized() {
+        String transactionId = senderOptions.transactionalId();
+        String thread = Thread.currentThread().getName();
+        assertTrue("Transactional operation on wrong thread " + thread, thread.contains(transactionId));
+        if (!this.transactionInitialized)
+            throw new IllegalStateException("MockProducer hasn't been initialized for transactions.");
+    }
+
+    private void verifyNoTransactionInFlight() {
+        if (!this.transactionInFlight)
+            throw new IllegalStateException("There is no open transaction.");
     }
 
     public static class Pool extends ProducerFactory {
