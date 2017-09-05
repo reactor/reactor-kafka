@@ -290,7 +290,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
                     state.compareAndSet(SubscriberState.OUTBOUND_DONE, SubscriberState.COMPLETE)) {
                 actual.onError(t);
             } else if (firstException.compareAndSet(null, t) && state.get() == SubscriberState.COMPLETE)
-                Operators.onErrorDropped(t);
+                Operators.onErrorDropped(t, actual.currentContext());
         }
 
         @Override
@@ -328,7 +328,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
         public <T> boolean checkComplete(T t) {
             boolean complete = state.get() == SubscriberState.COMPLETE;
             if (complete && firstException.get() == null) {
-                Operators.onNextDropped(t);
+                Operators.onNextDropped(t, actual.currentContext());
             }
             return complete;
         }
