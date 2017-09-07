@@ -34,7 +34,7 @@ ext {
 
   kafkaVersion = '0.11.0.0'
   scalaVersion = '2.11'
-  reactorVersion = '3.1.0.BUILD-SNAPSHOT'
+  reactorVersion = '3.1.0.RC1'
   metricsVersion = '2.2.0'
 
   argparseVersion = '0.5.0'
@@ -46,7 +46,7 @@ ext {
   powermockVersion = '1.6.4'
 
   javadocLinks = ["http://docs.oracle.com/javase/8/docs/api/",
-                  "https://kafka.apache.org/0102/javadoc",
+                  "https://kafka.apache.org/0110/javadoc/",
                   "http://www.reactive-streams.org/reactive-streams-1.0.1-javadoc/",
                   "http://projectreactor.io/docs/core/release/api/"] as String[]
 
