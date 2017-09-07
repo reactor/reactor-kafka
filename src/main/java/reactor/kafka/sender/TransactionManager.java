@@ -73,7 +73,7 @@ public interface TransactionManager {
      * this scheduler. This scheduler is configured using {@link SenderOptions#scheduler(Scheduler)}
      * and it must be single threaded.
      *
-     * @return
+     * @return the scheduler associated with this transaction instance.
      */
     Scheduler scheduler();
 

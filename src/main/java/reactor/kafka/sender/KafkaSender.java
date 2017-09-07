@@ -101,7 +101,7 @@ public interface KafkaSender<K, V> {
      * @return Flux of Kafka producer response record metadata along with the corresponding request correlation metadata.
      *         Each inner Flux contains results of records sent within a transaction.
      * @throws IllegalStateException if the sender was created without setting a non-empty
-     *         {@value ProducerConfig#TRANSACTIONAL_ID_CONFIG} in {@link SenderOptions}
+     *         {@value org.apache.kafka.clients.producer.ProducerConfig#TRANSACTIONAL_ID_CONFIG} in {@link SenderOptions}
      */
     <T> Flux<Flux<SenderResult<T>>> sendTransactionally(Publisher<? extends Publisher<? extends SenderRecord<K, V, T>>> records);
 
@@ -109,7 +109,7 @@ public interface KafkaSender<K, V> {
      * Returns the {@link TransactionManager} instance associated with this sender,
      * which may be used for fine-grained control over transaction states. Sender
      * must have been created with a non-empty transactional id by setting
-     * {@value ProducerConfig#TRANSACTIONAL_ID_CONFIG} in {@link SenderOptions}.
+     * {@value org.apache.kafka.clients.producer.ProducerConfig#TRANSACTIONAL_ID_CONFIG} in {@link SenderOptions}.
      *
      * <p>
      * <b>Threading model for transactional sender:</b>
@@ -121,14 +121,14 @@ public interface KafkaSender<K, V> {
      *
      * @return {@link TransactionManager} associated with this sender
      * @throws IllegalStateException if the sender was created without setting a non-empty
-     *         {@value ProducerConfig#TRANSACTIONAL_ID_CONFIG} in {@link SenderOptions}
+     *         {@value org.apache.kafka.clients.producer.ProducerConfig#TRANSACTIONAL_ID_CONFIG} in {@link SenderOptions}
      */
     TransactionManager transactionManager();
 
     /**
      * Creates a reactive gateway for outgoing Kafka records. Outgoing sends can be chained
      * using {@link KafkaOutbound#send(Publisher)} or {@link KafkaSender#sendTransactionally(Publisher)}.
-     * Like {@link Flux} and {@link Mono}, subscribing to the tail {@link SenderOutbound} will
+     * Like {@link Flux} and {@link Mono}, subscribing to the tail {@link KafkaOutbound} will
      * schedule all parent sends in the declaration order.
      *
      * <p>

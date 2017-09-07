@@ -46,7 +46,7 @@ ext {
   powermockVersion = '1.6.4'
 
   javadocLinks = ["http://docs.oracle.com/javase/8/docs/api/",
-                  "https://kafka.apache.org/0102/javadoc",
+                  "https://kafka.apache.org/0110/javadoc/",
                   "http://www.reactive-streams.org/reactive-streams-1.0.1-javadoc/",
                   "http://projectreactor.io/docs/core/release/api/"] as String[]
 

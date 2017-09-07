@@ -79,7 +79,7 @@ public class SampleScenarios {
         "sample-topic3"
     };
 
-    enum Scenario {
+    protected enum Scenario {
         KAFKA_SINK,
         KAFKA_SINK_CHAIN,
         KAFKA_SOURCE,
