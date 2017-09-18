@@ -79,10 +79,12 @@ public class KafkaSenderTest extends AbstractKafkaTest {
 
     @After
     public void tearDown() {
-        if (consumer != null)
+        if (consumer != null) {
             consumer.close();
-        if (kafkaSender != null)
+        }
+        if (kafkaSender != null) {
             kafkaSender.close();
+        }
     }
 
     /**

@@ -28,6 +28,7 @@ import javax.net.ServerSocketFactory;
 
 import static org.junit.Assert.assertTrue;
 
+import kafka.server.NotRunning;
 import org.I0Itec.zkclient.ZkClient;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -78,6 +79,7 @@ public class EmbeddedKafkaCluster extends ExternalResource {
             props.put(KafkaConfig.MinInSyncReplicasProp(), "1");
             props.put(KafkaConfig.TransactionsTopicReplicationFactorProp(), "1");
             props.put(KafkaConfig.TransactionsTopicMinISRProp(), "1");
+            props.put(KafkaConfig.AdvertisedPortProp(), brokerPort);
             this.brokers.add(new EmbeddedKafkaBroker(props));
         }
     }
@@ -85,7 +87,9 @@ public class EmbeddedKafkaCluster extends ExternalResource {
     @Override
     public void after() {
         for (EmbeddedKafkaBroker broker : brokers) {
-            broker.shutdown();
+            if (broker.server.brokerState().currentState() != NotRunning.state()) {
+                broker.shutdown();
+            }
         }
         brokers.clear();
         if (this.zkClient != null) {
@@ -164,15 +168,23 @@ public class EmbeddedKafkaCluster extends ExternalResource {
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class);
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class);
         props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, 1000);
-        KafkaProducer<byte[], byte[]> producer = new KafkaProducer<>(props);
-        int maxRetries = 10;
+        KafkaProducer<byte[], byte[]> producer = null;
         boolean done = false;
-        for (int i = 0; i < maxRetries && !done; i++) {
-            List<PartitionInfo> partitionInfo = producer.partitionsFor(topic);
-            done = !partitionInfo.isEmpty();
-            for (PartitionInfo info : partitionInfo) {
-                if (info.leader() == null || info.leader().id() < 0)
-                    done = false;
+        try {
+            producer = new KafkaProducer<>(props);
+            int maxRetries = 10;
+            for (int i = 0; i < maxRetries && !done; i++) {
+                List<PartitionInfo> partitionInfo = producer.partitionsFor(topic);
+                done = !partitionInfo.isEmpty();
+                for (PartitionInfo info : partitionInfo) {
+                    if (info.leader() == null || info.leader().id() < 0)
+                        done = false;
+                }
+            }
+        }
+        finally {
+            if (producer != null) {
+                producer.close();
             }
         }
         producer.close();
