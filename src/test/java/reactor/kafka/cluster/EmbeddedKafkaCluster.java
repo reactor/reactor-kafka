@@ -181,8 +181,7 @@ public class EmbeddedKafkaCluster extends ExternalResource {
                         done = false;
                 }
             }
-        }
-        finally {
+        } finally {
             if (producer != null) {
                 producer.close();
             }
