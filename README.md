@@ -7,10 +7,6 @@ Reactor Kafka
 
 You need to have [Java 8](http://www.oracle.com/technetwork/java/javase/downloads/index.html) installed.
 
-### Bootstrap and download the wrapper ###
-    cd reactor-kafka
-    gradle wrapper
-
 ### Building Reactor Kafka jars ###
     ./gradlew jar
 
