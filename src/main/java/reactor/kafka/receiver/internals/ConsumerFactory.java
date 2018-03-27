@@ -29,7 +29,7 @@ public interface ConsumerFactory<K, V>  {
         return config -> new KafkaConsumer<>(config.consumerProperties());
     }
 
-    static <K,V> ConsumerFactory<K, V> of(Deserializer<K> keyDeserializer, Deserializer<V> valueDeserializer) {
+    static <K, V> ConsumerFactory<K, V> of(Deserializer<K> keyDeserializer, Deserializer<V> valueDeserializer) {
         return config -> new KafkaConsumer<>(config.consumerProperties(), keyDeserializer, valueDeserializer);
     }
 }
