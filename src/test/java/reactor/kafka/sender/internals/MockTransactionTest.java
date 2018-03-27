@@ -70,7 +70,7 @@ public class MockTransactionTest {
     private int maxPollRecords = 10;
 
     private MockCluster cluster;
-    private MockConsumer.Pool consumerFactory;
+    private MockConsumer.Pool<Integer, String> consumerFactory;
     private ReceiverOptions<Integer, String> receiverOptions;
     private KafkaReceiver<Integer, String> receiver;
     private MockProducer producer;
@@ -95,7 +95,7 @@ public class MockTransactionTest {
                             assignedPartitions.remove(p.topicPartition());
                     })
                 .subscription(Collections.singleton(srcTopic));
-        consumerFactory = new MockConsumer.Pool(Arrays.asList(new MockConsumer(cluster), new MockConsumer(cluster)));
+        consumerFactory = new MockConsumer.Pool<>(Arrays.asList(new MockConsumer(cluster), new MockConsumer(cluster)));
         receiver = new DefaultKafkaReceiver<Integer, String>(consumerFactory, receiverOptions);
 
         for (TopicPartition partition : cluster.partitions())

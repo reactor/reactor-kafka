@@ -517,7 +517,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
     private Consumer<Integer, String> createConsumer() throws Exception {
         String groupId = testName.getMethodName();
         Map<String, Object> consumerProps = consumerProps(groupId);
-        Consumer<Integer, String> consumer = ConsumerFactory.INSTANCE.createConsumer(ReceiverOptions.<Integer, String>create(consumerProps));
+        Consumer<Integer, String> consumer = ConsumerFactory.<Integer, String>of().createConsumer(ReceiverOptions.create(consumerProps));
         consumer.subscribe(Collections.singletonList(topic));
         consumer.poll(requestTimeoutMillis);
         return consumer;

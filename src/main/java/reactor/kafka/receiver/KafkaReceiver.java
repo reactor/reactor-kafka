@@ -21,6 +21,7 @@ import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
+import org.apache.kafka.common.serialization.Deserializer;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.kafka.receiver.internals.ConsumerFactory;
@@ -47,7 +48,22 @@ public interface KafkaReceiver<K, V> {
      * @return new receiver instance
      */
     public static <K, V> KafkaReceiver<K, V> create(ReceiverOptions<K, V> options) {
-        return new DefaultKafkaReceiver<>(ConsumerFactory.INSTANCE, options);
+        return new DefaultKafkaReceiver<>(ConsumerFactory.of(), options);
+    }
+
+    /**
+     * Creates a reactive Kafka receiver with the specified configuration options, key deserializer and value deserializer.
+     *
+     * @param options Configuration options of this receiver. Changes made to the options
+     *        after the receiver is created will not be used by the receiver.
+     *        A subscription using group management or a manual assignment of topic partitions
+     *        must be set on the options instance prior to creating this receiver.
+     * @param keyDeserializer key deserializer to use
+     * @param valueDeserializer value deserializer to use
+     * @return new receiver instance
+     */
+    public static <K, V> KafkaReceiver<K, V> create(ReceiverOptions<K, V> options, Deserializer<K> keyDeserializer, Deserializer<V> valueDeserializer) {
+        return new DefaultKafkaReceiver<>(ConsumerFactory.of(keyDeserializer, valueDeserializer), options);
     }
 
     /**

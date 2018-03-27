@@ -85,7 +85,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
             "beginningOffsets",
             "endOffsets"));
 
-    private final ConsumerFactory consumerFactory;
+    private final ConsumerFactory<K,V> consumerFactory;
     private final ReceiverOptions<K, V> receiverOptions;
     private final List<Flux<? extends Event<?>>> fluxList;
     private final List<Disposable> subscribeDisposables;
@@ -118,7 +118,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
         AUTO_ACK, MANUAL_ACK, ATMOST_ONCE, EXACTLY_ONCE
     }
 
-    public DefaultKafkaReceiver(ConsumerFactory consumerFactory, ReceiverOptions<K, V> receiverOptions) {
+    public DefaultKafkaReceiver(ConsumerFactory<K,V> consumerFactory, ReceiverOptions<K, V> receiverOptions) {
         fluxList = new ArrayList<>();
         subscribeDisposables = new ArrayList<>();
         requestsPending = new AtomicLong();

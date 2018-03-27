@@ -484,7 +484,7 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
         return String.valueOf(value);
     }
 
-    public static class Pool extends ConsumerFactory {
+    public static class Pool<K,V> implements ConsumerFactory<K,V> {
         private final List<MockConsumer> freeConsumers = new ArrayList<>();
         private final List<MockConsumer> consumersInUse = new ArrayList<>();
         public Pool(List<MockConsumer> freeConsumers) {
@@ -492,7 +492,7 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
         }
         @SuppressWarnings("unchecked")
         @Override
-        public <K, V> Consumer<K, V> createConsumer(ReceiverOptions<K, V> receiverOptions) {
+        public Consumer<K, V> createConsumer(ReceiverOptions<K, V> receiverOptions) {
             MockConsumer consumer = freeConsumers.remove(0);
             consumer.configure((ReceiverOptions<Integer, String>) receiverOptions);
             consumersInUse.add(consumer);
@@ -504,5 +504,6 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
         public void addConsumer(MockConsumer consumer) {
             freeConsumers.add(consumer);
         }
+
     }
 }

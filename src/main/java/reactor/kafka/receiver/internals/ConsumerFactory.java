@@ -18,16 +18,18 @@ package reactor.kafka.receiver.internals;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 
+import org.apache.kafka.common.serialization.Deserializer;
 import reactor.kafka.receiver.ReceiverOptions;
 
-public class ConsumerFactory {
+public interface ConsumerFactory<K, V>  {
 
-    public static final ConsumerFactory INSTANCE = new ConsumerFactory();
+    Consumer<K, V> createConsumer(ReceiverOptions<K, V> config);
 
-    protected ConsumerFactory() {
+    static <K, V> ConsumerFactory<K, V>  of() {
+        return config -> new KafkaConsumer<>(config.consumerProperties());
     }
 
-    public <K, V> Consumer<K, V> createConsumer(ReceiverOptions<K, V> config) {
-        return new KafkaConsumer<>(config.consumerProperties());
+    static <K,V> ConsumerFactory<K, V> of(Deserializer<K> keyDeserializer, Deserializer<V> valueDeserializer) {
+        return config -> new KafkaConsumer<>(config.consumerProperties(), keyDeserializer, valueDeserializer);
     }
 }

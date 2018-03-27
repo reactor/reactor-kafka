@@ -86,7 +86,7 @@ public class MockReceiverTest {
     private Map<Integer, String> topics;
     private String topic;
     private MockCluster cluster;
-    private MockConsumer.Pool consumerFactory;
+    private MockConsumer.Pool<Integer, String> consumerFactory;
     private MockConsumer consumer;
     private ReceiverOptions<Integer, String> receiverOptions;
 
@@ -109,7 +109,7 @@ public class MockReceiverTest {
                             assignedPartitions.remove(p.topicPartition());
                     });
         consumer = new MockConsumer(cluster);
-        consumerFactory = new MockConsumer.Pool(Arrays.asList(consumer));
+        consumerFactory = new MockConsumer.Pool<>(Arrays.asList(consumer));
 
         for (TopicPartition partition : cluster.partitions())
             receiveStartOffsets.put(partition, 0L);
@@ -1044,7 +1044,7 @@ public class MockReceiverTest {
     public void autoHeartbeat() throws Exception {
         long sessionTimeoutMs = 500;
         consumer = new MockConsumer(cluster);
-        consumerFactory = new MockConsumer.Pool(Arrays.asList(consumer));
+        consumerFactory = new MockConsumer.Pool<>(Arrays.asList(consumer));
         receiverOptions = receiverOptions
                 .consumerProperty(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, String.valueOf(sessionTimeoutMs))
                 .consumerProperty(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, "100")
