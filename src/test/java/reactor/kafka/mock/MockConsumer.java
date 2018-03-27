@@ -484,7 +484,7 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
         return String.valueOf(value);
     }
 
-    public static class Pool<K,V> implements ConsumerFactory<K,V> {
+    public static class Pool<K, V> implements ConsumerFactory<K, V> {
         private final List<MockConsumer> freeConsumers = new ArrayList<>();
         private final List<MockConsumer> consumersInUse = new ArrayList<>();
         public Pool(List<MockConsumer> freeConsumers) {
