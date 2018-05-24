@@ -28,6 +28,8 @@ public class ProducerFactory {
     }
 
     public <K, V> Producer<K, V> createProducer(SenderOptions<K, V> senderOptions) {
-        return new KafkaProducer<>(senderOptions.producerProperties());
+        return new KafkaProducer<>(senderOptions.producerProperties(),
+                                   senderOptions.keySerializer().orElse(null),
+                                   senderOptions.valueSerializer().orElse(null));
     }
 }

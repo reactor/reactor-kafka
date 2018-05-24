@@ -23,6 +23,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
@@ -32,6 +33,7 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.RetriableCommitFailedException;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigException;
+import org.apache.kafka.common.serialization.Deserializer;
 
 /**
  * Configuration properties for Reactive Kafka {@link KafkaReceiver} and its underlying {@link KafkaConsumer}.
@@ -44,6 +46,9 @@ public class ReceiverOptions<K, V> {
     private final Map<String, Object> properties;
     private final List<Consumer<Collection<ReceiverPartition>>> assignListeners;
     private final List<Consumer<Collection<ReceiverPartition>>> revokeListeners;
+
+    private Optional<Deserializer<K>> keyDeserializer;
+    private Optional<Deserializer<V>> valueDeserializer;
 
     private Duration pollTimeout;
     private Duration closeTimeout;
@@ -88,6 +93,8 @@ public class ReceiverOptions<K, V> {
         assignListeners = new ArrayList<>();
         revokeListeners = new ArrayList<>();
 
+        keyDeserializer = Optional.empty();
+        valueDeserializer = Optional.empty();
         pollTimeout = DEFAULT_POLL_TIMEOUT;
         closeTimeout = Duration.ofNanos(Long.MAX_VALUE);
         commitInterval = Duration.ofMillis(5000); // Kafka default
@@ -119,6 +126,46 @@ public class ReceiverOptions<K, V> {
     public ReceiverOptions<K, V> consumerProperty(String name, Object newValue) {
         this.properties.put(name, newValue);
         return this;
+    }
+
+    /**
+     * Set a concrete deserializer instant to be used by the {@link KafkaConsumer} for keys. Overrides any setting of the
+     * {@link ConsumerConfig#KEY_DESERIALIZER_CLASS_CONFIG} property.
+     * @param keyDeserializer key deserializer to use in the consumer
+     * @return options instance with new key deserializer
+     */
+    public ReceiverOptions<K, V> withKeyDeserializer(Deserializer<K> keyDeserializer) {
+        this.keyDeserializer = Optional.of(keyDeserializer);
+        return this;
+    }
+
+    /**
+     *
+     * Returns optionally a deserializer witch is used by {@link KafkaConsumer} for key deserialization.
+     * @return configured key deserializer instant
+     */
+    public Optional<Deserializer<K>> keyDeserializer() {
+        return keyDeserializer;
+    }
+
+    /**
+     * Set a concrete deserializer instant to be used by the {@link KafkaConsumer} for values. Overrides any setting of the
+     * {@link ConsumerConfig#VALUE_DESERIALIZER_CLASS_CONFIG} property.
+     * @param valueDeserializer value deserializer to use in the consumer
+     * @return options instance with new value deserializer
+     */
+    public ReceiverOptions<K, V> withValueDeserializer(Deserializer<V> valueDeserializer) {
+        this.valueDeserializer = Optional.of(valueDeserializer);
+        return this;
+    }
+
+    /**
+     *
+     * Returns optionally a deserializer witch is used by {@link KafkaConsumer} for value deserialization.
+     * @return configured value deserializer instant
+     */
+    public Optional<Deserializer<V>> valueDeserializer() {
+        return valueDeserializer;
     }
 
     /**
