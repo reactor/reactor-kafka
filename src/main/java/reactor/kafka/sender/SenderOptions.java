@@ -20,6 +20,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Optional;
 
 import javax.naming.AuthenticationException;
 
@@ -29,6 +30,7 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.errors.ProducerFencedException;
 
+import org.apache.kafka.common.serialization.Serializer;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.concurrent.Queues;
@@ -41,6 +43,8 @@ public class SenderOptions<K, V> {
 
     private final Map<String, Object> properties;
 
+    private Optional<Serializer<K>> keySerializer;
+    private Optional<Serializer<V>> valueSerializer;
     private Duration closeTimeout;
     private Scheduler scheduler;
     private int maxInFlight;
@@ -79,6 +83,8 @@ public class SenderOptions<K, V> {
     private SenderOptions() {
         properties = new HashMap<>();
 
+        keySerializer = Optional.empty();
+        valueSerializer = Optional.empty();
         closeTimeout = Duration.ofMillis(Long.MAX_VALUE);
         scheduler = null;
         maxInFlight = Queues.SMALL_BUFFER_SIZE;
@@ -107,6 +113,46 @@ public class SenderOptions<K, V> {
      */
     public SenderOptions<K, V> producerProperty(String name, Object value) {
         properties.put(name, value);
+        return this;
+    }
+
+    /**
+     *
+     * Returns optionally a serializer witch is used by {@link KafkaProducer} for key serialization.
+     * @return configured key serializer instant
+     */
+    public Optional<Serializer<K>> keySerializer() {
+        return keySerializer;
+    }
+
+    /**
+     * Set a concrete serializer instant to be used by the {@link KafkaProducer} for keys. Overrides any setting of the
+     * {@link ProducerConfig#KEY_SERIALIZER_CLASS_CONFIG} property.
+     * @param keySerializer key serializer to use in the consumer
+     * @return options instance with new key serializer
+     */
+    public  SenderOptions<K, V> withKeySerializer(Serializer<K> keySerializer) {
+        this.keySerializer = Optional.of(keySerializer);
+        return this;
+    }
+
+    /**
+     *
+     * Returns optionally a serializer witch is used by {@link KafkaProducer} for value serialization.
+     * @return configured value serializer instant
+     */
+    public Optional<Serializer<V>> valueSerializer() {
+        return valueSerializer;
+    }
+
+    /**
+     * Set a concrete serializer instant to be used by the {@link KafkaProducer} for values. Overrides any setting of the
+     * {@link ProducerConfig#VALUE_SERIALIZER_CLASS_CONFIG} property.
+     * @param valueSerializer value serializer to use in the consumer
+     * @return options instance with new value serializer
+     */
+    public  SenderOptions<K, V> withValueSerializer(Serializer<V> valueSerializer) {
+        this.valueSerializer = Optional.of(valueSerializer);
         return this;
     }
 
