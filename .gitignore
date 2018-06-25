@@ -7,4 +7,5 @@ build/
 bin/
 .idea/
 .DS_Store
+*.iml
 

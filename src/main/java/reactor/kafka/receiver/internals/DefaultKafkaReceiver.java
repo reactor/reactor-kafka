@@ -68,22 +68,23 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
 
     /** Note: Methods added to this set should also be included in javadoc for {@link KafkaReceiver#doOnConsumer(Function)} */
     private static final Set<String> DELEGATE_METHODS = new HashSet<>(Arrays.asList(
-            "assignment",
-            "subscription",
-            "seek",
-            "seekToBeginning",
-            "seekToEnd",
-            "position",
-            "committed",
-            "metrics",
-            "partitionsFor",
-            "listTopics",
-            "paused",
-            "pause",
-            "resume",
-            "offsetsForTimes",
-            "beginningOffsets",
-            "endOffsets"));
+        "assignment",
+        "subscription",
+        "seek",
+        "seekToBeginning",
+        "seekToEnd",
+        "position",
+        "committed",
+        "metrics",
+        "partitionsFor",
+        "listTopics",
+        "paused",
+        "pause",
+        "resume",
+        "offsetsForTimes",
+        "beginningOffsets",
+        "endOffsets"
+    ));
 
     private final ConsumerFactory consumerFactory;
     private final ReceiverOptions<K, V> receiverOptions;
@@ -109,6 +110,8 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
     private Flux<ConsumerRecords<K, V>> consumerFlux;
     private org.apache.kafka.clients.consumer.Consumer<K, V> consumer;
     private org.apache.kafka.clients.consumer.Consumer<K, V> consumerProxy;
+
+    WorkerScheduler scheduler;
 
     enum EventType {
         INIT, POLL, COMMIT, CUSTOM, CLOSE
@@ -137,13 +140,13 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
     public Flux<ReceiverRecord<K, V>> receive() {
         this.ackMode = AckMode.MANUAL_ACK;
         Flux<ConsumerRecord<K, V>> flux = createConsumerFlux()
-                .concatMap(consumerRecords -> Flux.fromIterable(consumerRecords));
+                .concatMap(Flux::fromIterable, Integer.MAX_VALUE);
         return withDoOnRequest(flux)
-                .map(r -> {
-                        TopicPartition topicPartition = new TopicPartition(r.topic(), r.partition());
-                        CommittableOffset committableOffset = new CommittableOffset(topicPartition, r.offset());
-                        return new ReceiverRecord<K, V>(r, committableOffset);
-                    });
+            .map(r -> {
+                TopicPartition topicPartition = new TopicPartition(r.topic(), r.partition());
+                CommittableOffset committableOffset = new CommittableOffset(topicPartition, r.offset());
+                return new ReceiverRecord<K, V>(r, committableOffset);
+            });
     }
 
     @Override
@@ -153,30 +156,37 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
         return flux
                 .map(consumerRecords -> Flux.fromIterable(consumerRecords)
                                             .doAfterTerminate(() -> {
-                                                    for (ConsumerRecord<K, V> r : consumerRecords)
-                                                        new CommittableOffset(r).acknowledge();
-                                                }));
+                                                for (ConsumerRecord<K, V> r : consumerRecords)
+                                                    new CommittableOffset(r).acknowledge();
+                                            }));
     }
 
     @Override
     public Flux<ConsumerRecord<K, V>> receiveAtmostOnce() {
         this.ackMode = AckMode.ATMOST_ONCE;
         atmostOnceOffsets = new AtmostOnceOffsets();
-        Flux<ConsumerRecord<K, V>> flux = createConsumerFlux()
-                .concatMap(consumerRecords -> Flux.fromIterable(consumerRecords));
-        return withDoOnRequest(flux)
-                .doOnNext(r -> {
+        return createConsumerFlux()
+            .concatMap(cr -> Flux
+                    .fromIterable(cr)
+                    .concatMap(r -> {
                         long offset = r.offset();
-                        TopicPartition partition = new TopicPartition(r.topic(), r.partition());
+                        TopicPartition partition =
+                            new TopicPartition(r.topic(), r.partition());
                         long committedOffset = atmostOnceOffsets.committedOffset(partition);
                         atmostOnceOffsets.onDispatch(partition, offset);
                         long commitAheadSize = receiverOptions.atmostOnceCommitAheadSize();
-                        CommittableOffset committable = new CommittableOffset(partition, offset + commitAheadSize);
+                        CommittableOffset committable =
+                            new CommittableOffset(partition, offset + commitAheadSize);
                         if (offset >= committedOffset)
-                            committable.commit().block();
+                            return committable.commit()
+                                              .then(Mono.just(r))
+                                              .publishOn(scheduler);
                         else if (committedOffset - offset >= commitAheadSize / 2)
                             committable.commit().subscribe();
-                    });
+                        return Mono.just(r);
+                    }, Integer.MAX_VALUE),
+            Integer.MAX_VALUE)
+            .transform(this::withDoOnRequest);
     }
 
     @Override
@@ -202,9 +212,9 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
     @Override
     public <T> Mono<T> doOnConsumer(Function<org.apache.kafka.clients.consumer.Consumer<K, V>, ? extends T> function) {
         return Mono.create(monoSink -> {
-                CustomEvent<T> event = new CustomEvent<>(function, monoSink);
-                emit(event);
-            });
+            CustomEvent<T> event = new CustomEvent<>(function, monoSink);
+            emit(event);
+        });
     }
 
     @Override
@@ -230,7 +240,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
         }
     }
 
-    private Flux<ConsumerRecords<K, V>> createConsumerFlux() {
+    private synchronized Flux<ConsumerRecords<K, V>> createConsumerFlux() {
         if (consumerFlux != null)
             throw new IllegalStateException("Multiple subscribers are not supported for KafkaReceiver flux");
 
@@ -241,31 +251,33 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
         commitEvent = new CommitEvent();
 
         recordEmitter = EmitterProcessor.create();
-        recordSubmission = recordEmitter.sink(OverflowStrategy.BUFFER);
+        recordSubmission = recordEmitter.sink();
+        scheduler = new WorkerScheduler(Schedulers.parallel().createWorker());
 
         consumerFlux = recordEmitter
-                .publishOn(Schedulers.parallel())
+                .publishOn(scheduler)
                 .doOnSubscribe(s -> {
-                        try {
-                            start();
-                        } catch (Exception e) {
-                            log.error("Subscription to event flux failed", e);
-                            throw e;
-                        }
-                    })
+                    try {
+                        start();
+                    } catch (Exception e) {
+                        log.error("Subscription to event flux failed", e);
+                        throw e;
+                    }
+                })
                 .doOnRequest(r -> {
-                        if (requestsPending.get() > 0)
-                            pollEvent.scheduleIfRequired();
-                    })
+                    if (requestsPending.get() > 0)
+                        pollEvent.scheduleIfRequired();
+                })
                 .doOnCancel(() -> cancel(true));
         return consumerFlux;
     }
 
     private <T> Flux<T> withDoOnRequest(Flux<T> consumerFlux) {
         return consumerFlux.doOnRequest(r -> {
-                if (requestsPending.addAndGet(r) > 0)
-                     pollEvent.scheduleIfRequired();
-            });
+            if (requestsPending.addAndGet(r) > 0) {
+                pollEvent.scheduleIfRequired();
+            }
+        });
     }
 
     org.apache.kafka.clients.consumer.Consumer<K, V> kafkaConsumer() {
@@ -344,6 +356,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
             } finally {
                 fluxList.clear();
                 eventScheduler.dispose();
+                scheduler.dispose();
                 try {
                     for (Disposable disposable : subscribeDisposables)
                         disposable.dispose();
@@ -435,7 +448,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
                     // chosen by reactor.
                     commitEvent.runIfRequired(false);
                     pendingCount.decrementAndGet();
-                    if (requestsPending.get() > 0 && recordSubmission.requestedFromDownstream() > 0 && !awaitingTransaction.get()) {
+                    if (requestsPending.get() > 0 && !awaitingTransaction.get()) {
                         if (partitionsPaused.getAndSet(false))
                             consumer.resume(consumer.assignment());
                     } else {
@@ -502,12 +515,12 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
                                 break;
                             default:
                                 consumer.commitAsync(commitArgs.offsets(), (offsets, exception) -> {
-                                        inProgress.decrementAndGet();
-                                        if (exception == null)
-                                            handleSuccess(commitArgs, offsets);
-                                        else
-                                            handleFailure(commitArgs, exception);
-                                    });
+                                    inProgress.decrementAndGet();
+                                    if (exception == null)
+                                        handleSuccess(commitArgs, offsets);
+                                    else
+                                        handleFailure(commitArgs, exception);
+                                });
                                 pollEvent.scheduleIfRequired();
                                 break;
                         }
@@ -561,6 +574,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
                 commitBatch.restoreOffsets(commitArgs, true);
                 log.warn("Commit failed with exception" + exception + ", retries remaining " + (receiverOptions.maxCommitAttempts() - consecutiveCommitFailures.get()));
                 isPending.set(true);
+                pollEvent.scheduleIfRequired();
             }
         }
 
@@ -739,9 +753,9 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
 
         private Mono<Void> scheduleCommit() {
             return Mono.create(emitter -> {
-                    commitEvent.commitBatch.addCallbackEmitter(emitter);
-                    scheduleIfRequired();
-                });
+                commitEvent.commitBatch.addCallbackEmitter(emitter);
+                scheduleIfRequired();
+            });
         }
 
         private void scheduleIfRequired() {
@@ -788,6 +802,43 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
                 }
             }
             return undoRequired;
+        }
+    }
+
+    private static class WorkerScheduler implements Scheduler {
+
+        private final Worker worker;
+
+        private WorkerScheduler(Worker worker) {
+            this.worker = worker;
+        }
+
+        @Override
+        public Disposable schedule(Runnable task) {
+            return worker.schedule(task);
+        }
+
+        @Override
+        public Disposable schedulePeriodically(Runnable task,
+                long initialDelay,
+                long period,
+                TimeUnit unit) {
+            return worker.schedulePeriodically(task, initialDelay, period, unit);
+        }
+
+        @Override
+        public Worker createWorker() {
+            return worker;
+        }
+
+        @Override
+        public void dispose() {
+            worker.dispose();
+        }
+
+        @Override
+        public boolean isDisposed() {
+            return worker.isDisposed();
         }
     }
 }

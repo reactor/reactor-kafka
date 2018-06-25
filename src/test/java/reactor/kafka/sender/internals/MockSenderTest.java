@@ -270,14 +270,14 @@ public class MockSenderTest {
         sender = new DefaultKafkaSender<>(producerFactory, SenderOptions.create());
         KafkaOutbound<Integer, String> chain = sender.createOutbound().send(outgoingRecords.append(topic, 10).producerRecords())
                 .then(Mono.fromRunnable(() -> {
-                        thenCount.incrementAndGet();
-                        assertEquals(10, outgoingRecords.onNextCount.get());
-                    }))
+                    thenCount.incrementAndGet();
+                    assertEquals(10, outgoingRecords.onNextCount.get());
+                }))
                 .send(outgoingRecords.append(topic, 10).producerRecords())
                 .then(Mono.fromRunnable(() -> {
-                        thenCount.incrementAndGet();
-                        assertEquals(20, outgoingRecords.onNextCount.get());
-                    }))
+                    thenCount.incrementAndGet();
+                    assertEquals(20, outgoingRecords.onNextCount.get());
+                }))
                 .send(outgoingRecords.append(topic, 10).producerRecords());
         StepVerifier.create(chain.then())
                     .expectComplete()
@@ -397,10 +397,10 @@ public class MockSenderTest {
         OutgoingRecords outgoing = outgoingRecords.append(topic, 10);
         sender.send(outgoing.senderRecords())
               .doOnNext(r -> {
-                      sendResponses.add(r);
-                      if (sendResponses.size() == 5)
-                          throw new RuntimeException("test");
-                  })
+                  sendResponses.add(r);
+                  if (sendResponses.size() == 5)
+                      throw new RuntimeException("test");
+              })
               .concatMap(r -> Mono.just(r))
               .subscribe();
         TestUtils.sleep(5000);
@@ -455,13 +455,13 @@ public class MockSenderTest {
         Semaphore semaphore = new Semaphore(0);
         sender.send(outgoing.senderRecords())
               .doOnNext(r -> {
-                      sendResponses.add(r);
-                      try {
-                          semaphore.acquire();
-                      } catch (Exception e) {
-                          throw new RuntimeException(e);
-                      }
-                  })
+                  sendResponses.add(r);
+                  try {
+                      semaphore.acquire();
+                  } catch (Exception e) {
+                      throw new RuntimeException(e);
+                  }
+              })
               .subscribe();
         while (sendResponses.size() < 10) {
             Thread.yield();
@@ -487,12 +487,12 @@ public class MockSenderTest {
         sender.createOutbound().send(outgoing.producerRecords())
               .then()
               .doOnSuccess(r -> {
-                      try {
-                          semaphore.acquire();
-                      } catch (Exception e) {
-                          throw new RuntimeException(e);
-                      }
-                  })
+                  try {
+                      semaphore.acquire();
+                  } catch (Exception e) {
+                      throw new RuntimeException(e);
+                  }
+              })
               .subscribe();
         Thread.yield();
         assertFalse("Producer is blocked", producer.isBlocked());
@@ -542,12 +542,12 @@ public class MockSenderTest {
         sender.send(outgoing.senderRecords())
               .retry()
               .doOnNext(r -> {
-                      if (r.exception() == null) {
-                          if (exceptionCount.get() == 0)
-                              cluster.failLeader(new TopicPartition(r.recordMetadata().topic(), r.recordMetadata().partition()));
-                      } else if (r.exception() instanceof LeaderNotAvailableException)
-                          exceptionCount.incrementAndGet();
-                  })
+                  if (r.exception() == null) {
+                      if (exceptionCount.get() == 0)
+                          cluster.failLeader(new TopicPartition(r.recordMetadata().topic(), r.recordMetadata().partition()));
+                  } else if (r.exception() instanceof LeaderNotAvailableException)
+                      exceptionCount.incrementAndGet();
+              })
               .doOnComplete(() -> completed.set(true))
               .subscribe();
         long endTimeMs = System.currentTimeMillis() + 5 * 1000;
@@ -580,9 +580,9 @@ public class MockSenderTest {
         Mono<Void> resultMono = sender.send(outgoing.senderRecords())
               .retry(2)
               .doOnNext(r -> {
-                      responseCount.incrementAndGet();
-                      assertEquals(LeaderNotAvailableException.class, r.exception().getClass());
-                  })
+                  responseCount.incrementAndGet();
+                  assertEquals(LeaderNotAvailableException.class, r.exception().getClass());
+              })
               .then();
         StepVerifier.create(resultMono)
               .expectError(LeaderNotAvailableException.class)
@@ -607,23 +607,23 @@ public class MockSenderTest {
         AtomicInteger exceptionCount = new AtomicInteger();
         sender.send(outgoing.senderRecords())
               .onErrorResume(e -> {
-                      if (e instanceof LeaderNotAvailableException)
-                          exceptionCount.incrementAndGet();
-                      for (TopicPartition partition : cluster.partitions(topic)) {
-                          if (!cluster.leaderAvailable(partition))
-                              cluster.restartLeader(partition);
-                      }
-                      return sender.send(Flux.fromIterable(outgoing.senderRecords.subList(remaining.get(0), count)));
-                  })
+                  if (e instanceof LeaderNotAvailableException)
+                      exceptionCount.incrementAndGet();
+                  for (TopicPartition partition : cluster.partitions(topic)) {
+                      if (!cluster.leaderAvailable(partition))
+                          cluster.restartLeader(partition);
+                  }
+                  return sender.send(Flux.fromIterable(outgoing.senderRecords.subList(remaining.get(0), count)));
+              })
               .doOnNext(r -> {
-                      if (r.exception() == null) {
-                          TopicPartition partition = new TopicPartition(r.recordMetadata().topic(), r.recordMetadata().partition());
-                          assertTrue("Send completed on failed node", cluster.leaderAvailable(partition));
-                          if (remaining.size() == count / 2)
-                              cluster.failLeader(partition);
-                          remaining.remove(r.correlationMetadata());
-                      }
-                  })
+                  if (r.exception() == null) {
+                      TopicPartition partition = new TopicPartition(r.recordMetadata().topic(), r.recordMetadata().partition());
+                      assertTrue("Send completed on failed node", cluster.leaderAvailable(partition));
+                      if (remaining.size() == count / 2)
+                          cluster.failLeader(partition);
+                      remaining.remove(r.correlationMetadata());
+                  }
+              })
               .blockLast();
 
         assertEquals(0, remaining.size());
@@ -648,9 +648,9 @@ public class MockSenderTest {
                                   .doOnNext(result -> assertTrue(Thread.currentThread().getName().contains(transactionId))))
                     .expectNextCount(count)
                     .then(() -> {
-                            for (TopicPartition partition : cluster.partitions(topic))
-                                assertEquals(0, cluster.log(partition).size());
-                        })
+                        for (TopicPartition partition : cluster.partitions(topic))
+                            assertEquals(0, cluster.log(partition).size());
+                    })
                     .verifyComplete();
 
         StepVerifier.create(sender.transactionManager().commit())
@@ -673,9 +673,9 @@ public class MockSenderTest {
 
         StepVerifier.create(sender.send(outgoing.senderRecords()).then(sender.transactionManager().abort()))
                     .then(() -> {
-                            for (TopicPartition partition : cluster.partitions(topic))
-                                assertEquals(0, cluster.log(partition).size());
-                        })
+                        for (TopicPartition partition : cluster.partitions(topic))
+                            assertEquals(0, cluster.log(partition).size());
+                    })
                     .verifyComplete();
     }
 
@@ -711,10 +711,10 @@ public class MockSenderTest {
         resetSender();
         OutgoingRecords outgoing = outgoingRecords.append(topic, 10);
         Flux<SenderResult<Integer>> result = sender.send(outgoing.senderRecords())
-                .doOnNext(r -> sender.doOnProducer(p -> {
-                        method.accept(p);
-                        return true;
-                    }).block());
+                .concatMap(r -> sender.doOnProducer(p -> {
+                    method.accept(p);
+                    return true;
+                }).then(Mono.just(r)));
         StepVerifier.create(result)
                     .expectNextCount(10)
                     .expectComplete()
@@ -735,10 +735,10 @@ public class MockSenderTest {
         resetSender();
         OutgoingRecords outgoing = outgoingRecords.append(topic, 10);
         Flux<SenderResult<Integer>> result = sender.send(outgoing.senderRecords())
-                .doOnNext(r -> sender.doOnProducer(p -> {
-                        method.accept(p);
-                        return true;
-                    }).block());
+                .concatMap(r -> sender.doOnProducer(p -> {
+                    method.accept(p);
+                    return true;
+                }).then(Mono.just(r)));
         StepVerifier.create(result)
                     .expectError(UnsupportedOperationException.class)
                     .verify();

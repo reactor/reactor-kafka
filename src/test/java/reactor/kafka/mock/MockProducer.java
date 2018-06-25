@@ -115,12 +115,12 @@ public class MockProducer implements Producer<Integer, String> {
     @Override
     public List<PartitionInfo> partitionsFor(String topic) {
         return call(() -> {
-                List<PartitionInfo> partitionInfo = cluster.cluster().partitionsForTopic(topic);
-                if (partitionInfo == null || partitionInfo.isEmpty())
-                    throw new InvalidTopicException(topic);
-                else
-                    return partitionInfo;
-            });
+            List<PartitionInfo> partitionInfo = cluster.cluster().partitionsForTopic(topic);
+            if (partitionInfo == null || partitionInfo.isEmpty())
+                throw new InvalidTopicException(topic);
+            else
+                return partitionInfo;
+        });
     }
 
     @Override

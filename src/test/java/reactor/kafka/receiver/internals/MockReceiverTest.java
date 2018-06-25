@@ -28,6 +28,8 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -35,12 +37,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.regex.Pattern;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
@@ -54,7 +52,6 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InvalidOffsetException;
 import org.junit.Before;
 import org.junit.Test;
-
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -71,6 +68,11 @@ import reactor.kafka.util.TestUtils;
 import reactor.test.StepVerifier;
 import reactor.test.StepVerifier.Step;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 /**
  * Kafka receiver tests using mock Kafka consumers.
  *
@@ -79,9 +81,9 @@ public class MockReceiverTest {
 
     private final String groupId = "test-group";
     private final Queue<ConsumerRecord<Integer, String>> receivedMessages = new ConcurrentLinkedQueue<>();
-    private final List<ConsumerRecord<Integer, String>> uncommittedMessages = new ArrayList<>();
-    private Map<TopicPartition, Long> receiveStartOffsets = new HashMap<>();
-    private final Set<TopicPartition> assignedPartitions = new HashSet<>();
+    private final List<ConsumerRecord<Integer, String>> uncommittedMessages = new CopyOnWriteArrayList<>();
+    private Map<TopicPartition, Long> receiveStartOffsets = new ConcurrentHashMap<>();
+    private final Set<TopicPartition> assignedPartitions = new CopyOnWriteArraySet<>();
 
     private Map<Integer, String> topics;
     private String topic;
@@ -92,7 +94,7 @@ public class MockReceiverTest {
 
     @Before
     public void setUp() {
-        topics = new HashMap<>();
+        topics = new ConcurrentHashMap<>();
         for (int i : Arrays.asList(1, 2, 20, 200))
             topics.put(i, "topic" + i);
         topic = topics.get(2);
@@ -101,13 +103,13 @@ public class MockReceiverTest {
                 .consumerProperty(ConsumerConfig.GROUP_ID_CONFIG, groupId)
                 .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
                 .addAssignListener(partitions -> {
-                        for (ReceiverPartition p : partitions)
-                            assignedPartitions.add(p.topicPartition());
-                    })
+                    for (ReceiverPartition p : partitions)
+                        assignedPartitions.add(p.topicPartition());
+                })
                 .addRevokeListener(partitions -> {
-                        for (ReceiverPartition p : partitions)
-                            assignedPartitions.remove(p.topicPartition());
-                    });
+                    for (ReceiverPartition p : partitions)
+                        assignedPartitions.remove(p.topicPartition());
+                });
         consumer = new MockConsumer(cluster);
         consumerFactory = new MockConsumer.Pool(Arrays.asList(consumer));
 
@@ -161,7 +163,10 @@ public class MockReceiverTest {
     public void assignCallback() {
         receiverOptions = receiverOptions.subscription(Collections.singleton(topic));
         sendMessages(topic, 0, 10);
-        receiveAndVerify(10, r -> assertTrue("Assign callback not invoked", assignedPartitions.contains(r.receiverOffset().topicPartition())));
+        receiveAndVerify(10, r -> {
+            assertTrue("Assign callback not invoked", assignedPartitions.contains(r.receiverOffset().topicPartition()));
+            return Mono.just(r);
+        });
     }
 
     /**
@@ -174,10 +179,10 @@ public class MockReceiverTest {
         receiverOptions = receiverOptions
                 .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest")
                 .addAssignListener(partitions -> {
-                        for (ReceiverPartition p : partitions)
-                            p.seekToBeginning();
-                        assignSemaphore.release();
-                    })
+                    for (ReceiverPartition p : partitions)
+                        p.seekToBeginning();
+                    assignSemaphore.release();
+                })
                 .subscription(Collections.singleton(topic));
         DefaultKafkaReceiver<Integer, String> receiver = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions);
         receiveWithOneOffAction(receiver, 10, 10, () -> sendMessages(topic, 10, 20));
@@ -193,10 +198,10 @@ public class MockReceiverTest {
         Semaphore assignSemaphore = new Semaphore(0);
         receiverOptions = receiverOptions
                 .addAssignListener(partitions -> {
-                        for (ReceiverPartition p : partitions)
-                            p.seekToEnd();
-                        assignSemaphore.release();
-                    })
+                    for (ReceiverPartition p : partitions)
+                        p.seekToEnd();
+                    assignSemaphore.release();
+                })
                 .subscription(Collections.singleton(topic));
 
         for (TopicPartition partition : cluster.partitions(topic))
@@ -222,10 +227,10 @@ public class MockReceiverTest {
         receiverOptions = receiverOptions
                 .subscription(Collections.singleton(topic))
                 .addAssignListener(partitions -> {
-                        for (ReceiverPartition p : partitions)
-                            p.seek(startOffset);
-                        assignSemaphore.release();
-                    });
+                    for (ReceiverPartition p : partitions)
+                        p.seek(startOffset);
+                    assignSemaphore.release();
+                });
         int receiveCount = 10;
         for (TopicPartition partition : cluster.partitions(topic)) {
             receiveStartOffsets.put(partition, startOffset);
@@ -250,11 +255,11 @@ public class MockReceiverTest {
         receiverOptions = receiverOptions
                 .subscription(Collections.singleton(topic))
                 .addAssignListener(partitions -> {
-                        for (ReceiverPartition p : partitions)
-                            p.seek(20);
-                    })
+                    for (ReceiverPartition p : partitions)
+                        p.seek(20);
+                })
                 .subscription(Collections.singleton(topic));
-        receiveVerifyError(InvalidOffsetException.class, r -> { });
+        receiveVerifyError(InvalidOffsetException.class, Mono::just);
     }
 
     /**
@@ -264,7 +269,10 @@ public class MockReceiverTest {
     public void manualAssignment() {
         receiverOptions = receiverOptions.assignment(cluster.partitions(topic));
         sendMessages(topic, 0, 10);
-        receiveAndVerify(10, r -> assertTrue("Assign callback not invoked", assignedPartitions.contains(r.receiverOffset().topicPartition())));
+        receiveAndVerify(10, r -> {
+            assertTrue("Assign callback not invoked", assignedPartitions.contains(r.receiverOffset().topicPartition()));
+            return Mono.just(r);
+        });
     }
 
     /**
@@ -302,12 +310,12 @@ public class MockReceiverTest {
                 .subscription(Collections.singleton(topic));
         sendMessages(topic, 0, 50);
         Map<TopicPartition, Long> consumedOffsets = new HashMap<>();
-        Flux<? extends ConsumerRecord<Integer, String>> inboundFlux = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions)
+        Flux<ConsumerRecord<Integer, String>> inboundFlux = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions)
                 .receiveAtmostOnce()
                 .filter(r -> {
-                        long committed = cluster.committedOffset(groupId, topicPartition(r));
-                        return committed >= r.offset() && committed <= r.offset() + commitAhead + 1;
-                    })
+                    long committed = cluster.committedOffset(groupId, topicPartition(r));
+                    return committed >= r.offset() && committed <= r.offset() + commitAhead + 1;
+                })
                 .doOnNext(r -> consumedOffsets.put(new TopicPartition(r.topic(), r.partition()), r.offset()));
         int consumeCount = 17;
         StepVerifier.create(inboundFlux, consumeCount)
@@ -380,9 +388,9 @@ public class MockReceiverTest {
         Flux<? extends ConsumerRecord<Integer, String>> inboundFlux = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions)
                 .receiveAtmostOnce()
                 .doOnNext(r -> {
-                        receiveStartOffsets.put(topicPartition(r), r.offset() + 1);
-                        throw new RuntimeException("Test exception");
-                    });
+                    receiveStartOffsets.put(topicPartition(r), r.offset() + 1);
+                    throw new RuntimeException("Test exception");
+                });
         StepVerifier.create(inboundFlux)
             .expectError(RuntimeException.class)
             .verify();
@@ -408,9 +416,9 @@ public class MockReceiverTest {
                 .receiveAutoAck()
                 .concatMap(r -> r)
                 .filter(r -> {
-                        Long committed = cluster.committedOffset(groupId, topicPartition(r));
-                        return committed == null || committed.longValue() <= r.offset();
-                    });
+                    Long committed = cluster.committedOffset(groupId, topicPartition(r));
+                    return committed == null || committed.longValue() <= r.offset();
+                });
         verifyMessages(inboundFlux.take(11), 11);
         receivedMessages.removeIf(r -> r.offset() >= 5); // Last record should not be committed
         verifyCommits(groupId, topic, 10);
@@ -491,21 +499,22 @@ public class MockReceiverTest {
         receiverOptions = receiverOptions
                 .subscription(Collections.singleton(topic))
                 .commitBatchSize(1);
-        Map<TopicPartition, Long> acknowledged = new HashMap<>();
+        Map<TopicPartition, Long> acknowledged = new ConcurrentHashMap<>();
         for (TopicPartition partition : cluster.partitions(topic))
             acknowledged.put(partition, -1L);
         sendMessages(topic, 0, 20);
         receiveAndVerify(10, r -> {
-                ReceiverOffset offset = r.receiverOffset();
-                TopicPartition partition = offset.topicPartition();
-                Long committedOffset = cluster.committedOffset(groupId, partition);
-                boolean valid = committedOffset == null || acknowledged.get(partition) >= committedOffset - 1;
-                if (offset.offset() % 3 == 0) {
-                    offset.acknowledge();
-                    acknowledged.put(partition, offset.offset());
-                }
-                assertTrue("Unexpected commit state", valid);
-            });
+            ReceiverOffset offset = r.receiverOffset();
+            TopicPartition partition = offset.topicPartition();
+            Long committedOffset = cluster.committedOffset(groupId, partition);
+            boolean valid = committedOffset == null || acknowledged.get(partition) >= committedOffset - 1;
+            if (offset.offset() % 3 == 0) {
+                offset.acknowledge();
+                acknowledged.put(partition, offset.offset());
+            }
+            assertTrue("Unexpected commit state", valid);
+            return Mono.just(r);
+        });
         for (Map.Entry<TopicPartition, Long> entry : acknowledged.entrySet()) {
             Long committedOffset = cluster.committedOffset(groupId, entry.getKey());
             assertEquals(entry.getValue() + 1, committedOffset.longValue());
@@ -522,18 +531,19 @@ public class MockReceiverTest {
         receiverOptions = receiverOptions
                 .subscription(Collections.singleton(topic))
                 .commitBatchSize(batchSize);
-        sendMessages(topic, 0, 20);
         AtomicLong lastCommitted = new AtomicLong(-1);
+        sendMessages(topic, 0, 20);
         receiveAndVerify(15, r -> {
-                long offset = r.receiverOffset().offset();
-                if (offset < 10) {
-                    r.receiverOffset().acknowledge();
-                    if (((offset + 1) % batchSize) == 0)
-                        lastCommitted.set(offset);
-                } else
-                    uncommittedMessages.add(r);
-                verifyCommit(r, lastCommitted.get());
-            });
+            long offset = r.receiverOffset().offset();
+            if (offset < 10) {
+                r.receiverOffset().acknowledge();
+                if (((offset + 1) % batchSize) == 0)
+                    lastCommitted.set(offset);
+            } else
+                uncommittedMessages.add(r);
+            verifyCommit(r, lastCommitted.get());
+            return Mono.just(r);
+        });
         verifyCommits(groupId, topic, 10);
     }
 
@@ -547,21 +557,22 @@ public class MockReceiverTest {
         receiverOptions = receiverOptions
                 .subscription(Collections.singleton(topic))
                 .commitInterval(interval);
-        sendMessages(topic, 0, 20);
-        final int delayIndex = 5;
         AtomicLong lastCommitted = new AtomicLong(-1);
+        final int delayIndex = 5;
+        sendMessages(topic, 0, 20);
         receiveAndVerify(15, r -> {
-                long offset = r.receiverOffset().offset();
-                if (r.receiverOffset().offset() < 10) {
-                    r.receiverOffset().acknowledge();
-                    if (offset == delayIndex) {
-                        TestUtils.sleep(interval.toMillis());
-                        lastCommitted.set(offset);
-                    }
-                } else
-                    uncommittedMessages.add(r);
-                verifyCommit(r, lastCommitted.get());
-            });
+            long offset = r.receiverOffset().offset();
+            if (r.receiverOffset().offset() < 10) {
+                r.receiverOffset().acknowledge();
+                if (offset == delayIndex) {
+                    TestUtils.sleep(interval.toMillis());
+                    lastCommitted.set(offset);
+                }
+            } else
+                uncommittedMessages.add(r);
+            verifyCommit(r, lastCommitted.get());
+            return Mono.just(r);
+        });
         verifyCommits(groupId, topic, 10);
     }
 
@@ -583,19 +594,20 @@ public class MockReceiverTest {
         sendMessages(topic, 0, 20);
         AtomicLong lastCommitted = new AtomicLong(-1);
         receiveAndVerify(15, r -> {
-                long offset = r.receiverOffset().offset();
-                if (offset < 10) {
-                    r.receiverOffset().acknowledge();
-                    if (offset == delayIndex) {
-                        TestUtils.sleep(interval.toMillis());
-                        lastCommitted.set(offset);
-                    }
-                    if (((offset + 1) % batchSize) == 0)
-                        lastCommitted.set(offset);
-                } else
-                    uncommittedMessages.add(r);
-                verifyCommit(r, lastCommitted.get());
-            });
+            long offset = r.receiverOffset().offset();
+            if (offset < 10) {
+                r.receiverOffset().acknowledge();
+                if (offset == delayIndex) {
+                    TestUtils.sleep(interval.toMillis());
+                    lastCommitted.set(offset);
+                }
+                if (((offset + 1) % batchSize) == 0)
+                    lastCommitted.set(offset);
+            } else
+                uncommittedMessages.add(r);
+            verifyCommit(r, lastCommitted.get());
+            return Mono.just(r);
+        });
 
         verifyCommits(groupId, topic, 10);
     }
@@ -608,12 +620,13 @@ public class MockReceiverTest {
                 .subscription(Collections.singletonList(topic));
         sendMessages(topic, 0, 20);
         receiveAndVerify(20, r -> {
-                if (r.receiverOffset().offset() < 5)
-                    r.receiverOffset().acknowledge();
-            });
+            if (r.receiverOffset().offset() < 5)
+                r.receiverOffset().acknowledge();
+            return Mono.just(r);
+        });
         receivedMessages.removeIf(r -> r.offset() >= 5);
         consumerFactory.addConsumer(new MockConsumer(cluster));
-        receiveAndVerify(10, r -> { });
+        receiveAndVerify(10, Mono::just);
     }
 
     /**
@@ -630,12 +643,13 @@ public class MockReceiverTest {
                 .subscription(Collections.singletonList(topic));
 
         sendMessages(topic, 0, count + 10);
-        receiveAndVerify(10, record -> {
-                record.receiverOffset()
-                      .commit()
-                      .doOnSuccess(i -> commitLatch.countDown())
-                      .subscribe();
-            });
+        receiveAndVerify(10, record -> Flux.merge(
+            Mono.just(record),
+            record.receiverOffset()
+                  .commit()
+                  .doOnSuccess(i -> commitLatch.countDown())
+                  .then(Mono.empty())
+        ).single());
         verifyCommits(groupId, topic, 10);
         assertTrue("Offsets not committed", commitLatch.await(1, TimeUnit.SECONDS));
     }
@@ -658,17 +672,17 @@ public class MockReceiverTest {
         Flux<ReceiverRecord<Integer, String>> inboundFlux = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions)
                 .receive()
                 .doOnNext(record -> {
-                        receivedMessages.add(record);
-                        record.receiverOffset().commit().doOnSuccess(v -> commitSemaphore.release()).subscribe();
-                    });
+                    receivedMessages.add(record);
+                    record.receiverOffset().commit().doOnSuccess(v -> commitSemaphore.release()).subscribe();
+                });
         StepVerifier.create(inboundFlux, 1)
                     .consumeNextWith(record -> {
-                            try {
-                                assertTrue("Commit did not complete", commitSemaphore.tryAcquire(5, TimeUnit.SECONDS));
-                            } catch (InterruptedException e) {
-                                fail("Interrupted");
-                            }
-                        })
+                        try {
+                            assertTrue("Commit did not complete", commitSemaphore.tryAcquire(5, TimeUnit.SECONDS));
+                        } catch (InterruptedException e) {
+                            fail("Interrupted");
+                        }
+                    })
                     .thenCancel()
                     .verify();
 
@@ -691,11 +705,11 @@ public class MockReceiverTest {
 
         Flux<ReceiverRecord<Integer, String>> inboundFlux = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions)
                 .receive();
-        StepVerifier.create(inboundFlux, 1)
+        StepVerifier.create(inboundFlux.publishOn(Schedulers.elastic()), 1)
                     .consumeNextWith(record -> {
-                            receivedMessages.add(record);
-                            record.receiverOffset().commit().block();
-                        })
+                        receivedMessages.add(record);
+                        record.receiverOffset().commit().block();
+                    })
                     .thenCancel()
                     .verify();
 
@@ -716,8 +730,9 @@ public class MockReceiverTest {
 
         sendMessages(topic, 0, count + 10);
         receiveAndVerify(10, record -> {
-                StepVerifier.create(record.receiverOffset().commit()).expectComplete().verify();
-            });
+            StepVerifier.create(record.receiverOffset().commit()).expectComplete().verify();
+            return Mono.just(record);
+        });
         verifyCommits(groupId, topic, 10);
     }
 
@@ -733,12 +748,13 @@ public class MockReceiverTest {
                 .subscription(Collections.singletonList(topic));
         sendMessages(topic, 0, 20);
         receiveAndVerify(20, r -> {
-                if (r.receiverOffset().offset() < 5)
-                    r.receiverOffset().commit().block();
-            });
+            if (r.receiverOffset().offset() < 5)
+                return r.receiverOffset().commit().then(Mono.just(r));
+            return Mono.just(r);
+        });
         receivedMessages.removeIf(r -> r.offset() >= 5);
         consumerFactory.addConsumer(new MockConsumer(cluster));
-        receiveAndVerify(10, r -> { });
+        receiveAndVerify(10, Mono::just);
     }
 
     /**
@@ -752,12 +768,13 @@ public class MockReceiverTest {
                 .subscription(Collections.singletonList(topic));
         sendMessages(topic, 0, 20);
         receiveAndVerify(20, r -> {
-                if (r.receiverOffset().offset() < 5)
-                    r.receiverOffset().acknowledge();
-            });
+            if (r.receiverOffset().offset() < 5)
+                r.receiverOffset().acknowledge();
+            return Mono.just(r);
+        });
         receivedMessages.removeIf(r -> r.offset() >= 5);
         consumerFactory.addConsumer(new MockConsumer(cluster));
-        receiveAndVerify(10, r -> { });
+        receiveAndVerify(10, Mono::just);
     }
 
     /**
@@ -771,10 +788,10 @@ public class MockReceiverTest {
                 .commitInterval(Duration.ZERO)
                 .subscription(Collections.singletonList(topic));
         sendMessages(topic, 0, 20);
-        receiveAndVerify(20, r -> { });
+        receiveAndVerify(20, Mono::just);
         receivedMessages.clear();
         consumerFactory.addConsumer(new MockConsumer(cluster));
-        receiveAndVerify(20, r -> { });
+        receiveAndVerify(20, Mono::just);
     }
 
     /**
@@ -792,7 +809,8 @@ public class MockReceiverTest {
                 .subscription(Collections.singletonList(topic));
 
         sendMessages(topic, 0, count + 10);
-        receiveAndVerify(10, record -> record.receiverOffset().commit().block());
+        receiveAndVerify(10,
+            record -> record.receiverOffset().commit().then(Mono.just(record)));
         verifyCommits(groupId, topic, 10);
     }
 
@@ -807,7 +825,7 @@ public class MockReceiverTest {
                 .subscription(Collections.singletonList(topic));
 
         sendMessages(topic, 0, count + 10);
-        receiveAndVerify(10, record -> record.receiverOffset().commit().retry().block());
+        receiveAndVerify(10, record -> record.receiverOffset().commit().retry().then(Mono.just(record)));
         verifyCommits(groupId, topic, 10);
     }
 
@@ -826,9 +844,9 @@ public class MockReceiverTest {
                 .subscription(Collections.singletonList(topic));
 
         sendMessages(topic, 0, count + 10);
-        receiveVerifyError(RetriableCommitFailedException.class, record -> {
-                record.receiverOffset().commit().retry(5).block();
-            });
+        receiveVerifyError(RetriableCommitFailedException.class, record ->
+            record.receiverOffset().commit().retry(5).then(Mono.just(record))
+        );
     }
 
     /**
@@ -845,9 +863,9 @@ public class MockReceiverTest {
         Flux<ReceiverRecord<Integer, String>> inboundFlux = receiver
                 .receive()
                 .doOnNext(record -> {
-                        if (receivedMessages.size() == 2)
-                            throw new RuntimeException("Failing onNext");
-                    })
+                    if (receivedMessages.size() == 2)
+                        throw new RuntimeException("Failing onNext");
+                })
                 .onErrorResume(e -> receiver.receive().doOnSubscribe(s -> receivedMessages.clear()));
 
         sendMessages(topic, 0, count);
@@ -865,10 +883,11 @@ public class MockReceiverTest {
 
         sendMessages(topic, 0, count);
         receiveVerifyError(RuntimeException.class, record -> {
-                receivedMessages.add(record);
-                if (receivedMessages.size() == 1)
-                    throw new RuntimeException("Failing onNext");
-            });
+            receivedMessages.add(record);
+            if (receivedMessages.size() == 1)
+                return Mono.error(new RuntimeException("Failing onNext"));
+            return Mono.just(record);
+        });
         assertTrue("Consumer not closed", consumer.closed());
     }
 
@@ -897,17 +916,17 @@ public class MockReceiverTest {
             .receive()
             .groupBy(m -> m.receiverOffset().topicPartition().partition())
             .subscribe(partitionFlux -> groupDisposables.add(partitionFlux.take(countPerPartition).publishOn(scheduler, 1).subscribe(record -> {
-                    String thread = Thread.currentThread().getName();
-                    int partition = record.partition();
-                    Set<Integer> partitionSet = threadMap.get(thread);
-                    if (partitionSet == null) {
-                        partitionSet = new HashSet<Integer>();
-                        threadMap.put(thread, partitionSet);
-                    }
-                    partitionSet.add(partition);
-                    receivedMessages.add(record);
-                    latch[partition].countDown();
-                })));
+                String thread = Thread.currentThread().getName();
+                int partition = record.partition();
+                Set<Integer> partitionSet = threadMap.get(thread);
+                if (partitionSet == null) {
+                    partitionSet = new HashSet<Integer>();
+                    threadMap.put(thread, partitionSet);
+                }
+                partitionSet.add(partition);
+                receivedMessages.add(record);
+                latch[partition].countDown();
+            })));
 
         try {
             sendMessagesToPartition(topic, 0, 0, countPerPartition);
@@ -959,24 +978,24 @@ public class MockReceiverTest {
             .receive()
             .groupBy(m -> m.receiverOffset().topicPartition())
             .subscribe(partitionFlux -> groupDisposables.add(partitionFlux.publishOn(scheduler, 1).subscribe(record -> {
-                    int partition = record.partition();
-                    String thread = Thread.currentThread().getName();
-                    Set<Integer> partitionSet = threadMap.get(thread);
-                    if (partitionSet == null) {
-                        partitionSet = new HashSet<Integer>();
-                        threadMap.put(thread, partitionSet);
-                    }
-                    partitionSet.add(partition);
-                    receivedMessages.add(record);
-                    receiveCounts.put(partition, receiveCounts.get(partition) + 1);
-                    latch.countDown();
-                    synchronized (MockReceiverTest.this) {
-                        if (receiveCounts.get(partition) == countPerPartition)
-                            inProgress.remove(partition);
-                        else if (inProgress.add(partition))
-                            maxInProgress.incrementAndGet();
-                    }
-                })));
+                int partition = record.partition();
+                String thread = Thread.currentThread().getName();
+                Set<Integer> partitionSet = threadMap.get(thread);
+                if (partitionSet == null) {
+                    partitionSet = new HashSet<Integer>();
+                    threadMap.put(thread, partitionSet);
+                }
+                partitionSet.add(partition);
+                receivedMessages.add(record);
+                receiveCounts.put(partition, receiveCounts.get(partition) + 1);
+                latch.countDown();
+                synchronized (MockReceiverTest.this) {
+                    if (receiveCounts.get(partition) == countPerPartition)
+                        inProgress.remove(partition);
+                    else if (inProgress.add(partition))
+                        maxInProgress.incrementAndGet();
+                }
+            })));
 
         try {
             sendMessages(topic, 0, countPerPartition * partitions);
@@ -1020,10 +1039,10 @@ public class MockReceiverTest {
             .parallel(4, 1)
             .runOn(scheduler)
             .subscribe(record -> {
-                    if (firstMessage.compareAndSet(true, false))
-                        blocker.acquireUninterruptibly();
-                    receivedMessages.add(record);
-                });
+                if (firstMessage.compareAndSet(true, false))
+                    blocker.acquireUninterruptibly();
+                receivedMessages.add(record);
+            });
         try {
             sendMessages(topic, 0, count);
             Duration waitMs = Duration.ofSeconds(20);
@@ -1085,10 +1104,10 @@ public class MockReceiverTest {
         for (int i = 0; i < count - 1; i++) {
             step = step.expectNextCount(1)
                        .then(() -> {
-                               long pollCount = consumer.pollCount();
-                               TestUtils.sleep(100);
-                               assertEquals(pollCount, consumer.pollCount());
-                           })
+                           long pollCount = consumer.pollCount();
+                           TestUtils.sleep(100);
+                           assertEquals(pollCount, consumer.pollCount());
+                       })
                        .thenRequest(1);
         }
         step.expectNextCount(1).expectComplete().verify();
@@ -1103,21 +1122,21 @@ public class MockReceiverTest {
         testConsumerMethod(c -> assertEquals(0, c.metrics().size()));
 
         testConsumerMethod(c -> {
-                Collection<TopicPartition> partitions = Collections.singleton(new TopicPartition(topic, 1));
-                c.pause(partitions);
-                assertEquals(partitions, c.paused());
-                c.resume(partitions);
-            });
+            Collection<TopicPartition> partitions = Collections.singleton(new TopicPartition(topic, 1));
+            c.pause(partitions);
+            assertEquals(partitions, c.paused());
+            c.resume(partitions);
+        });
         testConsumerMethod(c -> {
-                TopicPartition partition = new TopicPartition(topic, 1);
-                Collection<TopicPartition> partitions = Collections.singleton(partition);
-                long position = c.position(partition);
-                c.seekToBeginning(partitions);
-                assertEquals(0, c.position(partition));
-                c.seekToEnd(partitions);
-                assertTrue("Did not seek to end", c.position(partition) > 0);
-                c.seek(partition, position);
-            });
+            TopicPartition partition = new TopicPartition(topic, 1);
+            Collection<TopicPartition> partitions = Collections.singleton(partition);
+            long position = c.position(partition);
+            c.seekToBeginning(partitions);
+            assertEquals(0, c.position(partition));
+            c.seekToEnd(partitions);
+            assertTrue("Did not seek to end", c.position(partition) > 0);
+            c.seek(partition, position);
+        });
     }
 
     private void testConsumerMethod(Consumer<org.apache.kafka.clients.consumer.Consumer<Integer, String>> method) {
@@ -1128,13 +1147,14 @@ public class MockReceiverTest {
         DefaultKafkaReceiver<Integer, String> receiver = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions);
         Flux<ReceiverRecord<Integer, String>> inboundFlux = receiver
                 .receive()
-                .doOnNext(r -> {
-                        Mono<?> mono = receiver.doOnConsumer(c -> {
-                                method.accept(c);
-                                return true;
-                            });
-                        mono.block();
+                .concatMap(r -> {
+                    Mono<?> mono = receiver.doOnConsumer(c -> {
+                        method.accept(c);
+                        return true;
                     });
+                    return mono.then(Mono.just(r))
+                               .publishOn(receiver.scheduler);
+                });
         sendMessages(topic, 0, 10);
         receiveAndVerify(inboundFlux, 10);
     }
@@ -1180,13 +1200,14 @@ public class MockReceiverTest {
         DefaultKafkaReceiver<Integer, String> receiver = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions);
         Flux<ReceiverRecord<Integer, String>> inboundFlux = receiver
                 .receive()
-                .doOnNext(r -> {
-                        Mono<?> mono = receiver.doOnConsumer(c -> {
-                                method.accept(c);
-                                return true;
-                            });
-                        mono.block();
+                .concatMap(r -> {
+                    Mono<?> mono = receiver.doOnConsumer(c -> {
+                        method.accept(c);
+                        return true;
                     });
+                    return mono.then(Mono.just(r))
+                               .publishOn(receiver.scheduler);
+                });
         StepVerifier.create(inboundFlux)
             .expectError(UnsupportedOperationException.class)
             .verify();
@@ -1197,7 +1218,7 @@ public class MockReceiverTest {
      * not while the first receive is still active.
      */
     @Test
-    public void multipleReceives() {
+    public void multipleReceives() throws InterruptedException {
         for (int i = 0; i < 5; i++)
             consumerFactory.addConsumer(new MockConsumer(cluster));
         receiverOptions = receiverOptions
@@ -1257,13 +1278,18 @@ public class MockReceiverTest {
 
     private void sendReceiveAndVerify(int sendCount, int receiveCount) {
         sendMessages(topic, 0, sendCount);
-        receiveAndVerify(receiveCount, r -> { });
+        receiveAndVerify(receiveCount, Mono::just);
     }
 
-    private void receiveAndVerify(int receiveCount, Consumer<ReceiverRecord<Integer, String>> onNext) {
-        Flux<ReceiverRecord<Integer, String>> inboundFlux = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions)
+    private void receiveAndVerify(int receiveCount,
+            Function<ReceiverRecord<Integer, String>, Mono<ReceiverRecord<Integer, String>>> onNext) {
+        DefaultKafkaReceiver<Integer, String> receiver =
+                new DefaultKafkaReceiver<>(consumerFactory, receiverOptions);
+        Flux<ReceiverRecord<Integer, String>> inboundFlux =
+                receiver
                 .receive()
-                .doOnNext(onNext);
+                .concatMap(r -> onNext.apply(r)
+                                      .publishOn(receiver.scheduler), 1);
         receiveAndVerify(inboundFlux, receiveCount);
     }
 
@@ -1272,19 +1298,33 @@ public class MockReceiverTest {
         verifyMessages(flux.take(receiveCount), receiveCount);
     }
 
+    @SuppressWarnings("unchecked")
     private void verifyMessages(Flux<? extends ConsumerRecord<Integer, String>> inboundFlux, int receiveCount) {
         StepVerifier.create(inboundFlux)
-                .recordWith(() -> receivedMessages)
+                .recordWith(() -> (Collection) receivedMessages)
                 .expectNextCount(receiveCount)
                 .expectComplete()
                 .verify();
         verifyMessages(receiveCount);
     }
 
-    private void receiveVerifyError(Class<? extends Throwable> exceptionClass, Consumer<ReceiverRecord<Integer, String>> onNext) {
+    private void receiveVerifyError(Class<? extends Throwable> exceptionClass,
+            Function<ReceiverRecord<Integer, String>, Mono<ReceiverRecord<Integer, String>>> onNext) {
         DefaultKafkaReceiver<Integer, String> receiver = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions);
-        StepVerifier.create(receiver.receive().doOnNext(onNext))
-            .expectError(exceptionClass)
+        StepVerifier.create(receiver.receive()
+                                    .concatMap(r -> onNext.apply(r)
+                                                          .publishOn(receiver.scheduler)), 1)
+            .expectErrorMatches(t -> {
+                if (t.getSuppressed().length > 0) {
+                    for (Throwable suppressed: t.getSuppressed()) {
+                        if (exceptionClass.isInstance(suppressed)) {
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+                return exceptionClass.isInstance(t);
+            })
             .verify();
     }
 
@@ -1338,7 +1378,7 @@ public class MockReceiverTest {
             }
         }
         consumerFactory.addConsumer(new MockConsumer(cluster));
-        receiveAndVerify(remaining, r -> { });
+        receiveAndVerify(remaining, Mono::just);
     }
 
     private void verifyCommit(ReceiverRecord<Integer, String> r, long lastCommitted) {
@@ -1347,7 +1387,7 @@ public class MockReceiverTest {
         long offset = r.receiverOffset().offset();
         if (lastCommitted >= 0 && offset == lastCommitted) {
             TestUtils.waitUntil("Offset not committed", null,
-                    p -> cluster.committedOffset(groupId, p) == (Long) (offset + 1), partition, Duration.ofSeconds(1));
+                p -> cluster.committedOffset(groupId, p) == (Long) (offset + 1), partition, Duration.ofSeconds(1));
         }
         committedOffset = cluster.committedOffset(groupId, partition);
         assertEquals(committedOffset, lastCommitted == -1 ? null : lastCommitted + 1);
@@ -1357,9 +1397,9 @@ public class MockReceiverTest {
         DefaultKafkaReceiver<Integer, String> receiver = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions);
         return receiver.receive()
                 .doOnNext(r -> {
-                        receivedMessages.add((ConsumerRecord<Integer, String>) r);
-                        latch.countDown();
-                    })
+                    receivedMessages.add((ConsumerRecord<Integer, String>) r);
+                    latch.countDown();
+                })
                 .subscribe();
     }
 

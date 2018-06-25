@@ -110,12 +110,12 @@ public class SampleScenarios {
             Flux<Person> srcFlux = source().flux();
             return sender(senderOptions)
                     .send(srcFlux.map(p -> SenderRecord.create(new ProducerRecord<>(topic, p.id(), p), p.id())))
-                    .doOnError(e-> log.error("Send failed, terminating.", e))
+                    .doOnError(e -> log.error("Send failed, terminating.", e))
                     .doOnNext(r -> {
-                            int id = r.correlationMetadata();
-                            log.trace("Successfully stored person with id {} in Kafka", id);
-                            source.commit(id);
-                        })
+                        int id = r.correlationMetadata();
+                        log.trace("Successfully stored person with id {} in Kafka", id);
+                        source.commit(id);
+                    })
                     .doOnCancel(() -> close());
         }
     }
@@ -150,7 +150,7 @@ public class SampleScenarios {
                           .send(Mono.just(new ProducerRecord<>(topic2, p.id(), p.upperCase())))
                           .then()
                           .doOnSuccess(v -> source.commit(p.id())))
-                    .doOnCancel(() -> close());
+                          .doOnCancel(() -> close());
         }
     }
 
@@ -174,7 +174,7 @@ public class SampleScenarios {
                            .receive()
                            .publishOn(scheduler)
                            .concatMap(m -> storeInDB(m.value())
-                                          .doOnSuccess(r -> m.receiverOffset().commit().block()))
+                                          .thenEmpty(m.receiverOffset().commit()))
                            .retry()
                            .doOnCancel(() -> close());
         }
@@ -289,7 +289,7 @@ public class SampleScenarios {
                     .sendTransactionally(srcFlux.map(p -> records(p)))
                     .concatMap(r -> r)
                     .doOnNext(r -> log.info("Sent record successfully {}", r))
-                    .doOnError(e-> log.error("Send failed, terminating.", e))
+                    .doOnError(e -> log.error("Send failed, terminating.", e))
                     .doOnCancel(() -> close());
         }
         private Flux<SenderRecord<Integer, Person, Integer>> records(Person p) {
@@ -398,9 +398,10 @@ public class SampleScenarios {
             return Flux.merge(stream1, stream2)
                        .doOnSubscribe(s -> cancelRef.set(inFlux.subscribe()))
                        .doOnCancel(() -> {
-                               cancel.accept(cancelRef);
-                               close();
-                           });
+                           cancel.accept(cancelRef);
+                           close();
+                       })
+                       .doOnTerminate(() -> close());
         }
         public ProducerRecord<Integer, Person> process1(Person p, boolean debug) {
             if (debug)

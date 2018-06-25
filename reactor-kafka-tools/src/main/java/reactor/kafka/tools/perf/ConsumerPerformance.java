@@ -315,33 +315,33 @@ public class ConsumerPerformance {
 
             ReceiverOptions<byte[], byte[]> receiverOptions = ReceiverOptions.<byte[], byte[]>create(consumerProps)
                     .addAssignListener(partitions -> {
-                            for (ReceiverPartition p : partitions) {
-                                p.seekToBeginning();
-                            }
-                        })
+                        for (ReceiverPartition p : partitions) {
+                            p.seekToBeginning();
+                        }
+                    })
                     .subscription(Collections.singletonList(topic));
             receiver = KafkaReceiver.create(receiverOptions);
             Disposable disposable = receiver
                      .receive()
                      .limitRate(numMessages)
                      .subscribe(record -> {
-                             lastConsumedTime.set(System.currentTimeMillis());
-                             totalMessagesRead.incrementAndGet();
-                             if (record.key() != null)
-                                 totalBytesRead.addAndGet(record.key().length);
-                             if (record.value() != null)
-                                 totalBytesRead.addAndGet(record.value().length);
+                         lastConsumedTime.set(System.currentTimeMillis());
+                         totalMessagesRead.incrementAndGet();
+                         if (record.key() != null)
+                             totalBytesRead.addAndGet(record.key().length);
+                         if (record.value() != null)
+                             totalBytesRead.addAndGet(record.value().length);
 
-                             if (totalMessagesRead.get() % config.reportingInterval == 0) {
-                                 if (showDetailedStats)
-                                     printProgressMessage(0, totalBytesRead.get(), lastBytesRead.get(), totalMessagesRead.get(), lastMessagesRead.get(),
-                                         lastReportTime.get(), System.currentTimeMillis(), config.dateFormat);
-                                 lastReportTime.set(System.currentTimeMillis());
-                                 lastMessagesRead.set(totalMessagesRead.get());
-                                 lastBytesRead.set(totalBytesRead.get());
-                             }
-                             receiveLatch.countDown();
-                         });
+                         if (totalMessagesRead.get() % config.reportingInterval == 0) {
+                             if (showDetailedStats)
+                                 printProgressMessage(0, totalBytesRead.get(), lastBytesRead.get(), totalMessagesRead.get(), lastMessagesRead.get(),
+                                     lastReportTime.get(), System.currentTimeMillis(), config.dateFormat);
+                             lastReportTime.set(System.currentTimeMillis());
+                             lastMessagesRead.set(totalMessagesRead.get());
+                             lastBytesRead.set(totalBytesRead.get());
+                         }
+                         receiveLatch.countDown();
+                     });
             receiveLatch.await();
             disposable.dispose();
         }

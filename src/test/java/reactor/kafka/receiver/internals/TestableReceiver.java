@@ -78,27 +78,27 @@ public class TestableReceiver {
             injectCommitEventForRetriableException();
         return kafkaReceiver.receive()
                 .doOnSubscribe(s -> {
-                        if (retriable)
-                            injectCommitEventForRetriableException();
-                    })
+                    if (retriable)
+                        injectCommitEventForRetriableException();
+                })
                 .doOnNext(record -> {
-                        try {
-                            receiveSemaphore.release();
-                            injectCommitError();
-                            Predicate<Throwable> retryPredicate = e -> {
-                                if (retryCount.incrementAndGet() == failureCount)
-                                    clearCommitError();
-                                return retryCount.get() <= failureCount + 1;
-                            };
-                            record.receiverOffset().commit()
-                                                   .doOnError(e -> failureSemaphore.release())
-                                                   .doOnSuccess(i -> successSemaphore.release())
-                                                   .retry(retryPredicate)
-                                                   .subscribe();
-                        } catch (Exception e) {
-                            fail("Unexpected exception: " + e);
-                        }
-                    })
+                    try {
+                        receiveSemaphore.release();
+                        injectCommitError();
+                        Predicate<Throwable> retryPredicate = e -> {
+                            if (retryCount.incrementAndGet() == failureCount)
+                                clearCommitError();
+                            return retryCount.get() <= failureCount + 1;
+                        };
+                        record.receiverOffset().commit()
+                                               .doOnError(e -> failureSemaphore.release())
+                                               .doOnSuccess(i -> successSemaphore.release())
+                                               .retry(retryPredicate)
+                                               .subscribe();
+                    } catch (Exception e) {
+                        fail("Unexpected exception: " + e);
+                    }
+                })
                 .doOnError(e -> log.error("KafkaFlux exception", e));
     }
 
@@ -112,12 +112,12 @@ public class TestableReceiver {
 
     public void injectCommitEventForRetriableException() {
         DefaultKafkaReceiver<?, ?>.CommitEvent newEvent = kafkaReceiver.new CommitEvent() {
-                protected boolean isRetriableException(Exception exception) {
-                    boolean retriable = exception instanceof RetriableCommitFailedException ||
-                            exception.toString().contains(Errors.UNKNOWN_TOPIC_OR_PARTITION.exception().getMessage()) ||
-                            exception.toString().contains(NON_EXISTENT_PARTITION.topic());
-                    return retriable;
-                }
+            protected boolean isRetriableException(Exception exception) {
+                boolean retriable = exception instanceof RetriableCommitFailedException ||
+                        exception.toString().contains(Errors.UNKNOWN_TOPIC_OR_PARTITION.exception().getMessage()) ||
+                        exception.toString().contains(NON_EXISTENT_PARTITION.topic());
+                return retriable;
+            }
         };
         TestUtils.setField(kafkaReceiver, "commitEvent", newEvent);
     }

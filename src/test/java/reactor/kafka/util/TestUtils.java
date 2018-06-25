@@ -102,9 +102,9 @@ public class TestUtils {
 
     public static void execute(Runnable runnable, long maxTimeMs) throws Exception {
         execute(() -> {
-                runnable.run();
-                return null;
-            }, maxTimeMs);
+            runnable.run();
+            return null;
+        }, maxTimeMs);
     }
 
     public static <T> T execute(Callable<T> callable, long maxTimeMs) throws Exception {

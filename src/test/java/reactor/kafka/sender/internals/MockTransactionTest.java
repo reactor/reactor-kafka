@@ -87,13 +87,13 @@ public class MockTransactionTest {
                 .consumerProperty(ConsumerConfig.ISOLATION_LEVEL_CONFIG, "read_committed")
                 .consumerProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, String.valueOf(maxPollRecords))
                 .addAssignListener(partitions -> {
-                        for (ReceiverPartition p : partitions)
-                            assignedPartitions.add(p.topicPartition());
-                    })
+                    for (ReceiverPartition p : partitions)
+                        assignedPartitions.add(p.topicPartition());
+                })
                 .addRevokeListener(partitions -> {
-                        for (ReceiverPartition p : partitions)
-                            assignedPartitions.remove(p.topicPartition());
-                    })
+                    for (ReceiverPartition p : partitions)
+                        assignedPartitions.remove(p.topicPartition());
+                })
                 .subscription(Collections.singleton(srcTopic));
         consumerFactory = new MockConsumer.Pool(Arrays.asList(new MockConsumer(cluster), new MockConsumer(cluster)));
         receiver = new DefaultKafkaReceiver<Integer, String>(consumerFactory, receiverOptions);
@@ -150,10 +150,10 @@ public class MockTransactionTest {
                 .take(count)
                 .window(maxPollRecords)
                 .concatMapDelayError(f -> {
-                        Transaction t = new Transaction(transactionManager, groupId);
-                        return sender.send(f.map(r -> toSenderRecord(destTopic, r, t)))
-                                     .then(t.commitAndBegin());
-                    }, false, 1);
+                    Transaction t = new Transaction(transactionManager, groupId);
+                    return sender.send(f.map(r -> toSenderRecord(destTopic, r, t)))
+                                 .then(t.commitAndBegin());
+                }, false, 1);
 
         StepVerifier.create(transactionManager.begin().thenMany(receiveAndSend).then(transactionManager.commit()))
                     .verifyComplete();
@@ -200,15 +200,15 @@ public class MockTransactionTest {
                 .take(count)
                 .window(20)
                 .concatMapDelayError(f -> {
-                        Transaction t = new Transaction(transactionManager, groupId);
-                        return sender.send(f.map(r -> {
-                                if (r.key() == 25)
-                                    throw new RuntimeException("Test exception");
-                                else
-                                    return toSenderRecord(destTopic, r, t);
-                            }))
-                            .then(t.commitAndBegin());
-                    }, false, 1)
+                    Transaction t = new Transaction(transactionManager, groupId);
+                    return sender.send(f.map(r -> {
+                        if (r.key() == 25)
+                            throw new RuntimeException("Test exception");
+                        else
+                            return toSenderRecord(destTopic, r, t);
+                    }))
+                    .then(t.commitAndBegin());
+                }, false, 1)
                 .onErrorResume(e -> transactionManager.abort().then(Mono.error(e)));
 
         StepVerifier.create(sender.transactionManager().begin().thenMany(receiveAndSend))
@@ -305,16 +305,16 @@ public class MockTransactionTest {
 
     private Flux<SenderResult<Integer>> sendAndCommit(String destTopic, Flux<ConsumerRecord<Integer, String>> flux, int failureKey) {
         return sender.send(flux.map(r -> {
-                if (r.key() == failureKey)
-                    throw new RuntimeException("Test exception");
-                else
-                    return toSenderRecord(destTopic, r);
-            })).concatWith(sender.transactionManager().commit());
+            if (r.key() == failureKey)
+                throw new RuntimeException("Test exception");
+            else
+                return toSenderRecord(destTopic, r);
+        })).concatWith(sender.transactionManager().commit());
     }
 
     private void waitForTransactions(int transactionCount) {
         TestUtils.waitUntil("Some transactions not committed, committed=",
-                () -> producer.commitCount, p -> p.commitCount == transactionCount, producer, Duration.ofMillis(10000));
+            () -> producer.commitCount, p -> p.commitCount == transactionCount, producer, Duration.ofMillis(10000));
     }
 
     private static class Transaction {

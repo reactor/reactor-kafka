@@ -73,17 +73,17 @@ public class SampleProducer {
     public void sendMessages(String topic, int count, CountDownLatch latch) throws InterruptedException {
         sender.<Integer>send(Flux.range(1, count)
                         .map(i -> SenderRecord.create(new ProducerRecord<>(topic, i, "Message_" + i), i)))
-              .doOnError(e-> log.error("Send failed", e))
+              .doOnError(e -> log.error("Send failed", e))
               .subscribe(r -> {
-                      RecordMetadata metadata = r.recordMetadata();
-                      System.out.printf("Message %d sent successfully, topic-partition=%s-%d offset=%d timestamp=%s\n",
-                          r.correlationMetadata(),
-                          metadata.topic(),
-                          metadata.partition(),
-                          metadata.offset(),
-                          dateFormat.format(new Date(metadata.timestamp())));
-                      latch.countDown();
-                  });
+                  RecordMetadata metadata = r.recordMetadata();
+                  System.out.printf("Message %d sent successfully, topic-partition=%s-%d offset=%d timestamp=%s\n",
+                      r.correlationMetadata(),
+                      metadata.topic(),
+                      metadata.partition(),
+                      metadata.offset(),
+                      dateFormat.format(new Date(metadata.timestamp())));
+                  latch.countDown();
+              });
     }
 
     public void close() {
