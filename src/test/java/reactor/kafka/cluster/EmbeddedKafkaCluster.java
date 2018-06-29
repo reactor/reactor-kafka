@@ -15,7 +15,6 @@
  */
 package reactor.kafka.cluster;
 
-import java.io.File;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.util.ArrayList;
@@ -33,7 +32,6 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.network.ListenerName;
-import org.apache.kafka.common.protocol.SecurityProtocol;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.utils.SystemTime;
 import org.junit.rules.ExternalResource;
@@ -70,11 +68,12 @@ public class EmbeddedKafkaCluster extends ExternalResource {
                 true,
                 true,
                 brokerPort,
-                scala.Option.<SecurityProtocol>apply(null),
-                scala.Option.<File>apply(null),
-                scala.Option.<Properties>apply(null),
+                scala.Option.apply(null),
+                scala.Option.apply(null),
+                scala.Option.apply(null),
                 true, false, 0, false, 0, false, 0,
-                scala.Option.<String>apply(null));
+                scala.Option.apply(null),
+                1);
             props.put(KafkaConfig.MinInSyncReplicasProp(), "1");
             props.put(KafkaConfig.TransactionsTopicReplicationFactorProp(), "1");
             props.put(KafkaConfig.TransactionsTopicMinISRProp(), "1");
