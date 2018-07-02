@@ -44,7 +44,6 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.WakeupException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import reactor.core.Disposable;
 import reactor.core.publisher.EmitterProcessor;
 import reactor.core.publisher.Flux;
@@ -54,11 +53,11 @@ import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoSink;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
-import reactor.kafka.receiver.ReceiverOptions;
-import reactor.kafka.receiver.ReceiverRecord;
 import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOffset;
+import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.ReceiverPartition;
+import reactor.kafka.receiver.ReceiverRecord;
 import reactor.kafka.receiver.internals.CommittableBatch.CommitArgs;
 import reactor.kafka.sender.TransactionManager;
 
@@ -257,7 +256,8 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
                         if (requestsPending.get() > 0)
                             pollEvent.scheduleIfRequired();
                     })
-                .doOnCancel(() -> cancel(true));
+                .doOnTerminate(this::dispose)
+                .doOnCancel(this::dispose);
         return consumerFlux;
     }
 
@@ -277,7 +277,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
     }
 
     void close() {
-        cancel(true);
+        dispose(true);
     }
 
     private Collection<ReceiverPartition> toSeekable(Collection<TopicPartition> partitions) {
@@ -322,11 +322,20 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
     private void fail(Throwable e, boolean async) {
         log.error("Consumer flux exception", e);
         recordSubmission.error(e);
-        cancel(async);
+        dispose(async);
     }
 
-    private void cancel(boolean async) {
-        log.debug("cancel {}", isActive);
+    private void dispose() {
+        boolean isEventsThread = Thread.currentThread()
+                                       .getName()
+                                       .startsWith("reactive-kafka-" + receiverOptions.groupId());
+        boolean isEventsEmitterAvailable =
+                !(eventSubmission.isCancelled() || eventEmitter.isTerminated() || eventEmitter.isCancelled());
+        this.dispose(!isEventsThread && isEventsEmitterAvailable);
+    }
+
+    private void dispose(boolean async) {
+        log.debug("dispose {}", isActive);
         if (isActive.compareAndSet(true, false)) {
             boolean isConsumerClosed = consumer == null;
             try {
