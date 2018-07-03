@@ -15,6 +15,8 @@
  */
 package reactor.kafka.receiver.internals;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -29,18 +31,16 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
@@ -52,9 +52,9 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InvalidOffsetException;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
-
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -70,6 +70,11 @@ import reactor.kafka.receiver.ReceiverRecord;
 import reactor.kafka.util.TestUtils;
 import reactor.test.StepVerifier;
 import reactor.test.StepVerifier.Step;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 /**
  * Kafka receiver tests using mock Kafka consumers.
@@ -133,6 +138,79 @@ public class MockReceiverTest {
         assertFalse("Consumer closed", consumer.closed());
         c.dispose();
         assertTrue("Consumer closed", consumer.closed());
+    }
+
+    @Test
+    public void testCorrectResourceDisposeOnAccidentErrorDuringStart() throws Exception {
+        Field parallel = Schedulers.class.getDeclaredField("CACHED_PARALLEL");
+        parallel.setAccessible(true);
+        Method cache = Schedulers.class.getDeclaredMethod("cache",
+                AtomicReference.class,
+                String.class,
+                Supplier.class);
+        cache.setAccessible(true);
+        AtomicReference<?> atomicHolder = (AtomicReference<?>) parallel.get(Schedulers.class);
+        try {
+            atomicHolder.set(null);
+            cache.invoke(Schedulers.class, atomicHolder, "parallel", (Supplier<Scheduler>) () -> Schedulers.fromExecutor((r) -> {
+                throw new RejectedExecutionException();
+            }));
+            sendMessages(topic, 0, 1);
+            receiverOptions = receiverOptions.subscription(Collections.singleton(topic));
+            DefaultKafkaReceiver<Integer, String> receiver =
+                    new DefaultKafkaReceiver<>(consumerFactory, receiverOptions);
+            Flux<ReceiverRecord<Integer, String>> flux = receiver.receive();
+            try {
+                flux.blockLast();
+                fail("unexpected completion");
+            }
+            catch (Exception e) {
+                Assert.assertTrue(e instanceof RejectedExecutionException);
+            }
+            Thread.sleep(500);
+            assertTrue("Consumer must be closed if unexpected error occurred", consumer.closed());
+        } finally {
+            atomicHolder.set(null);
+            cache.setAccessible(false);
+            parallel.setAccessible(false);
+        }
+    }
+
+    @Test
+    public void testCorrectResourceDisposeOnAccidentError() throws Exception {
+        Field parallel = Schedulers.class.getDeclaredField("CACHED_PARALLEL");
+        parallel.setAccessible(true);
+        Method cache = Schedulers.class.getDeclaredMethod("cache",
+                AtomicReference.class,
+                String.class,
+                Supplier.class);
+        cache.setAccessible(true);
+        AtomicReference<?> atomicHolder =
+                (AtomicReference<?>) parallel.get(Schedulers.class);
+        try {
+            atomicHolder.set(null);
+            cache.invoke(Schedulers.class, atomicHolder, "parallel", (Supplier<Scheduler>) () -> Schedulers.fromExecutor((r) -> {
+                throw new RejectedExecutionException();
+            }));
+            sendMessages(topic, 0, 1);
+            receiverOptions = receiverOptions.subscription(Collections.singleton(topic));
+            DefaultKafkaReceiver<Integer, String> receiver =
+                    new DefaultKafkaReceiver<>(consumerFactory, receiverOptions);
+            Flux<ConsumerRecord<Integer, String>> flux = receiver.receiveAtmostOnce();
+            try {
+                flux.blockLast();
+                fail("unexpected completion");
+            }
+            catch (Exception e) {
+                assertTrue(e instanceof RejectedExecutionException);
+            }
+            Thread.sleep(500);
+            assertTrue("Consumer must be closed if unexpected error occurred", consumer.closed());
+        } finally {
+            atomicHolder.set(null);
+            cache.setAccessible(false);
+            parallel.setAccessible(false);
+        }
     }
 
     /**
