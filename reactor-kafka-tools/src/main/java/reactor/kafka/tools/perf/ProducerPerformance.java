@@ -461,13 +461,13 @@ public class ProducerPerformance {
             Flux<Flux<SenderRecord<byte[], byte[], Callback>>> sourceFlux = sourceFlux()
                     .publishOn(sender.transactionManager().scheduler())
                     .windowUntil(r -> {
-                            long currentTimeMs = System.currentTimeMillis();
-                            if (currentTimeMs >= transactionEndMs.get()) {
-                                transactionEndMs.set(currentTimeMs + transactionDurationMs);
-                                return true;
-                            } else
-                                return false;
-                        });
+                        long currentTimeMs = System.currentTimeMillis();
+                        if (currentTimeMs >= transactionEndMs.get()) {
+                            transactionEndMs.set(currentTimeMs + transactionDurationMs);
+                            return true;
+                        } else
+                            return false;
+                    });
             return sender.sendTransactionally(sourceFlux)
                          .concatMap(r -> r)
                          .map(result -> processResult(latch, result));
@@ -476,12 +476,12 @@ public class ProducerPerformance {
         private Flux<SenderRecord<byte[], byte[], Callback>> sourceFlux() {
             return Flux.range(1, numRecords)
                        .map(i -> {
-                               long sendStartMs = System.currentTimeMillis();
-                               if (throttler.shouldThrottle(i, sendStartMs))
-                                   throttler.throttle();
-                               Callback cb = stats.nextCompletion(sendStartMs, recordSize, stats);
-                               return SenderRecord.create(record, cb);
-                           });
+                           long sendStartMs = System.currentTimeMillis();
+                           if (throttler.shouldThrottle(i, sendStartMs))
+                               throttler.throttle();
+                           Callback cb = stats.nextCompletion(sendStartMs, recordSize, stats);
+                           return SenderRecord.create(record, cb);
+                       });
         }
 
         private RecordMetadata processResult(CountDownLatch latch, SenderResult<Callback> result) {

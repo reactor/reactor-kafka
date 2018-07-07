@@ -26,6 +26,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.assertEquals;
@@ -112,8 +113,8 @@ public class SampleScenariosTest extends AbstractKafkaTest {
 
     @Test
     public void kafkaSource() throws Exception {
-        List<Person> expected = new ArrayList<>();
-        List<Person> received = new ArrayList<>();
+        List<Person> expected = new CopyOnWriteArrayList<>();
+        List<Person> received = new CopyOnWriteArrayList<>();
         KafkaSource source = new KafkaSource(bootstrapServers, topic) {
             public Mono<Void> storeInDB(Person person) {
                 received.add(person);
@@ -242,7 +243,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         subscribeToDestTopic("test-group", destTopic, flow.receiverOptions(), received);
         int expectedCount = count / 2;
         TestUtils.waitUntil("Incorrect number of messages received, expected=" + expectedCount + ", received=",
-                () -> received.size(), r -> r.size() >= expectedCount, received, Duration.ofMillis(receiveTimeoutMillis));
+            () -> received.size(), r -> r.size() >= expectedCount, received, Duration.ofMillis(receiveTimeoutMillis));
         assertEquals(expectedCount, received.size());
     }
 
@@ -312,17 +313,17 @@ public class SampleScenariosTest extends AbstractKafkaTest {
                 .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
                 .consumerProperty(ConsumerConfig.GROUP_ID_CONFIG, groupId)
                 .addAssignListener(partitions -> {
-                        log.debug("Group {} assigned {}", groupId, partitions);
-                        partitions.forEach(p -> log.trace("Group {} partition {} position {}", groupId, p, p.position()));
-                    })
+                    log.debug("Group {} assigned {}", groupId, partitions);
+                    partitions.forEach(p -> log.trace("Group {} partition {} position {}", groupId, p, p.position()));
+                })
                 .addRevokeListener(p -> log.debug("Group {} revoked {}", groupId, p));
         Disposable c = KafkaReceiver.create(receiverOptions.subscription(Collections.singleton(topic)))
                                  .receive()
                                  .subscribe(m -> {
-                                         Person p = m.value();
-                                         received.add(p);
-                                         log.debug("Thread {} Received from {}: {} ", Thread.currentThread().getName(), m.topic(), p);
-                                     });
+                                     Person p = m.value();
+                                     received.add(p);
+                                     log.debug("Thread {} Received from {}: {} ", Thread.currentThread().getName(), m.topic(), p);
+                                 });
         disposables.add(c);
     }
     private CommittableSource createTestSource(int count, List<Person> expected) {
@@ -339,7 +340,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
     private void waitForMessages(Collection<Person> expected, Collection<Person> received) throws Exception {
         try {
             TestUtils.waitUntil("Incorrect number of messages received, expected=" + expected.size() + ", received=",
-                        () -> received.size(), r -> r.size() >= expected.size(), received, Duration.ofMillis(receiveTimeoutMillis));
+                () -> received.size(), r -> r.size() >= expected.size(), received, Duration.ofMillis(receiveTimeoutMillis));
         } catch (Error e) {
             TestUtils.printStackTrace(".*group.*");
             throw e;

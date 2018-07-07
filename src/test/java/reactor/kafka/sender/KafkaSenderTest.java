@@ -236,7 +236,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         try {
             kafkaSender.send(createSenderRecordErrorFlux(count, true, false))
                        .doOnError(t -> errorSemaphore.release())
-                .subscribe();
+                       .subscribe();
         } catch (Exception e) {
             // ignore
             assertTrue("Invalid exception " + e, e.getClass().getName().contains("CancelException"));
@@ -255,10 +255,10 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         CountDownLatch sendLatch = new CountDownLatch(count);
         kafkaSender.send(Flux.range(0, count / 2).map(i -> SenderRecord.create(createProducerRecord(i, true), null)))
                    .doOnNext(r -> {
-                           assertFalse("Running onNext on producer network thread", Thread.currentThread().getName().contains("network"));
-                           sendLatch.countDown();
-                           TestUtils.acquireSemaphore(blocker);
-                       })
+                       assertFalse("Running onNext on producer network thread", Thread.currentThread().getName().contains("network"));
+                       sendLatch.countDown();
+                       TestUtils.acquireSemaphore(blocker);
+                   })
                    .subscribe();
         kafkaSender.send(Flux.range(count / 2, count / 2).map(i -> SenderRecord.create(createProducerRecord(i, true), null)))
                    .doOnError(e -> log.error("KafkaSender exception", e))
@@ -281,17 +281,17 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         Flux<SenderResult<Integer>> outboundFlux =
             kafkaSender.send(createSenderRecordErrorFlux(count, false, true))
                     .doOnNext(r -> {
-                            if (r.exception() == null)
-                                lastSuccessful.set(r.correlationMetadata());
-                        })
+                        if (r.exception() == null)
+                            lastSuccessful.set(r.correlationMetadata());
+                    })
                     .onErrorResume(e -> {
-                            Thread.interrupted(); // clear any interrupts
-                            embeddedKafka.waitForBrokers();
-                            waitForTopic(topic, partitions, false);
-                            TestUtils.sleep(2000);
-                            int next = lastSuccessful.get() + 1;
-                            return outboundFlux(next, count - next);
-                        });
+                        Thread.interrupted(); // clear any interrupts
+                        embeddedKafka.waitForBrokers();
+                        waitForTopic(topic, partitions, false);
+                        TestUtils.sleep(2000);
+                        int next = lastSuccessful.get() + 1;
+                        return outboundFlux(next, count - next);
+                    });
         StepVerifier.create(outboundFlux)
                     .expectNextCount(count + 1)
                     .expectComplete()
@@ -340,17 +340,17 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         Flux<SenderRecord<Integer, String, Integer>> source =
                 Flux.range(0, count)
                     .map(i -> {
-                            int current = inflight.incrementAndGet();
-                            if (current > maxInflight.get())
-                                maxInflight.set(current);
-                            return SenderRecord.create(createProducerRecord(i, true), null);
-                        });
+                        int current = inflight.incrementAndGet();
+                        if (current > maxInflight.get())
+                            maxInflight.set(current);
+                        return SenderRecord.create(createProducerRecord(i, true), null);
+                    });
         kafkaSender.send(source)
                    .doOnNext(metadata -> {
-                           TestUtils.sleep(100);
-                           latch.countDown();
-                           inflight.decrementAndGet();
-                       })
+                       TestUtils.sleep(100);
+                       latch.countDown();
+                       inflight.decrementAndGet();
+                   })
                    .subscribe();
 
         assertTrue("Missing responses " + latch.getCount(), latch.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
@@ -380,13 +380,13 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         recreateSender(senderOptions);
         kafkaSender.send(emitter.map(i -> SenderRecord.<Integer, String, Integer>create(new ProducerRecord<Integer, String>(topic, i % partitions, i, "Message " + i), i)))
                    .doOnNext(result -> {
-                           int messageIdentifier = result.correlationMetadata();
-                           RecordMetadata metadata = result.recordMetadata();
-                           if (metadata != null)
-                               successfulSends.get(metadata.partition()).add(messageIdentifier);
-                           else
-                               failedSends.add(messageIdentifier);
-                       })
+                       int messageIdentifier = result.correlationMetadata();
+                       RecordMetadata metadata = result.recordMetadata();
+                       if (metadata != null)
+                           successfulSends.get(metadata.partition()).add(messageIdentifier);
+                       else
+                           failedSends.add(messageIdentifier);
+                   })
                    .doOnComplete(() -> done.release())
                    .subscribe();
         for (int i = 0; i < count; i++) {
@@ -468,9 +468,9 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                    .concatMap(r -> r)
                    .doOnNext(r -> results.put(r.correlationMetadata(), r))
                    .doOnError(e -> {
-                           assertTrue("Unexpected exception " + e, e instanceof ProducerFencedException);
-                           done.release();
-                       })
+                       assertTrue("Unexpected exception " + e, e instanceof ProducerFencedException);
+                       done.release();
+                   })
                    .subscribe();
         done.tryAcquire(receiveTimeoutMillis, TimeUnit.MILLISECONDS);
 
@@ -540,25 +540,24 @@ public class KafkaSenderTest extends AbstractKafkaTest {
 
     private Flux<ProducerRecord<Integer, String>> createOutboundErrorFlux(int count, boolean failOnError, boolean hasRetry) {
         return Flux.range(0, count)
-                   .map(i ->
-                       {
-                           int failureIndex = 1;
-                           int restartIndex = count - 1;
-                           try {
-                               if (i == failureIndex) {
-                                   Thread.sleep(requestTimeoutMillis);     // give some time for previous messages to be sent
-                                   shutdownKafkaBroker();
-                               } else if (i == restartIndex) {
-                                   Thread.sleep(requestTimeoutMillis);     // wait for previous request to timeout
-                                   restartKafkaBroker();
-                               }
-                           } catch (Exception e) {
-                               throw new RuntimeException(e);
+                   .map(i -> {
+                       int failureIndex = 1;
+                       int restartIndex = count - 1;
+                       try {
+                           if (i == failureIndex) {
+                               Thread.sleep(requestTimeoutMillis);     // give some time for previous messages to be sent
+                               shutdownKafkaBroker();
+                           } else if (i == restartIndex) {
+                               Thread.sleep(requestTimeoutMillis);     // wait for previous request to timeout
+                               restartKafkaBroker();
                            }
+                       } catch (Exception e) {
+                           throw new RuntimeException(e);
+                       }
 
-                           boolean expectSuccess = hasRetry || i < failureIndex || (!failOnError && i >= restartIndex);
-                           return createProducerRecord(i, expectSuccess);
-                       });
+                       boolean expectSuccess = hasRetry || i < failureIndex || (!failOnError && i >= restartIndex);
+                       return createProducerRecord(i, expectSuccess);
+                   });
     }
 
     private Flux<SenderRecord<Integer, String, Integer>> createSenderRecordErrorFlux(int count, boolean failOnError, boolean hasRetry) {

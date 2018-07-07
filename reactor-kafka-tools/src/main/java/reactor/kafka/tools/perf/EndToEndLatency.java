@@ -339,11 +339,11 @@ public class EndToEndLatency {
             sender = KafkaSender.create(SenderOptions.create(producerProps));
             ReceiverOptions<byte[], byte[]> receiverOptions = ReceiverOptions.<byte[], byte[]>create(consumerProps)
                     .addAssignListener(partitions -> {
-                            if (assignSemaphore.availablePermits() == 0) {
-                                partitions.forEach(p -> p.seekToEnd());
-                                assignSemaphore.release();
-                            }
-                        })
+                        if (assignSemaphore.availablePermits() == 0) {
+                            partitions.forEach(p -> p.seekToEnd());
+                            assignSemaphore.release();
+                        }
+                    })
                     .subscription(Collections.singleton(topic));
             flux = KafkaReceiver.create(receiverOptions)
                            .receive();

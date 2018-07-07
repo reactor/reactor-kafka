@@ -25,7 +25,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
  */
 public class ReceiverRecord<K, V> extends ConsumerRecord<K, V> {
 
-    private ReceiverOffset receiverOffset;
+    private final ReceiverOffset receiverOffset;
 
     @SuppressWarnings("deprecation")
     public ReceiverRecord(ConsumerRecord<K, V> consumerRecord, ReceiverOffset receiverOffset) {

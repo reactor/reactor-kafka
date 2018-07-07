@@ -44,7 +44,6 @@ import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -60,10 +59,10 @@ import reactor.kafka.util.TestUtils;
 import reactor.test.StepVerifier;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.fail;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 /**
  * Kafka receiver integration tests using embedded Kafka brokers and consumers.
@@ -162,12 +161,12 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         int count = 10;
         sendMessages(0, count);
         receiverOptions = receiverOptions
-                .addAssignListener(partitions -> {
-                        for (ReceiverPartition partition : partitions)
-                            partition.seekToEnd();
-                        onPartitionsAssigned(partitions);
-                    })
-                .subscription(Collections.singletonList(topic));
+            .addAssignListener(partitions -> {
+                for (ReceiverPartition partition : partitions)
+                    partition.seekToEnd();
+                onPartitionsAssigned(partitions);
+            })
+            .subscription(Collections.singletonList(topic));
 
         Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux =
                 KafkaReceiver.create(receiverOptions)
@@ -181,16 +180,16 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         int count = 10;
         sendMessages(0, count);
         receiverOptions = receiverOptions
-                .addAssignListener(partitions -> {
-                        onPartitionsAssigned(partitions);
-                        for (ReceiverPartition partition : partitions)
-                             partition.seek(1);
-                    })
-                .subscription(Collections.singletonList(topic));
+            .addAssignListener(partitions -> {
+                onPartitionsAssigned(partitions);
+                for (ReceiverPartition partition : partitions)
+                    partition.seek(1);
+            })
+            .subscription(Collections.singletonList(topic));
         Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux =
-                KafkaReceiver.create(receiverOptions)
-                        .receive()
-                        .doOnError(e -> log.error("KafkaFlux exception", e));
+            KafkaReceiver.create(receiverOptions)
+                         .receive()
+                         .doOnError(e -> log.error("KafkaFlux exception", e));
 
         sendReceive(kafkaFlux, count, count, partitions, count * 2 - partitions);
     }
@@ -245,7 +244,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux =
                 KafkaReceiver.create(receiverOptions)
                         .receive()
-                        .doOnNext(r -> r.receiverOffset().commit().block())
+                        .delayUntil(r -> r.receiverOffset().commit())
                         .doOnSubscribe(s -> assignSemaphore.release());
         sendReceiveWithSendDelay(kafkaFlux, Duration.ofMillis(1000), 0, 10);
     }
@@ -259,34 +258,34 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         Collection<TopicPartition> topicPartitions = getTopicPartitions();
         Map<TopicPartition, ReceiverOffset> assignedPartitions = new HashMap<>();
         receiverOptions = receiverOptions
-                .commitInterval(Duration.ZERO)
-                .commitBatchSize(0)
-                .assignment(topicPartitions)
-                .addAssignListener(partitions -> {
-                        for (ReceiverPartition p : partitions) {
-                            p.seekToBeginning();
-                            assignedPartitions.put(p.topicPartition(), null);
-                        }
-                        assignSemaphore.release();
-                    })
-                .addRevokeListener(partitions -> {
-                        for (ReceiverPartition p : partitions) {
-                            ReceiverOffset offset = assignedPartitions.remove(p);
-                            if (offset != null)
-                                offset.commit().block();
-                        }
-                        revokeSemaphore.release();
-                    });
+            .commitInterval(Duration.ZERO)
+            .commitBatchSize(0)
+            .assignment(topicPartitions)
+            .addAssignListener(partitions -> {
+                for (ReceiverPartition p : partitions) {
+                    p.seekToBeginning();
+                    assignedPartitions.put(p.topicPartition(), null);
+                }
+                assignSemaphore.release();
+            })
+            .addRevokeListener(partitions -> {
+                for (ReceiverPartition p : partitions) {
+                    ReceiverOffset offset = assignedPartitions.remove(p);
+                    if (offset != null)
+                        offset.commit().block();
+                }
+                revokeSemaphore.release();
+            });
         Disposable disposable =
-                KafkaReceiver.create(receiverOptions)
-                        .receive()
-                        .doOnNext(m -> {
-                                assertTrue(assignedPartitions.containsKey(m.receiverOffset().topicPartition()));
-                                assignedPartitions.put(m.receiverOffset().topicPartition(), m.receiverOffset());
-                                receiveLatch.countDown();
-                            })
-                        .take(count)
-                        .subscribe();
+            KafkaReceiver.create(receiverOptions)
+                         .receive()
+                         .doOnNext(m -> {
+                             assertTrue(assignedPartitions.containsKey(m.receiverOffset().topicPartition()));
+                             assignedPartitions.put(m.receiverOffset().topicPartition(), m.receiverOffset());
+                             receiveLatch.countDown();
+                         })
+                         .take(count)
+                         .subscribe();
         waitFoPartitionAssignment();
         assertEquals(new HashSet<>(topicPartitions), assignedPartitions.keySet());
         waitForMessages(receiveLatch);
@@ -369,9 +368,9 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
                                          .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         KafkaReceiver<Integer, String> receiver = createReceiver();
         Flux<ReceiverRecord<Integer, String>> fluxWithAck = receiver.receive().doOnNext(record -> {
-                if (receivedMessages.get(record.partition()).size() < 10)
-                    record.receiverOffset().acknowledge();
-            });
+            if (receivedMessages.get(record.partition()).size() < 10)
+                record.receiverOffset().acknowledge();
+        });
         sendReceive(fluxWithAck, 0, 100, 0, 100);
 
         // Check that close commits ack'ed records, does not commit un-ack'ed records
@@ -415,14 +414,14 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         KafkaReceiver<Integer, String> receiver = createReceiver();
         Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux = receiver.receive()
                          .doOnNext(record -> {
-                                 ReceiverOffset offset = record.receiverOffset();
-                                 TestableReceiver.setNonExistentPartition(offset);
-                                 record.receiverOffset().acknowledge();
-                                 record.receiverOffset().commit()
-                                       .doOnError(e -> commitErrorSemaphore.release())
-                                       .doOnSuccess(i -> commitSuccess.set(true))
-                                       .subscribe();
-                             })
+                             ReceiverOffset offset = record.receiverOffset();
+                             TestableReceiver.setNonExistentPartition(offset);
+                             record.receiverOffset().acknowledge();
+                             record.receiverOffset().commit()
+                                   .doOnError(e -> commitErrorSemaphore.release())
+                                   .doOnSuccess(i -> commitSuccess.set(true))
+                                   .subscribe();
+                         })
                          .doOnError(e -> log.error("KafkaFlux exception", e));
 
         subscribe(kafkaFlux, new CountDownLatch(count));
@@ -441,12 +440,11 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         receiverOptions = receiverOptions.commitInterval(Duration.ZERO).commitBatchSize(0);
         KafkaReceiver<Integer, String> receiver = createReceiver();
         Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux = receiver.receive()
-                         .doOnNext(record -> {
-                                 assertEquals(committedOffsets[record.partition()], record.offset());
-                                 record.receiverOffset().commit()
-                                       .doOnSuccess(i -> onCommit(record, commitLatch, committedOffsets))
-                                       .block();
-                             })
+                         .delayUntil(record -> {
+                             assertEquals(committedOffsets[record.partition()], record.offset());
+                             return record.receiverOffset().commit()
+                                          .doOnSuccess(i -> onCommit(record, commitLatch, committedOffsets));
+                         })
                          .doOnError(e -> log.error("KafkaFlux exception", e));
 
         sendAndWaitForMessages(kafkaFlux, count);
@@ -466,14 +464,19 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
                 .doOnNext(record -> onReceive(record));
 
         sendMessages(0, 10);
-        StepVerifier.create(inboundFlux, 1)
-                    .consumeNextWith(record -> {
-                            assertEquals(committedOffsets[record.partition()], record.offset());
-                            record.receiverOffset().commit()
-                                  .doOnSuccess(i -> onCommit(record, commitLatch, committedOffsets))
-                                  .block();
-                        })
-                    .thenCancel()
+        StepVerifier.create(
+            inboundFlux.take(1)
+                       .concatMap(record -> {
+                           assertEquals(committedOffsets[record.partition()], record.offset());
+                           return record.receiverOffset()
+                                        .commit()
+                                        .doOnSuccess(i -> onCommit(record,
+                                                commitLatch,
+                                                committedOffsets))
+                                        .then(Mono.just(record));
+                       }), 1)
+                    .expectNextCount(1)
+                    .expectComplete()
                     .verify();
         checkCommitCallbacks(commitLatch, committedOffsets);
     }
@@ -493,11 +496,11 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         sendMessages(0, 10);
         StepVerifier.create(inboundFlux, 1)
                     .consumeNextWith(record -> {
-                            assertEquals(committedOffsets[record.partition()], record.offset());
-                            record.receiverOffset().commit()
-                                  .doOnSuccess(i -> onCommit(record, commitLatch, committedOffsets))
-                                  .subscribe();
-                        })
+                        assertEquals(committedOffsets[record.partition()], record.offset());
+                        record.receiverOffset().commit()
+                              .doOnSuccess(i -> onCommit(record, commitLatch, committedOffsets))
+                              .subscribe();
+                    })
                     .thenCancel()
                     .verify();
         checkCommitCallbacks(commitLatch, committedOffsets);
@@ -514,17 +517,18 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         receiverOptions = receiverOptions.commitInterval(Duration.ZERO).commitBatchSize(0);
         KafkaReceiver<Integer, String> receiver = createReceiver();
         Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux = receiver.receive()
-                         .doOnNext(record -> {
-                                 ReceiverOffset offset = record.receiverOffset();
-                                 offset.acknowledge();
-                                 uncommitted.add(offset);
-                                 if (uncommitted.size() == commitIntervalMessages) {
-                                     offset.commit()
-                                           .doOnSuccess(i -> onCommit(uncommitted, commitLatch, committedOffsets))
-                                           .doOnError(e -> log.error("Commit exception", e))
-                                           .block();
-                                 }
-                             })
+                         .concatMap(record -> {
+                             ReceiverOffset offset = record.receiverOffset();
+                             offset.acknowledge();
+                             uncommitted.add(offset);
+                             if (uncommitted.size() == commitIntervalMessages) {
+                                 return offset.commit()
+                                              .doOnSuccess(i -> onCommit(uncommitted, commitLatch, committedOffsets))
+                                              .doOnError(e -> log.error("Commit exception", e))
+                                              .then(Mono.just(record));
+                             }
+                             return Mono.just(record);
+                         })
                          .doOnError(e -> log.error("KafkaFlux exception", e));
 
         sendAndWaitForMessages(kafkaFlux, count);
@@ -553,7 +557,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         KafkaReceiver<Integer, String> receiver = createReceiver();
         TestableReceiver testableReceiver = new TestableReceiver(receiver);
         Flux<? extends ConsumerRecord<Integer, String>> flux = testableReceiver
-                .receiveWithManualCommitFailures(retriableException, failureCount, receiveSemaphore, commitSuccessSemaphore, commitFailureSemaphore);
+            .receiveWithManualCommitFailures(retriableException, failureCount, receiveSemaphore, commitSuccessSemaphore, commitFailureSemaphore);
 
         subscribe(flux, new CountDownLatch(count));
         sendMessages(1, count);
@@ -575,7 +579,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     public void autoCommitNonRetriableException() throws Exception {
         int count = 5;
         receiverOptions = receiverOptions.consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
-                               .maxCommitAttempts(2);
+                                         .maxCommitAttempts(2);
         testAutoCommitFailureScenarios(false, count, 1000, 0, 10);
 
         Flux<? extends ConsumerRecord<Integer, String>> flux = createReceiver().receiveAutoAck().concatMap(r -> r);
@@ -586,7 +590,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     public void autoCommitFailurePropagationAfterRetries() throws Exception {
         int count = 5;
         receiverOptions = receiverOptions.consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
-                               .maxCommitAttempts(2);
+                                         .maxCommitAttempts(2);
         testAutoCommitFailureScenarios(true, count, 2, 0, Integer.MAX_VALUE);
 
         Flux<? extends ConsumerRecord<Integer, String>> flux = createReceiver().receive();
@@ -607,18 +611,18 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         Semaphore onNextSemaphore = new Semaphore(0);
         Flux<ReceiverRecord<Integer, String>> flux = receiver.receive()
                   .doOnSubscribe(s -> {
-                          if (retriable)
-                              testReceiver.injectCommitEventForRetriableException();
-                      })
+                      if (retriable)
+                          testReceiver.injectCommitEventForRetriableException();
+                  })
                   .doOnNext(record -> {
-                          int receiveCount = count(receivedMessages);
-                          if (receiveCount == errorInjectIndex)
-                              testReceiver.injectCommitError();
-                          if (receiveCount >= errorClearIndex)
-                              testReceiver.clearCommitError();
-                          record.receiverOffset().acknowledge();
-                          onNextSemaphore.release();
-                      })
+                      int receiveCount = count(receivedMessages);
+                      if (receiveCount == errorInjectIndex)
+                          testReceiver.injectCommitError();
+                      if (receiveCount >= errorClearIndex)
+                          testReceiver.clearCommitError();
+                      record.receiverOffset().acknowledge();
+                      onNextSemaphore.release();
+                  })
                   .doOnError(e -> failed.set(true));
         subscribe(flux, new CountDownLatch(count));
         for (int i = 0; i < count; i++) {
@@ -654,30 +658,32 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
                                 .addAssignListener(this::onPartitionsAssigned)
                                 .assignment(Collections.singletonList(new TopicPartition(topic, 1)))
                             )
-                        .receive()
-                        .doOnError(e -> log.error("KafkaFlux exception", e));
+                            .receive()
+                            .doOnError(e -> log.error("KafkaFlux exception", e));
         subscribe(partition1Flux, receiveLatch1);
 
         // Receive from partition 0 and send to partition 1
-        Flux<ReceiverRecord<Integer, String>> flux0 = KafkaReceiver.create(receiverOptions
-                        .commitInterval(Duration.ZERO)
-                        .commitBatchSize(0)
-                        .addAssignListener(this::seekToBeginning)
-                        .assignment(Collections.singletonList(new TopicPartition(topic, 0)))
-                    )
-                .receive()
-                .doOnNext(cr -> receiveLatch0.countDown())
-                .publishOn(consumerScheduler);
-        Disposable disposable0 = kafkaSender.send(flux0.map(cr -> SenderRecord.create(topic, 1, null, cr.key(), cr.value(), cr.receiverOffset())))
-                    .doOnNext(sendResult -> {
-                            sendResult.correlationMetadata()
-                                      .commit()
-                                      .retry(100)
-                                      .block();
-                            sendLatch1.countDown();
-                        })
-                    .doOnError(e -> log.error("KafkaFlux exception", e))
-                    .subscribe();
+        Flux<ReceiverRecord<Integer, String>> flux0 = KafkaReceiver
+            .create(receiverOptions
+                .commitInterval(Duration.ZERO)
+                .commitBatchSize(0)
+                .addAssignListener(this::seekToBeginning)
+                .assignment(Collections.singletonList(new TopicPartition(topic, 0)))
+            )
+            .receive()
+            .doOnNext(cr -> receiveLatch0.countDown())
+            .publishOn(consumerScheduler);
+        Disposable disposable0 = kafkaSender
+            .send(flux0.map(cr -> SenderRecord.create(topic, 1, null, cr.key(), cr.value(), cr.receiverOffset())))
+            .concatMap(sendResult ->
+                sendResult.correlationMetadata()
+                          .commit()
+                          .retry(100)
+                          .then(Mono.fromRunnable(sendLatch1::countDown))
+                          .then(Mono.just(sendResult))
+            )
+            .doOnError(e -> log.error("KafkaFlux exception", e))
+            .subscribe();
         subscribeDisposables.add(disposable0);
 
         // Send messages to partition 0
@@ -712,17 +718,17 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
                 .addRevokeListener(partitions -> revoked.addAndGet(partitions.size()))
                 .addAssignListener(this::seekToBeginning)
                 .subscription(Collections.singletonList(topic));
-        Flux<ReceiverRecord<Integer, String>> kafkaFlux =
-                KafkaReceiver.create(receiverOptions)
-                        .receive()
-                        .doOnNext(record -> {
-                                onReceive(record);
-                                record.receiverOffset()
-                                      .commit()
-                                      .doOnError(e -> commitFailures.incrementAndGet())
-                                      .doOnSuccess(v -> commitSemaphore.release())
-                                      .subscribe();
-                            });
+        Flux<ReceiverRecord<Integer, String>> kafkaFlux = KafkaReceiver
+            .create(receiverOptions)
+            .receive()
+            .doOnNext(record -> {
+                onReceive(record);
+                record.receiverOffset()
+                      .commit()
+                      .doOnError(e -> commitFailures.incrementAndGet())
+                      .doOnSuccess(v -> commitSemaphore.release())
+                      .subscribe();
+            });
 
         sendMessages(0, count);
         StepVerifier.create(kafkaFlux.take(count), 1)
@@ -763,11 +769,11 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         for (int i = 0; i < 2; i++) {
             Collection<ReceiverPartition> seekablePartitions = new ArrayList<>();
             receiverOptions = receiverOptions
-                    .addAssignListener(partitions -> {
-                            seekablePartitions.addAll(partitions);
-                            assignSemaphore.release();
-                        })
-                    .subscription(Collections.singletonList(topic));
+                .addAssignListener(partitions -> {
+                    seekablePartitions.addAll(partitions);
+                    assignSemaphore.release();
+                })
+                .subscription(Collections.singletonList(topic));
             KafkaReceiver<Integer, String> receiver = KafkaReceiver.create(receiverOptions);
             Flux<ConsumerRecord<Integer, String>> kafkaFlux = receiver
                             .receiveAutoAck()
@@ -800,17 +806,17 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
             receiverOptions = receiverOptions
                     .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
                     .addAssignListener(p -> {
-                            log.info("Assigned {} {} {}", Thread.currentThread().getName(), id, p);
-                            assigned.incrementAndGet();
-                        })
+                        log.info("Assigned {} {} {}", Thread.currentThread().getName(), id, p);
+                        assigned.incrementAndGet();
+                    })
                     .addRevokeListener(p -> log.info("Revoked {} {} {}", Thread.currentThread().getName(), id, p))
                     .subscription(Collections.singletonList(topic));
             kafkaFlux[i] = KafkaReceiver.create(receiverOptions).receive()
                     .publishOn(consumerScheduler)
                     .doOnNext(record -> {
-                            onReceive(record);
-                            latch.countDown();
-                        })
+                        onReceive(record);
+                        latch.countDown();
+                    })
                     .doOnError(e -> log.error("KafkaFlux exception", e));
             subscribeDisposables.add(kafkaFlux[i].subscribe());
             TestUtils.waitUntil("Assigment not complete for " + i, () -> assigned, a -> a.get() >= id + 1, assigned, Duration.ofSeconds(30));
@@ -847,21 +853,21 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         Disposable disposable =
             kafkaFlux.groupBy(m -> m.receiverOffset().topicPartition())
                      .subscribe(partitionFlux -> subscribeDisposables.add(partitionFlux.publishOn(scheduler).subscribe(record -> {
-                             int partition = record.partition();
-                             String current = Thread.currentThread().getName() + ":" + record.offset();
-                             String inProgress = inProgressMap.putIfAbsent(partition, current);
-                             if (inProgress != null) {
-                                 log.error("Concurrent execution on partition {} current={}, inProgress={}", partition, current, inProgress);
-                                 concurrentPartitionExecutions.incrementAndGet();
-                             }
-                             if (inProgressMap.size() > 1)
-                                 concurrentExecutions.incrementAndGet();
-                             TestUtils.sleep(random.nextInt(maxProcessingMs));
-                             onReceive(record);
-                             latch.countDown();
-                             record.receiverOffset().acknowledge();
-                             inProgressMap.remove(partition);
-                         })));
+                         int partition = record.partition();
+                         String current = Thread.currentThread().getName() + ":" + record.offset();
+                         String inProgress = inProgressMap.putIfAbsent(partition, current);
+                         if (inProgress != null) {
+                             log.error("Concurrent execution on partition {} current={}, inProgress={}", partition, current, inProgress);
+                             concurrentPartitionExecutions.incrementAndGet();
+                         }
+                         if (inProgressMap.size() > 1)
+                             concurrentExecutions.incrementAndGet();
+                         TestUtils.sleep(random.nextInt(maxProcessingMs));
+                         onReceive(record);
+                         latch.countDown();
+                         record.receiverOffset().acknowledge();
+                         inProgressMap.remove(partition);
+                     })));
         subscribeDisposables.add(disposable);
 
         try {
@@ -889,11 +895,11 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
                         .receive()
                         .publishOn(Schedulers.single())
                         .doOnNext(record -> {
-                                receiveLatch.countDown();
-                                if (receiveLatch.getCount() == 0)
-                                    throw new RuntimeException("Test exception");
-                                record.receiverOffset().acknowledge();
-                            });
+                            receiveLatch.countDown();
+                            if (receiveLatch.getCount() == 0)
+                                throw new RuntimeException("Test exception");
+                            record.receiverOffset().acknowledge();
+                        });
 
         CountDownLatch latch = new CountDownLatch(successfulReceives);
         subscribe(kafkaFlux, latch);
@@ -1075,10 +1081,10 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         Disposable disposable =
                 kafkaFlux
                         .doOnNext(record -> {
-                                onReceive(record);
-                                for (CountDownLatch latch : latches)
-                                    latch.countDown();
-                            })
+                            onReceive(record);
+                            for (CountDownLatch latch : latches)
+                                latch.countDown();
+                        })
                         .doOnError(e -> log.error("KafkaFlux exception", e))
                         .publishOn(consumerScheduler)
                         .subscribe();
@@ -1252,10 +1258,16 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         AtomicInteger index = new AtomicInteger();
         TransactionManager transactionManager = sender.transactionManager();
         return receiver.receiveExactlyOnce(transactionManager)
-                .concatMap(f -> sender.send(f.map(r -> toSenderRecord(destTopic, r, r.key())).doOnNext(r -> {
-                        if (index.incrementAndGet() == exceptionIndex)
-                            throw new RuntimeException("Test exception");
-                    })).concatWith(transactionManager.commit()))
+                .concatMap(f ->
+                    sender.send(
+                        f.map(r -> toSenderRecord(destTopic, r, r.key()))
+                         .doOnNext(r -> {
+                             if (index.incrementAndGet() == exceptionIndex) {
+                                 throw new RuntimeException("Test exception");
+                             }
+                         })
+                    ).concatWith(transactionManager.commit())
+                )
                 .take(count);
     }
 }

@@ -282,13 +282,13 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
         acquire();
         try {
             executor.schedule(() -> {
-                    try {
-                        commitSync(offsets);
-                        completedCallbacks.add(() -> callback.onComplete(offsets, null));
-                    } catch (Exception e) {
-                        completedCallbacks.add(() -> callback.onComplete(offsets, e));
-                    }
-                }, 10, TimeUnit.MILLISECONDS);
+                try {
+                    commitSync(offsets);
+                    completedCallbacks.add(() -> callback.onComplete(offsets, null));
+                } catch (Exception e) {
+                    completedCallbacks.add(() -> callback.onComplete(offsets, e));
+                }
+            }, 10, TimeUnit.MILLISECONDS);
         } finally {
             release();
         }

@@ -78,16 +78,16 @@ public class SampleConsumer {
                 .addRevokeListener(partitions -> log.debug("onPartitionsRevoked {}", partitions));
         Flux<ReceiverRecord<Integer, String>> kafkaFlux = KafkaReceiver.create(options).receive();
         return kafkaFlux.subscribe(record -> {
-                ReceiverOffset offset = record.receiverOffset();
-                System.out.printf("Received message: topic-partition=%s offset=%d timestamp=%s key=%d value=%s\n",
-                        offset.topicPartition(),
-                        offset.offset(),
-                        dateFormat.format(new Date(record.timestamp())),
-                        record.key(),
-                        record.value());
-                offset.acknowledge();
-                latch.countDown();
-            });
+            ReceiverOffset offset = record.receiverOffset();
+            System.out.printf("Received message: topic-partition=%s offset=%d timestamp=%s key=%d value=%s\n",
+                    offset.topicPartition(),
+                    offset.offset(),
+                    dateFormat.format(new Date(record.timestamp())),
+                    record.key(),
+                    record.value());
+            offset.acknowledge();
+            latch.countDown();
+        });
     }
 
     public static void main(String[] args) throws Exception {
