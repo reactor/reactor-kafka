@@ -1260,6 +1260,22 @@ public class MockReceiverTest {
         verifyMessages(receiver.receiveAutoAck().concatMap(r -> r).take(10), 10);
     }
 
+    @Test
+    public void shouldNotOverflowOnLongMaxValuePlus1WhichHappensInCaseOfSkip1() {
+        receiverOptions = receiverOptions
+                .subscription(Collections.singleton(topic));
+        DefaultKafkaReceiver<Integer, String> receiver = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions);
+        Flux<ReceiverRecord<Integer, String>> inboundFlux = receiver.receive()
+                                                                    .skip(1);
+
+        sendMessages(topic, 0, 3);
+
+        StepVerifier.create(inboundFlux)
+                    .expectNextCount(2)
+                    .thenCancel()
+                    .verify(Duration.ofSeconds(30));
+    }
+
     private void sendMessages(String topic, int startIndex, int count) {
         int partitions = cluster.cluster().partitionCountForTopic(topic);
         for (int i = 0; i < count; i++) {

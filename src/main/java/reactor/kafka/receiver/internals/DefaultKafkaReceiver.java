@@ -52,6 +52,7 @@ import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.FluxSink.OverflowStrategy;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoSink;
+import reactor.core.publisher.Operators;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.kafka.receiver.ReceiverOptions;
@@ -273,9 +274,21 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
     }
 
     private <T> Flux<T> withDoOnRequest(Flux<T> consumerFlux) {
-        return consumerFlux.doOnRequest(r -> {
-            if (requestsPending.addAndGet(r) > 0) {
-                pollEvent.scheduleIfRequired();
+        return consumerFlux.doOnRequest(toAdd -> {
+            long r, u;
+            for (;;) {
+                r = requestsPending.get();
+                if (r == Long.MAX_VALUE) {
+                    pollEvent.scheduleIfRequired();
+                    return;
+                }
+                u = Operators.addCap(r, toAdd);
+                if (requestsPending.compareAndSet(r, u)) {
+                    if (u > 0) {
+                        pollEvent.scheduleIfRequired();
+                    }
+                    return;
+                }
             }
         });
     }
@@ -462,7 +475,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
                     }
                     if (isActive.get()) {
                         int count = ((ackMode == AckMode.AUTO_ACK || ackMode == AckMode.EXACTLY_ONCE) && records.count() > 0) ? 1 : records.count();
-                        if (requestsPending.addAndGet(0 - count) > 0 || commitEvent.inProgress.get() > 0)
+                        if (requestsPending.get() == Long.MAX_VALUE || requestsPending.addAndGet(0 - count) > 0 || commitEvent.inProgress.get() > 0)
                             scheduleIfRequired();
                     }
                 }
