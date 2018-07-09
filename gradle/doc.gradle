@@ -31,7 +31,6 @@ configure(allprojects) { project ->
               options.addStringOption('Xdoclint:none', '-quiet')
             }
         }
-
         options.memberLevel = org.gradle.external.javadoc.JavadocMemberLevel.PROTECTED
         options.author = false
         options.header = "Reactor Kafka"
@@ -42,7 +41,6 @@ configure(allprojects) { project ->
         maxMemory = "1024m"
         destinationDir = new File(buildDir, "docs/javadoc")
         source project.sourceSets.main.allJava
-        exclude "**/internals/**"
         doFirst {
           classpath = files(project.sourceSets.main.compileClasspath)
         }
