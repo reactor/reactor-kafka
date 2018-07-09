@@ -310,6 +310,24 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     }
 
     @Test
+    public void autoAckPollWithIntervalWillNotFailOnOverflow() throws Exception {
+        ReceiverOptions<Integer, String> options = receiverOptions.addAssignListener(this::onPartitionsAssigned)
+                                                                  .commitInterval(Duration.ofMillis(10))
+                                                                  .subscription(Collections.singletonList(topic));
+        KafkaReceiver<Integer, String> receiver =  KafkaReceiver.create(options);
+        Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux = receiver.receiveAutoAck().concatMap(r -> r);
+        CountDownLatch latch = new CountDownLatch(100);
+        subscribe(kafkaFlux, latch);
+        embeddedKafka.shutdownBroker(brokerId);
+        Thread.sleep(3000);
+        embeddedKafka.startBroker(brokerId);
+        sendMessages(0, 100);
+        waitForMessages(latch);
+        checkConsumedMessages(0, 100);
+        waitForCommits(receiver, 100);
+    }
+
+    @Test
     public void atmostOnce() throws Exception {
         receiverOptions.closeTimeout(Duration.ofMillis(1000));
         KafkaReceiver<Integer, String> receiver = createReceiver();

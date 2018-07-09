@@ -321,7 +321,8 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
         Duration commitInterval = receiverOptions.commitInterval();
         if ((ackMode == AckMode.AUTO_ACK || ackMode == AckMode.MANUAL_ACK) && !commitInterval.isZero()) {
             Flux<CommitEvent> periodicCommitFlux = Flux.interval(receiverOptions.commitInterval())
-                             .map(i -> commitEvent.periodicEvent());
+                                                       .onBackpressureLatest()
+                                                       .map(i -> commitEvent.periodicEvent());
             fluxList.add(periodicCommitFlux);
         }
 
