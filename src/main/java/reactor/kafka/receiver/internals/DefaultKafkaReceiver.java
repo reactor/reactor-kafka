@@ -87,32 +87,33 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
         "endOffsets"
     ));
 
-    private final ConsumerFactory consumerFactory;
-    private final ReceiverOptions<K, V> receiverOptions;
-    private final List<Flux<? extends Event<?>>> fluxList;
-    private final List<Disposable> subscribeDisposables;
-    private final AtomicLong requestsPending;
-    private final AtomicBoolean needsHeartbeat;
-    private final AtomicInteger consecutiveCommitFailures;
-    private final Scheduler eventScheduler;
-    private final AtomicBoolean isActive;
-    private final AtomicBoolean isClosed;
-    private final AtomicBoolean awaitingTransaction;
-    private AckMode ackMode;
-    private AtmostOnceOffsets atmostOnceOffsets;
-    private EmitterProcessor<Event<?>> eventEmitter;
-    private FluxSink<Event<?>> eventSubmission;
-    private EmitterProcessor<ConsumerRecords<K, V>> recordEmitter;
-    private FluxSink<ConsumerRecords<K, V>> recordSubmission;
-    private InitEvent initEvent;
-    private PollEvent pollEvent;
-    private CommitEvent commitEvent;
-    private Flux<Event<?>> eventFlux;
-    private Flux<ConsumerRecords<K, V>> consumerFlux;
-    private org.apache.kafka.clients.consumer.Consumer<K, V> consumer;
-    private org.apache.kafka.clients.consumer.Consumer<K, V> consumerProxy;
+    private final ConsumerFactory                                  consumerFactory;
+    private final ReceiverOptions<K, V>                            receiverOptions;
+    private final List<Flux<? extends Event<?>>>                   fluxList;
+    private final List<Disposable>                                 subscribeDisposables;
+    private final AtomicLong                                       requestsPending;
+    private final AtomicBoolean                                    needsHeartbeat;
+    private final AtomicInteger
+                                                                   consecutiveCommitFailures;
+    private final KafkaSchedulers.EventScheduler                   eventScheduler;
+    private final AtomicBoolean                                    isActive;
+    private final AtomicBoolean                                    isClosed;
+    private final AtomicBoolean                                    awaitingTransaction;
+    private       AckMode                                          ackMode;
+    private       AtmostOnceOffsets                                atmostOnceOffsets;
+    private       EmitterProcessor<Event<?>>                       eventEmitter;
+    private       FluxSink<Event<?>>                               eventSubmission;
+    private       EmitterProcessor<ConsumerRecords<K, V>>          recordEmitter;
+    private       FluxSink<ConsumerRecords<K, V>>                  recordSubmission;
+    private       InitEvent                                        initEvent;
+    private       PollEvent                                        pollEvent;
+    private       CommitEvent                                      commitEvent;
+    private       Flux<Event<?>>                                   eventFlux;
+    private       Flux<ConsumerRecords<K, V>>                      consumerFlux;
+    private       org.apache.kafka.clients.consumer.Consumer<K, V> consumer;
+    private       org.apache.kafka.clients.consumer.Consumer<K, V> consumerProxy;
 
-    WorkerScheduler scheduler;
+    Scheduler scheduler;
 
     enum EventType {
         INIT, POLL, COMMIT, CUSTOM, CLOSE
@@ -134,7 +135,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
 
         this.consumerFactory = consumerFactory;
         this.receiverOptions = receiverOptions.toImmutable();
-        this.eventScheduler = Schedulers.newSingle("reactive-kafka-" + receiverOptions.groupId());
+        this.eventScheduler = KafkaSchedulers.newEvent(receiverOptions.groupId());
     }
 
     @Override
@@ -253,7 +254,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
 
         recordEmitter = EmitterProcessor.create();
         recordSubmission = recordEmitter.sink();
-        scheduler = new WorkerScheduler(Schedulers.parallel().createWorker());
+        scheduler = KafkaSchedulers.fromWorker(Schedulers.parallel().createWorker());
 
         consumerFlux = recordEmitter
                 .publishOn(scheduler)
@@ -269,7 +270,8 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
                     if (requestsPending.get() > 0)
                         pollEvent.scheduleIfRequired();
                 })
-                .doOnCancel(() -> cancel(true));
+                .doOnTerminate(this::dispose)
+                .doOnCancel(this::dispose);
         return consumerFlux;
     }
 
@@ -302,7 +304,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
     }
 
     void close() {
-        cancel(true);
+        dispose(true);
     }
 
     private Collection<ReceiverPartition> toSeekable(Collection<TopicPartition> partitions) {
@@ -345,14 +347,20 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
         subscribeDisposables.add(eventFlux.subscribe(event -> doEvent(event)));
     }
 
-    private void fail(Throwable e, boolean async) {
+    private void fail(Throwable e) {
         log.error("Consumer flux exception", e);
         recordSubmission.error(e);
-        cancel(async);
     }
 
-    private void cancel(boolean async) {
-        log.debug("cancel {}", isActive);
+    private void dispose() {
+        boolean isEventsThread = eventScheduler.isCurrentThreadFromScheduler();
+        boolean isEventsEmitterAvailable =
+                !(eventSubmission.isCancelled() || eventEmitter.isTerminated() || eventEmitter.isCancelled());
+        this.dispose(!isEventsThread && isEventsEmitterAvailable);
+    }
+
+    private void dispose(boolean async) {
+        log.debug("dispose {}", isActive);
         if (isActive.compareAndSet(true, false)) {
             boolean isConsumerClosed = consumer == null;
             try {
@@ -362,8 +370,9 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
                     if (async) {
                         emit(closeEvent);
                         isConsumerClosed = closeEvent.await();
-                    } else
+                    } else {
                         closeEvent.run();
+                    }
                 }
             } catch (Exception e) {
                 log.warn("Cancel exception: " + e);
@@ -403,7 +412,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
         try {
             event.run();
         } catch (Exception e) {
-            fail(e, false);
+            fail(e);
         }
     }
 
@@ -438,7 +447,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
             } catch (Exception e) {
                 if (isActive.get()) {
                     log.error("Unexpected exception", e);
-                    fail(e, false);
+                    fail(e);
                 }
             }
         }
@@ -483,7 +492,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
             } catch (Exception e) {
                 if (isActive.get()) {
                     log.error("Unexpected exception", e);
-                    fail(e, false);
+                    fail(e);
                 }
             }
         }
@@ -583,7 +592,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
                         emitter.error(exception);
                     }
                 } else
-                    fail(exception, false);
+                    fail(exception);
             } else {
                 commitBatch.restoreOffsets(commitArgs, true);
                 log.warn("Commit failed with exception" + exception + ", retries remaining " + (receiverOptions.maxCommitAttempts() - consecutiveCommitFailures.get()));
@@ -696,7 +705,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
                 semaphore.release();
             } catch (Exception e) {
                 log.error("Unexpected exception during close", e);
-                fail(e, false);
+                fail(e);
             }
         }
         boolean await(long timeoutNanos) throws InterruptedException {
@@ -816,43 +825,6 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
                 }
             }
             return undoRequired;
-        }
-    }
-
-    private static class WorkerScheduler implements Scheduler {
-
-        private final Worker worker;
-
-        private WorkerScheduler(Worker worker) {
-            this.worker = worker;
-        }
-
-        @Override
-        public Disposable schedule(Runnable task) {
-            return worker.schedule(task);
-        }
-
-        @Override
-        public Disposable schedulePeriodically(Runnable task,
-                long initialDelay,
-                long period,
-                TimeUnit unit) {
-            return worker.schedulePeriodically(task, initialDelay, period, unit);
-        }
-
-        @Override
-        public Worker createWorker() {
-            return worker;
-        }
-
-        @Override
-        public void dispose() {
-            worker.dispose();
-        }
-
-        @Override
-        public boolean isDisposed() {
-            return worker.isDisposed();
         }
     }
 }
