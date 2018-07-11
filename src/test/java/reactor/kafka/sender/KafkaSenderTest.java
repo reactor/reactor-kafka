@@ -95,7 +95,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         Flux<Integer> source = Flux.range(0, count);
         kafkaSender.createOutbound().send(source.map(i -> createProducerRecord(i, true)))
                    .then()
-                   .block();
+                   .block(Duration.ofMillis(receiveTimeoutMillis));
 
         waitForMessages(consumer, count, true);
     }
@@ -132,7 +132,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                    .send(Flux.range(batch, batch).map(i -> createProducerRecord(i, true)))
                    .send(Flux.range(batch * 2, batch).map(i -> createProducerRecord(i, true)))
                    .then()
-                   .block();
+                   .block(Duration.ofMillis(receiveTimeoutMillis));
 
         waitForMessages(consumer, batch * 3, true);
     }
@@ -295,7 +295,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         StepVerifier.create(outboundFlux)
                     .expectNextCount(count + 1)
                     .expectComplete()
-                    .verify();
+                    .verify(Duration.ofMillis(receiveTimeoutMillis));
 
         waitForMessages(consumer, count, false);
     }
@@ -508,7 +508,8 @@ public class KafkaSenderTest extends AbstractKafkaTest {
 
         StepVerifier.create(kafkaSender.send(createSenderRecords(count * 2, count, false)))
                     .expectNextMatches(result -> result.exception() instanceof ProducerFencedException)
-                    .verifyError(ProducerFencedException.class);
+                    .expectError(ProducerFencedException.class)
+                    .verify(Duration.ofMillis(receiveTimeoutMillis));
 
         waitForMessages(consumer, count * 2, true);
         sender2.close();
