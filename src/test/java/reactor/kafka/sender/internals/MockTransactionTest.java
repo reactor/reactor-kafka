@@ -26,6 +26,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 import static org.junit.Assert.assertEquals;
+import static reactor.kafka.AbstractKafkaTest.DEFAULT_TEST_TIMEOUT;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -156,7 +157,8 @@ public class MockTransactionTest {
                 }, false, 1);
 
         StepVerifier.create(transactionManager.begin().thenMany(receiveAndSend).then(transactionManager.commit()))
-                    .verifyComplete();
+                    .expectComplete()
+                    .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
         verifyTransaction(count, count);
 
         assertEquals(transactionCount + 1, producer.beginCount);
@@ -180,7 +182,8 @@ public class MockTransactionTest {
                 .onErrorResume(e -> transactionManager.abort().then(Mono.error(e)));
 
         StepVerifier.create(flux.then())
-                    .verifyErrorMessage("Test exception");
+                    .expectErrorMessage("Test exception")
+                    .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
         verifyTransaction(count, 10);
 
         assertEquals(2, producer.beginCount);
@@ -212,7 +215,8 @@ public class MockTransactionTest {
                 .onErrorResume(e -> transactionManager.abort().then(Mono.error(e)));
 
         StepVerifier.create(sender.transactionManager().begin().thenMany(receiveAndSend))
-                    .verifyErrorMessage("Test exception");
+                    .expectErrorMessage("Test exception")
+                    .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
         verifyTransaction(count, 20);
 
         assertEquals(2, producer.beginCount);

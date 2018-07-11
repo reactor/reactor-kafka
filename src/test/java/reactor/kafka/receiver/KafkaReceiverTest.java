@@ -126,7 +126,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
             senderRecords.add(record);
         }
         kafkaSender.send(Flux.fromIterable(senderRecords))
-                   .blockLast();
+                   .blockLast(Duration.ofSeconds(receiveTimeoutMillis));
         waitForMessages(latch);
         assertEquals(count, receiverRecords.size());
         for (int i = 0; i < count; i++) {
@@ -210,7 +210,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
                 .then(() -> sendMessages(count, count))
                 .expectNextCount(count)
                 .thenCancel()
-                .verify();
+                .verify(Duration.ofSeconds(receiveTimeoutMillis));
         checkConsumedMessages(count, count);
     }
 
@@ -272,7 +272,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
                 for (ReceiverPartition p : partitions) {
                     ReceiverOffset offset = assignedPartitions.remove(p);
                     if (offset != null)
-                        offset.commit().block();
+                        offset.commit().block(Duration.ofSeconds(receiveTimeoutMillis));
                 }
                 revokeSemaphore.release();
             });
@@ -495,7 +495,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
                        }), 1)
                     .expectNextCount(1)
                     .expectComplete()
-                    .verify();
+                    .verify(Duration.ofSeconds(receiveTimeoutMillis));
         checkCommitCallbacks(commitLatch, committedOffsets);
     }
 
@@ -520,7 +520,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
                               .subscribe();
                     })
                     .thenCancel()
-                    .verify();
+                    .verify(Duration.ofSeconds(receiveTimeoutMillis));
         checkCommitCallbacks(commitLatch, committedOffsets);
     }
     @Test
@@ -756,7 +756,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
             .thenRequest(count - 2)
             .expectNextCount(count - 2)
             .expectComplete()
-            .verify();
+            .verify(Duration.ofSeconds(receiveTimeoutMillis));
         assertTrue("Commits did not succeed", commitSemaphore.tryAcquire(count, requestTimeoutMillis * count, TimeUnit.MILLISECONDS));
         assertEquals(0, commitFailures.get());
         assertEquals(0, revoked.get());
@@ -963,7 +963,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         KafkaSender<Integer, String> txSender = createTransactionalSender();
         txSender.sendTransactionally(Flux.just(createSenderRecords(0, count, true)))
                 .doOnNext(result -> assertEquals(count, latch.getCount()))
-                .blockLast();
+                .blockLast(Duration.ofSeconds(receiveTimeoutMillis));
 
         waitForMessages(latch);
         checkConsumedMessages(0, count);
@@ -985,7 +985,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         TransactionManager txn = txSender.transactionManager();
         txn.begin()
             .thenMany(txSender.send(createSenderRecords(count, count, true)))
-            .blockLast();
+            .blockLast(Duration.ofSeconds(receiveTimeoutMillis));
         sendMessages(count * 2, count);
         Thread.sleep(1000);
         assertEquals(count * 2, latch2.getCount()); // non-transactional and transactional messages not received while commit pending
@@ -1009,7 +1009,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
 
         KafkaSender<Integer, String> txSender = createTransactionalSender();
         txSender.sendTransactionally(Flux.just(createSenderRecords(count, count, true)))
-                .then().block();
+                .then().block(Duration.ofSeconds(receiveTimeoutMillis));
         waitForMessages(latch2); // transactional messages received before commit
 
         sendMessages(count * 2, count);
@@ -1023,7 +1023,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         createNewTopic(destTopic, partitions);
 
         int count = 10;
-        kafkaSender.createOutbound().send(createProducerRecords(0, count, true)).then().block();
+        kafkaSender.createOutbound().send(createProducerRecords(0, count, true)).then().block(Duration.ofSeconds(receiveTimeoutMillis));
 
         String sourceConsumerGroupId = "source_consumer";
         receiverOptions = receiverOptions.consumerProperty(ConsumerConfig.ISOLATION_LEVEL_CONFIG, "read_committed")
@@ -1063,7 +1063,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         txSender.transactionManager().begin()
                 .thenMany(txSender.send(createSenderRecords(0, count, false)))
                 .then(txSender.transactionManager().abort())
-                .then().block();
+                .then().block(Duration.ofSeconds(receiveTimeoutMillis));
 
         sendMessages(count, count);
         waitForMessages(latch1);  // non-transactional messages received if no commits pending
@@ -1253,7 +1253,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         long committed = 0;
         for (int j = 0; j < partitions; j++) {
             TopicPartition p = new TopicPartition(topic, j);
-            OffsetAndMetadata offset = receiver.doOnConsumer(c -> c.committed(p)).block();
+            OffsetAndMetadata offset = receiver.doOnConsumer(c -> c.committed(p)).block(Duration.ofSeconds(receiveTimeoutMillis));
             if (offset != null && offset.offset() > 0)
                 committed += offset.offset();
         }

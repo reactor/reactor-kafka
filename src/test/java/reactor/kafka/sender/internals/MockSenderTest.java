@@ -16,6 +16,7 @@
 package reactor.kafka.sender.internals;
 
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -33,6 +34,7 @@ import java.util.function.Consumer;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static reactor.kafka.AbstractKafkaTest.DEFAULT_TEST_TIMEOUT;
 
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
@@ -107,7 +109,7 @@ public class MockSenderTest {
         partitions.subscribe();
         assertEquals(Arrays.asList(producer), producerFactory.producersInUse());
         for (int i = 0; i < 10; i++)
-            sender.doOnProducer(producer -> producer.partitionsFor(topic)).block();
+            sender.doOnProducer(producer -> producer.partitionsFor(topic)).block(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
         assertEquals(Arrays.asList(producer), producerFactory.producersInUse());
     }
 
@@ -117,7 +119,7 @@ public class MockSenderTest {
     @Test
     public void producerClose() {
         sender = new DefaultKafkaSender<>(producerFactory, SenderOptions.create());
-        sender.createOutbound().send(outgoingRecords.append(topic, 10).producerRecords()).then().block();
+        sender.createOutbound().send(outgoingRecords.append(topic, 10).producerRecords()).then().block(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
         assertEquals(Arrays.asList(producer), producerFactory.producersInUse());
         assertFalse("Producer closed after send", producer.isClosed());
         sender.close();
@@ -148,7 +150,7 @@ public class MockSenderTest {
         OutgoingRecords outgoing = outgoingRecords.append("nonexistent", 10);
         StepVerifier.create(sender.createOutbound().send(outgoing.producerRecords()).then())
                     .expectError(InvalidTopicException.class)
-                    .verify();
+                    .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
         assertEquals(maxInflight, outgoing.onNextCount.get());
     }
 
@@ -164,7 +166,7 @@ public class MockSenderTest {
         OutgoingRecords outgoing = outgoingRecords.append("nonexistent", 10).append(topic, 10);
         StepVerifier.create(sender.createOutbound().send(outgoing.producerRecords()))
                     .expectError(InvalidTopicException.class)
-                    .verify();
+                    .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
         assertEquals(20, outgoing.onNextCount.get());
         assertEquals(10, totalMessagesSent(topic));
     }
@@ -187,7 +189,7 @@ public class MockSenderTest {
                 .then(sender.createOutbound().send(outgoing3.producerRecords()).then().onErrorResume(e -> Mono.empty()));
         StepVerifier.create(mono)
                     .expectComplete()
-                    .verify();
+                    .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
         assertEquals(20, outgoing1.onNextCount.get());
         assertEquals(20, outgoing2.onNextCount.get());
         assertEquals(20, outgoing3.onNextCount.get());
@@ -226,8 +228,8 @@ public class MockSenderTest {
 
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
-            Future<?> future1 = executor.submit(() -> StepVerifier.create(chain1).expectComplete().verify());
-            Future<?> future2 = executor.submit(() -> StepVerifier.create(chain2).expectComplete().verify());
+            Future<?> future1 = executor.submit(() -> StepVerifier.create(chain1).expectComplete().verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT)));
+            Future<?> future2 = executor.submit(() -> StepVerifier.create(chain2).expectComplete().verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT)));
 
             assertTrue("First send not complete", doneSemaphore1.tryAcquire(5, TimeUnit.SECONDS));
             assertTrue("Second send not complete", doneSemaphore2.tryAcquire(5, TimeUnit.SECONDS));
@@ -256,7 +258,7 @@ public class MockSenderTest {
                 .send(outgoingRecords.append(topic, 10).producerRecords());
         StepVerifier.create(chain)
                     .expectComplete()
-                    .verify();
+                    .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
         outgoingRecords.verify(cluster, topic, true);
     }
 
@@ -281,7 +283,7 @@ public class MockSenderTest {
                 .send(outgoingRecords.append(topic, 10).producerRecords());
         StepVerifier.create(chain.then())
                     .expectComplete()
-                    .verify();
+                    .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
         outgoingRecords.verify(cluster, topic, true);
         assertEquals(2, thenCount.get());
     }
@@ -320,8 +322,8 @@ public class MockSenderTest {
 
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
-            Future<?> future1 = executor.submit(() -> StepVerifier.create(chain1).expectComplete().verify());
-            Future<?> future2 = executor.submit(() -> StepVerifier.create(chain2).expectComplete().verify());
+            Future<?> future1 = executor.submit(() -> StepVerifier.create(chain1).expectComplete().verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT)));
+            Future<?> future2 = executor.submit(() -> StepVerifier.create(chain2).expectComplete().verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT)));
 
             assertTrue("First send not complete", doneSemaphore1.tryAcquire(5, TimeUnit.SECONDS));
             assertTrue("Second send not complete", doneSemaphore2.tryAcquire(5, TimeUnit.SECONDS));
@@ -353,7 +355,7 @@ public class MockSenderTest {
                 .send(outgoingRecords.append(topic, 10).producerRecords());
         StepVerifier.create(chain.then())
                     .expectError(InvalidTopicException.class)
-                    .verify();
+                    .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
         assertEquals(maxInflight, outgoingRecords.onNextCount.get());
     }
 
@@ -383,7 +385,7 @@ public class MockSenderTest {
                     .recordWith(() -> sendResponses)
                     .expectNextCount(10)
                     .expectError(InvalidTopicException.class)
-                    .verify();
+                    .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
         outgoing.verify(sendResponses);
         assertEquals(10, outgoing.onNextCount.get());
     }
@@ -420,7 +422,7 @@ public class MockSenderTest {
                     .recordWith(() -> sendResponses)
                     .expectNextCount(1)
                     .expectError(InvalidTopicException.class)
-                    .verify();
+                    .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
         assertEquals(maxInflight, outgoing.onNextCount.get());
     }
 
@@ -437,7 +439,7 @@ public class MockSenderTest {
                     .recordWith(() -> sendResponses)
                     .expectNextCount(20)
                     .expectError(InvalidTopicException.class)
-                    .verify();
+                    .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
         outgoing.verify(sendResponses);
     }
 
@@ -586,7 +588,7 @@ public class MockSenderTest {
               .then();
         StepVerifier.create(resultMono)
               .expectError(LeaderNotAvailableException.class)
-              .verify();
+              .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
         assertEquals(30, responseCount.intValue());
 
     }
@@ -624,7 +626,7 @@ public class MockSenderTest {
                       remaining.remove(r.correlationMetadata());
                   }
               })
-              .blockLast();
+              .blockLast(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
 
         assertEquals(0, remaining.size());
         assertTrue("Sends not retried " + exceptionCount, exceptionCount.intValue() >= 1);
@@ -642,7 +644,8 @@ public class MockSenderTest {
         OutgoingRecords outgoing = outgoingRecords.append(topic, count);
 
         StepVerifier.create(sender.transactionManager().begin())
-                    .verifyComplete();
+                    .expectComplete()
+                    .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
 
         StepVerifier.create(sender.send(outgoing.senderRecords())
                                   .doOnNext(result -> assertTrue(Thread.currentThread().getName().contains(transactionId))))
@@ -651,10 +654,12 @@ public class MockSenderTest {
                         for (TopicPartition partition : cluster.partitions(topic))
                             assertEquals(0, cluster.log(partition).size());
                     })
-                    .verifyComplete();
+                    .expectComplete()
+                    .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
 
         StepVerifier.create(sender.transactionManager().commit())
-                    .verifyComplete();
+                    .expectComplete()
+                    .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
         outgoing.verify(cluster, topic, true);
     }
 
@@ -669,14 +674,16 @@ public class MockSenderTest {
         OutgoingRecords outgoing = outgoingRecords.append(topic, count);
 
         StepVerifier.create(sender.transactionManager().begin())
-                    .verifyComplete();
+                    .expectComplete()
+                    .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
 
         StepVerifier.create(sender.send(outgoing.senderRecords()).then(sender.transactionManager().abort()))
                     .then(() -> {
                         for (TopicPartition partition : cluster.partitions(topic))
                             assertEquals(0, cluster.log(partition).size());
                     })
-                    .verifyComplete();
+                    .expectComplete()
+                    .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
     }
 
     @Test
@@ -685,16 +692,19 @@ public class MockSenderTest {
                 .producerProperty(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "transactionalSender")
                 .stopOnError(true);
         sender = new DefaultKafkaSender<>(producerFactory, senderOptions);
-        sender.transactionManager().begin().block();
-        sender.transactionManager().commit().block();
+        sender.transactionManager().begin().block(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
+        sender.transactionManager().commit().block(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
 
         producer.fenceProducer();
         StepVerifier.create(sender.transactionManager().begin())
-                    .verifyError(ProducerFencedException.class);
+                    .expectError(ProducerFencedException.class)
+                    .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
         StepVerifier.create(sender.transactionManager().commit())
-                    .verifyError(ProducerFencedException.class);
+                    .expectError(ProducerFencedException.class)
+                    .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
         StepVerifier.create(sender.transactionManager().abort())
-                    .verifyError(ProducerFencedException.class);
+                    .expectError(ProducerFencedException.class)
+                    .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
     }
 
     /**
@@ -718,7 +728,7 @@ public class MockSenderTest {
         StepVerifier.create(result)
                     .expectNextCount(10)
                     .expectComplete()
-                    .verify();
+                    .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
     }
 
     /**
@@ -741,7 +751,7 @@ public class MockSenderTest {
                 }).then(Mono.just(r)));
         StepVerifier.create(result)
                     .expectError(UnsupportedOperationException.class)
-                    .verify();
+                    .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
     }
 
     /**
@@ -753,7 +763,7 @@ public class MockSenderTest {
         StepVerifier.create(sender.doOnProducer(producer -> producer.partitionsFor(topic)))
             .expectNext(cluster.cluster().partitionsForTopic(topic))
             .expectComplete()
-            .verify();
+            .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
     }
 
     /**
@@ -764,7 +774,7 @@ public class MockSenderTest {
         sender = new DefaultKafkaSender<>(producerFactory, SenderOptions.create());
         StepVerifier.create(sender.doOnProducer(producer -> producer.partitionsFor("nonexistent")))
             .expectError(InvalidTopicException.class)
-            .verify();
+            .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
     }
 
     private void sendAndVerifyResponses(KafkaSender<Integer, String> sender, String topic, int count) {
@@ -773,7 +783,7 @@ public class MockSenderTest {
                     .recordWith(() -> sendResponses)
                     .expectNextCount(count)
                     .expectComplete()
-                    .verify();
+                    .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
         outgoing.verify(sendResponses);
     }
 
@@ -781,7 +791,7 @@ public class MockSenderTest {
         OutgoingRecords outgoing = outgoingRecords.append(topic, count);
         StepVerifier.create(sender.createOutbound().send(outgoing.producerRecords()))
                     .expectComplete()
-                    .verify();
+                    .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
         outgoing.verify(cluster, topic, true);
     }
 

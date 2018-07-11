@@ -52,10 +52,11 @@ import reactor.kafka.util.TestUtils;
 import scala.Option;
 
 public class AbstractKafkaTest {
+    public static final int DEFAULT_TEST_TIMEOUT = 30000;
 
     protected String topic = "testtopic";
     protected int partitions = 4;
-    protected long receiveTimeoutMillis = 30000;
+    protected long receiveTimeoutMillis = DEFAULT_TEST_TIMEOUT;
     protected final long requestTimeoutMillis = 3000;
     protected final long sessionTimeoutMillis = 12000;
     protected final long heartbeatIntervalMillis = 3000;
