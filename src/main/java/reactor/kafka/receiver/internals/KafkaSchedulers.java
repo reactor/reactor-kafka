@@ -77,7 +77,7 @@ class KafkaSchedulers {
 
         @Override
         public Worker createWorker() {
-            return inner.createWorker();
+            return new EventWorker(inner.createWorker());
         }
 
         @Override
@@ -105,6 +105,43 @@ class KafkaSchedulers {
                 task.run();
             };
         }
+
+        final class EventWorker implements Worker {
+
+            final Worker actual;
+
+            EventWorker(Worker actual) {
+                this.actual = actual;
+            }
+
+            @Override
+            public void dispose() {
+                actual.dispose();
+            }
+
+            @Override
+            public boolean isDisposed() {
+                return actual.isDisposed();
+            }
+
+            @Override
+            public Disposable schedule(Runnable task) {
+                return actual.schedule(decorate(task));
+            }
+
+            @Override
+            public Disposable schedule(Runnable task, long delay, TimeUnit unit) {
+                return actual.schedule(decorate(task), delay, unit);
+            }
+
+            @Override
+            public Disposable schedulePeriodically(Runnable task,
+                    long initialDelay,
+                    long period,
+                    TimeUnit unit) {
+                return actual.schedulePeriodically(decorate(task), initialDelay, period, unit);
+            }
+        }
     }
 
     final static class EventThreadFactory implements ThreadFactory {
@@ -127,8 +164,6 @@ class KafkaSchedulers {
         }
 
         static final class EmitterThread extends Thread implements NonBlocking {
-
-            final ThreadLocal<Boolean> local = new ThreadLocal<>();
 
             EmitterThread(Runnable target, String name) {
                 super(target, name);
@@ -179,7 +214,6 @@ class KafkaSchedulers {
             WorkerDecorator(Worker worker) {
                 this.worker = worker;
                 this.tasks = Disposables.composite();
-
             }
 
             @Override

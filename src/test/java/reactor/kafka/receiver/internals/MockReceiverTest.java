@@ -298,6 +298,25 @@ public class MockReceiverTest {
         disposable.dispose();
     }
 
+    @Test
+    public void testThatDisposeOfResourceOnEventThreadCompleteSuccessful() {
+        receiverOptions = receiverOptions
+                .subscription(Collections.singleton(topic));
+        sendMessages(topic, 0, 10);
+        DefaultKafkaReceiver<Integer, String> receiver =
+                new DefaultKafkaReceiver<>(consumerFactory, receiverOptions);
+        Flux<ReceiverRecord<Integer, String>> inboundFlux =
+                receiver.receive()
+                        .publishOn(Schedulers.newSingle("test"))
+                        .concatMap(record -> record.receiverOffset()
+                                                   .commit()
+                                                   .thenReturn(record));
+        StepVerifier.create(inboundFlux.take(10))
+                    .expectNextCount(10)
+                    .expectComplete()
+                    .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
+    }
+
     /**
      * Consume from specific offsets of partitions by seeking to offset in the assign listener.
      */
