@@ -271,7 +271,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
                     if (requestsPending.get() > 0)
                         pollEvent.scheduleIfRequired();
                 })
-                .doOnTerminate(this::dispose)
+                .doAfterTerminate(this::dispose)
                 .doOnCancel(this::dispose);
         return consumerFlux;
     }
