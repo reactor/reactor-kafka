@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2016-2018 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -200,6 +200,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
                                  .thenMany(transactionalRecords(transactionManager, consumerRecords)))
                                  .publishOn(transactionManager.scheduler());
     }
+
     private Flux<ConsumerRecord<K, V>> transactionalRecords(TransactionManager transactionManager, ConsumerRecords<K, V> records) {
         if (records.isEmpty())
             return Flux.empty();
