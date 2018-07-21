@@ -5,9 +5,9 @@
 
 You need Java JRE installed (Java 8 or later).
 
-You need http://kafka.apache.org[Apache Kafka] installed (0.11.0.0 or later). Kafka can be downloaded
+You need http://kafka.apache.org[Apache Kafka] installed (1.0.0 or later). Kafka can be downloaded
 from https://kafka.apache.org/downloads.html. Note that the Apache Kafka client library used with
-Reactor Kafka should be 0.11.0.0 or later and the broker version should be 0.10.1.0 or later.
+Reactor Kafka should be 1.0.2 or later and the broker version should be 0.11.0.0 or later.
 
 === Quick Start
 
@@ -16,14 +16,14 @@ consumer. Instructions to set up multi-broker clusters are available http://kafk
 
 ==== Start Kafka
 
-If you haven't yet downloaded Kafka, download Kafka version https://www.apache.org/dyn/closer.cgi?path=/kafka/0.11.0.0/kafka_2.11-0.11.0.0.tgz[0.11.0.0] or later.
+If you haven't yet downloaded Kafka, download Kafka version https://www.apache.org/dyn/closer.cgi?path=/kafka/1.0.2/kafka_2.11-1.0.2.tgz[1.0.2] or later.
 
 Unzip the release and set KAFKA_DIR to the installation directory. For example,
 
 [source]
 --------
-> tar -zxf kafka_2.11-0.11.0.0.tgz -C /opt
-> export KAFKA_DIR=/opt/kafka_2.11-0.11.0.0
+> tar -zxf kafka_2.11-1.0.2.tgz -C /opt
+> export KAFKA_DIR=/opt/kafka_2.11-1.0.2
 --------
 
 Start a single-node Zookeeper instance using the Zookeeper installation included in the Kafka download:
@@ -160,7 +160,7 @@ For gradle:
 [source]
 --------
 dependencies {
-    compile "io.projectreactor.kafka:reactor-kafka:1.0.0.BUILD-SNAPSHOT"
+    compile "io.projectreactor.kafka:reactor-kafka:1.0.1.RELEASE"
 }
 --------
 
@@ -172,7 +172,7 @@ For maven:
 <dependency>
     <groupId>io.projectreactor.kafka</groupId>
     <artifactId>reactor-kafka</artifactId>
-    <version>1.0.0.BUILD-SNAPSHOT</version>
+    <version>1.0.1.RELEASE</version>
 </dependency>
 --------
 

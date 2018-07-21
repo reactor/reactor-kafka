@@ -1,7 +1,15 @@
 == New & Noteworthy
 
 [[new]]
-=== What's new in Reactor Kafka 1.0
+=== What's new in Reactor Kafka 1.0.0.RELEASE
 
 * First release of Reactor Kafka
+
+=== What's new in Reactor Kafka 1.0.1.RELEASE
+
+* Update to Apache Kafka 1.0.2 client 🎉
+* Update to Reactor 3.1.8.RELEASE 🎉
+* Fixes for a https://github.com/reactor/reactor-kafka/milestone/1?closed=1[list] of
+significant issues
+* Performance tuning and optimization of Reactor 3 usage 🤟
 

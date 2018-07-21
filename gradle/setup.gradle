@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2016-2018 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -87,6 +87,11 @@ def customizePom(def pom, def gradleProject) {
                     id = 'rsivaram'
                     name = 'Rajini Sivaram'
                     email = 'rsivaram@pivotal.io'
+                }
+                developer {
+                    id = 'OlegDokuka'
+                    name = 'Oleh Dokuka'
+                    email = 'oleh.dokuka@icloud.com'
                 }
             }
             issueManagement {

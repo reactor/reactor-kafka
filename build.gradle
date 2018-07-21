@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2017 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2011-2018 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,10 +29,10 @@ plugins {
 }
 
 ext {
-  gradleVersion = '4.8'
+  gradleVersion = '4.9'
   gradleScriptDir = "${rootProject.projectDir}/gradle"
 
-  kafkaVersion = '1.0.1'
+  kafkaVersion = '1.0.2'
   scalaVersion = '2.11'
   reactorVersion = '3.1.8.RELEASE'
   metricsVersion = '2.2.0'
@@ -40,13 +40,13 @@ ext {
   argparseVersion = '0.5.0'
   joptVersion = '4.9'
 
-  slf4jVersion = '1.7.21'
+  slf4jVersion = '1.7.25'
   junitVersion = '4.12'
-  zkVersion = "3.4.9"
-  powermockVersion = '1.6.4'
+  zkVersion = "3.4.12"
+  powermockVersion = '1.7.4'
 
   javadocLinks = ["http://docs.oracle.com/javase/8/docs/api/",
-                  "https://kafka.apache.org/0110/javadoc/",
+                  "https://kafka.apache.org/10/javadoc/",
                   "http://www.reactive-streams.org/reactive-streams-1.0.2-javadoc/",
                   "http://projectreactor.io/docs/core/release/api/"] as String[]
 
@@ -63,7 +63,7 @@ configurations.all {
 allprojects {
   apply plugin: 'jacoco'
   jacoco {
-    toolVersion = '0.7.7.201606060606'
+    toolVersion = '0.8.1'
   }
 }
 
