@@ -35,6 +35,9 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.serialization.Deserializer;
 
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
+
 /**
  * Configuration properties for Reactive Kafka {@link KafkaReceiver} and its underlying {@link KafkaConsumer}.
  */
@@ -59,6 +62,7 @@ public class ReceiverOptions<K, V> {
     private Collection<String> subscribeTopics;
     private Collection<TopicPartition> assignTopicPartitions;
     private Pattern subscribePattern;
+    private Scheduler scheduler;
 
     /**
      * Creates an options instance with default properties.
@@ -101,6 +105,7 @@ public class ReceiverOptions<K, V> {
         commitBatchSize = 0;
         maxCommitAttempts = DEFAULT_MAX_COMMIT_ATTEMPTS;
         properties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
+        scheduler = Schedulers.parallel();
     }
 
     /**
@@ -470,6 +475,23 @@ public class ReceiverOptions<K, V> {
     }
 
     /**
+     * Returns the Scheduler that Records will be published on
+     * @return Scheduler to use for publishing
+     */
+    public Scheduler scheduler() {
+        return scheduler;
+    }
+
+    /**
+     * Configures the Scheduler on which Records will be published
+     * @return options instance with updated publishing Scheduler
+     */
+    public ReceiverOptions<K, V> scheduler(Scheduler scheduler) {
+        this.scheduler = scheduler;
+        return this;
+    }
+
+    /**
      * Returns a new immutable instance with the configuration properties of this instance.
      * @return new immutable options instance
      */
@@ -556,6 +578,7 @@ public class ReceiverOptions<K, V> {
         options.commitBatchSize = commitBatchSize;
         options.atmostOnceCommitAheadSize = atmostOnceCommitAheadSize;
         options.maxCommitAttempts = maxCommitAttempts;
+        options.scheduler = scheduler;
         return options;
     }
 

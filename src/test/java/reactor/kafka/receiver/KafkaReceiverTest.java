@@ -31,6 +31,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
@@ -61,6 +62,7 @@ import reactor.test.StepVerifier;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -951,6 +953,65 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         waitFoPartitionAssignment();
         sendMessages(0, count);
         waitForMessages(receiveLatch);
+    }
+
+    @Test
+    public void publishFromEventScheduler() throws Exception {
+        receiverOptions = receiverOptions
+            .scheduler(Schedulers.immediate())
+            .addAssignListener(this::onPartitionsAssigned)
+            .subscription(Collections.singletonList(topic));
+
+        KafkaReceiver<Integer, String> receiver = KafkaReceiver.create(receiverOptions);
+
+        AtomicReference<String> publishingThreadName = new AtomicReference<>();
+        CountDownLatch receiveLatch = new CountDownLatch(1);
+        Disposable disposable = receiver.receive()
+            .doOnNext(record -> {
+                publishingThreadName.set(Thread.currentThread().getName());
+                record.receiverOffset().acknowledge();
+                receiveLatch.countDown();
+            })
+            .subscribe();
+
+        subscribeDisposables.add(disposable);
+        waitFoPartitionAssignment();
+        sendMessages(0, 1);
+        waitForMessages(receiveLatch);
+
+        assertNotNull(publishingThreadName.get());
+        assertTrue(publishingThreadName.get().startsWith("reactive-kafka-"));
+    }
+
+    @Test
+    public void publishFromCustomScheduler() throws Exception {
+        String schedulerName = "custom-scheduler";
+        Scheduler scheduler = Schedulers.newElastic(schedulerName);
+
+        receiverOptions = receiverOptions
+            .scheduler(scheduler)
+            .addAssignListener(this::onPartitionsAssigned)
+            .subscription(Collections.singletonList(topic));
+
+        KafkaReceiver<Integer, String> receiver = KafkaReceiver.create(receiverOptions);
+
+        AtomicReference<String> publishingThreadName = new AtomicReference<>();
+        CountDownLatch receiveLatch = new CountDownLatch(1);
+        Disposable disposable = receiver.receive()
+            .doOnNext(record -> {
+                publishingThreadName.set(Thread.currentThread().getName());
+                record.receiverOffset().acknowledge();
+                receiveLatch.countDown();
+            })
+            .subscribe();
+
+        subscribeDisposables.add(disposable);
+        waitFoPartitionAssignment();
+        sendMessages(0, 1);
+        waitForMessages(receiveLatch);
+
+        assertNotNull(publishingThreadName.get());
+        assertTrue(publishingThreadName.get().startsWith(schedulerName));
     }
 
     @Test
