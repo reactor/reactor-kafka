@@ -958,7 +958,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     @Test
     public void publishFromEventScheduler() throws Exception {
         receiverOptions = receiverOptions
-            .scheduler(Schedulers.immediate())
+            .schedulerSupplier(Schedulers::immediate)
             .addAssignListener(this::onPartitionsAssigned)
             .subscription(Collections.singletonList(topic));
 
@@ -989,7 +989,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         Scheduler scheduler = Schedulers.newElastic(schedulerName);
 
         receiverOptions = receiverOptions
-            .scheduler(scheduler)
+            .schedulerSupplier(() -> scheduler)
             .addAssignListener(this::onPartitionsAssigned)
             .subscription(Collections.singletonList(topic));
 
@@ -1005,6 +1005,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
             })
             .subscribe();
 
+        subscribeDisposables.add(scheduler);
         subscribeDisposables.add(disposable);
         waitFoPartitionAssignment();
         sendMessages(0, 1);

@@ -254,7 +254,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
 
         recordEmitter = EmitterProcessor.create();
         recordSubmission = recordEmitter.sink();
-        scheduler = KafkaSchedulers.fromWorker(receiverOptions.scheduler().createWorker());
+        scheduler = KafkaSchedulers.fromWorker(receiverOptions.schedulerSupplier().get().createWorker());
 
         consumerFlux = recordEmitter
                 .publishOn(scheduler)

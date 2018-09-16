@@ -25,6 +25,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Optional;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -62,7 +63,7 @@ public class ReceiverOptions<K, V> {
     private Collection<String> subscribeTopics;
     private Collection<TopicPartition> assignTopicPartitions;
     private Pattern subscribePattern;
-    private Scheduler scheduler;
+    private Supplier<Scheduler> schedulerSupplier;
 
     /**
      * Creates an options instance with default properties.
@@ -105,7 +106,7 @@ public class ReceiverOptions<K, V> {
         commitBatchSize = 0;
         maxCommitAttempts = DEFAULT_MAX_COMMIT_ATTEMPTS;
         properties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
-        scheduler = Schedulers.parallel();
+        schedulerSupplier = Schedulers::parallel;
     }
 
     /**
@@ -475,19 +476,19 @@ public class ReceiverOptions<K, V> {
     }
 
     /**
-     * Returns the Scheduler that Records will be published on
-     * @return Scheduler to use for publishing
+     * Returns the Supplier for a Scheduler that Records will be published on
+     * @return Scheduler Supplier to use for publishing
      */
-    public Scheduler scheduler() {
-        return scheduler;
+    public Supplier<Scheduler> schedulerSupplier() {
+        return schedulerSupplier;
     }
 
     /**
-     * Configures the Scheduler on which Records will be published
-     * @return options instance with updated publishing Scheduler
+     * Configures the Supplier for a Scheduler on which Records will be published
+     * @return options instance with updated publishing Scheduler Supplier
      */
-    public ReceiverOptions<K, V> scheduler(Scheduler scheduler) {
-        this.scheduler = scheduler;
+    public ReceiverOptions<K, V> schedulerSupplier(Supplier<Scheduler> schedulerSupplier) {
+        this.schedulerSupplier = schedulerSupplier;
         return this;
     }
 
@@ -578,7 +579,7 @@ public class ReceiverOptions<K, V> {
         options.commitBatchSize = commitBatchSize;
         options.atmostOnceCommitAheadSize = atmostOnceCommitAheadSize;
         options.maxCommitAttempts = maxCommitAttempts;
-        options.scheduler = scheduler;
+        options.schedulerSupplier = schedulerSupplier;
         return options;
     }
 
