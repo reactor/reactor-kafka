@@ -556,6 +556,8 @@ public class ReceiverOptions<K, V> {
         options.commitBatchSize = commitBatchSize;
         options.atmostOnceCommitAheadSize = atmostOnceCommitAheadSize;
         options.maxCommitAttempts = maxCommitAttempts;
+        options.valueDeserializer = valueDeserializer;
+        options.keyDeserializer = keyDeserializer;
         return options;
     }
 
