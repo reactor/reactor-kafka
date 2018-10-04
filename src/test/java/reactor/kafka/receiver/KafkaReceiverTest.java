@@ -47,7 +47,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Hooks;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -84,7 +83,6 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
 
     @Before
     public void setUp() throws Exception {
-        Hooks.onOperatorDebug();
         super.setUp();
         kafkaSender = KafkaSender.create(senderOptions);
         kafkaSenders = new HashSet<>();
