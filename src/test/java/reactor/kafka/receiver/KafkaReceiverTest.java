@@ -1252,7 +1252,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
             .map(i -> createProducerRecord(i, true))
             .concatMap(record -> kafkaSender.createOutbound().send(Mono.just(record)).then()
                                             .doOnSuccess(metadata -> latch.countDown())
-                                            .retry(100))
+                                            .retryBackoff(100, Duration.ofMillis(100)))
             .subscribe();
         assertTrue("Messages not sent ", latch.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
     }
