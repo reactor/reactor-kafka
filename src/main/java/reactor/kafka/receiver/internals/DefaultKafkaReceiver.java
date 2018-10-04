@@ -54,7 +54,6 @@ import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoSink;
 import reactor.core.publisher.Operators;
 import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.ReceiverRecord;
 import reactor.kafka.receiver.KafkaReceiver;
@@ -255,7 +254,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
 
         recordEmitter = EmitterProcessor.create();
         recordSubmission = recordEmitter.sink();
-        scheduler = KafkaSchedulers.fromWorker(Schedulers.parallel().createWorker());
+        scheduler = KafkaSchedulers.fromWorker(receiverOptions.schedulerSupplier().get().createWorker());
 
         consumerFlux = recordEmitter
                 .publishOn(scheduler)
