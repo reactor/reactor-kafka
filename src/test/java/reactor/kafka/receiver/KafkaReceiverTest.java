@@ -47,6 +47,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Hooks;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -83,6 +84,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
 
     @Before
     public void setUp() throws Exception {
+        Hooks.onOperatorDebug();
         super.setUp();
         kafkaSender = KafkaSender.create(senderOptions);
         kafkaSenders = new HashSet<>();
@@ -323,7 +325,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         embeddedKafka.shutdownBroker(brokerId);
         Thread.sleep(3000);
         embeddedKafka.startBroker(brokerId);
-        sendMessages(0, 100);
+        sendMessagesSync(0, 100);
         waitForMessages(latch);
         checkConsumedMessages(0, 100);
         waitForCommits(receiver, 100);
@@ -598,9 +600,9 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     @Test
     public void autoCommitNonRetriableException() throws Exception {
         int count = 5;
-        receiverOptions = receiverOptions.consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
-                                         .maxCommitAttempts(2);
-        testAutoCommitFailureScenarios(false, count, 1000, 0, 10);
+        receiverOptions = receiverOptions.consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+
+        testAutoCommitFailureScenarios(false, count, 2, 0, 10);
 
         Flux<? extends ConsumerRecord<Integer, String>> flux = createReceiver().receiveAutoAck().concatMap(r -> r);
         sendReceiveWithRedelivery(flux, count, count, 3, 5);
@@ -1238,8 +1240,9 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     }
 
     private void sendMessages(int startIndex, int count) {
-        Disposable disposable = kafkaSender.createOutbound().send(Flux.range(startIndex, count)
-                                                             .map(i -> createProducerRecord(i, true)))
+        Disposable disposable = kafkaSender.createOutbound()
+                                           .send(Flux.range(startIndex, count)
+                                                     .map(i -> createProducerRecord(i, true)))
                                            .then()
                                            .subscribe();
         subscribeDisposables.add(disposable);

@@ -129,7 +129,7 @@ public class AbstractKafkaTest {
     public ProducerRecord<Integer, String> createProducerRecord(int index, boolean expectSuccess) {
         int partition = index % partitions;
         if (expectSuccess) expectedMessages.get(partition).add(index);
-        return new ProducerRecord<Integer, String>(topic, partition, index, "Message " + index);
+        return new ProducerRecord<>(topic, partition, index, "Message " + index);
     }
 
     public Flux<ProducerRecord<Integer, String>> createProducerRecords(int startIndex, int count, boolean expectSuccess) {
@@ -155,7 +155,7 @@ public class AbstractKafkaTest {
 
     public void checkConsumedMessages(int partition, int receiveStartIndex, int receiveEndIndex) {
         // Remove the messages still in the send list which should not be consumed
-        List<Integer> expected = new ArrayList<Integer>(expectedMessages.get(partition));
+        List<Integer> expected = new ArrayList<>(expectedMessages.get(partition));
         Iterator<Integer> it = expected.iterator();
         while (it.hasNext()) {
             int index = it.next();

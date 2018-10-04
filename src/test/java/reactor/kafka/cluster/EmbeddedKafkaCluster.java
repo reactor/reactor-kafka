@@ -73,7 +73,8 @@ public class EmbeddedKafkaCluster extends ExternalResource {
                 scala.Option.apply(null),
                 true, false, 0, false, 0, false, 0,
                 scala.Option.apply(null),
-                1);
+                1,
+                false);
             props.put(KafkaConfig.MinInSyncReplicasProp(), "1");
             props.put(KafkaConfig.TransactionsTopicReplicationFactorProp(), "1");
             props.put(KafkaConfig.TransactionsTopicMinISRProp(), "1");

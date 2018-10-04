@@ -44,6 +44,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.publisher.Operators;
 import reactor.core.publisher.UnicastProcessor;
 import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 import reactor.kafka.sender.KafkaOutbound;
 import reactor.kafka.sender.KafkaSender;
 import reactor.kafka.sender.TransactionManager;
@@ -83,7 +84,12 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
      */
     public DefaultKafkaSender(ProducerFactory producerFactory, SenderOptions<K, V> options) {
         this.hasProducer = new AtomicBoolean();
-        this.senderOptions = options.toImmutable();
+        this.senderOptions = options.toImmutable()
+                                    .scheduler(options.isTransactional()
+                                        ? Schedulers.newSingle(options.transactionalId())
+                                        : options.scheduler()
+                                    );
+
         Mono<Producer<K, V>> producerMono = Mono
                 .fromCallable(() -> {
                     Producer<K, V> producer =

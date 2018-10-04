@@ -15,69 +15,14 @@
  */
 package reactor.kafka.receiver.internals;
 
-import java.time.Duration;
-import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.Assert;
 import org.junit.Test;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
-import reactor.test.StepVerifier;
 
 public class KafkaSchedulersTest {
-
-    @Test
-    public void workerShouldNotBeDisposedBySchedulerDisposing() {
-        Scheduler.Worker initialWorker = Schedulers.parallel().createWorker();
-        Scheduler scheduler = KafkaSchedulers.fromWorker(initialWorker);
-        Scheduler.Worker worker = scheduler.createWorker();
-
-        worker.dispose();
-        Assert.assertTrue(worker.isDisposed());
-        Assert.assertFalse(initialWorker.isDisposed());
-        Assert.assertFalse(scheduler.isDisposed());
-
-        scheduler.dispose();
-        Assert.assertTrue(worker.isDisposed());
-        Assert.assertTrue(initialWorker.isDisposed());
-    }
-
-    @Test
-    public void checkThatScheduleOnTheSameWorkerThread() throws InterruptedException {
-        Scheduler scheduler = KafkaSchedulers.fromWorker(Schedulers.parallel().createWorker());
-        CountDownLatch latch = new CountDownLatch(1);
-        AtomicReference<Thread> threadAtomicReference = new AtomicReference<>();
-
-        scheduler.schedule(() -> {
-            threadAtomicReference.set(Thread.currentThread());
-            latch.countDown();
-        });
-
-        latch.await();
-
-        Mono.fromCallable(Thread::currentThread)
-            .subscribeOn(scheduler)
-            .mergeWith(Flux.interval(Duration.ofMillis(10), scheduler).map(e -> Thread.currentThread()).take(1))
-            .mergeWith(Flux.just(1, 2, 3, 4, 5)
-                           .hide()
-                           .publishOn(scheduler)
-                           .map(e -> Thread.currentThread())
-                           .take(1))
-            .as(StepVerifier::create)
-            .recordWith(CopyOnWriteArraySet::new)
-            .expectNextCount(3)
-            .consumeRecordedWith(s -> {
-                Assert.assertEquals(1, s.size());
-                Assert.assertEquals(threadAtomicReference.get(), s.toArray()[0]);
-            })
-            .verifyComplete();
-    }
-
 
     @Test
     public void checkThatEventSchedulerIdentifiesProducedThreadCorrectly()

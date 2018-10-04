@@ -15,6 +15,7 @@
  */
 package reactor.kafka.mock;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.ConcurrentModificationException;
@@ -201,7 +202,7 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
     }
 
     @Override
-    public ConsumerRecords<Integer, String> poll(long timeout) {
+    public ConsumerRecords<Integer, String> poll(Duration timeout) {
         acquire();
         try {
             pollCount.incrementAndGet();
@@ -209,7 +210,7 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
             if (assignmentPending) {
                 doAssign();
                 assignmentPending = false;
-                return new ConsumerRecords<Integer, String>(records);
+                return new ConsumerRecords<>(records);
             }
             runCompletedCallbacks();
             try {
