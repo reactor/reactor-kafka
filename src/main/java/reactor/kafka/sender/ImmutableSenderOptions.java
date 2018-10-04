@@ -26,7 +26,7 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.Serializer;
 import reactor.core.scheduler.Scheduler;
 
-public class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
+class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
 
     private final Map<String, Object> properties;
     private final Serializer<K>       keySerializer;

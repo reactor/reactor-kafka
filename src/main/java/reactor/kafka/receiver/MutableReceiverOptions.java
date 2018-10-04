@@ -44,7 +44,7 @@ import reactor.core.scheduler.Schedulers;
  * deleted in 3.x version
  */
 @Deprecated
-public class MutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
+class MutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
 
     private static final Duration DEFAULT_POLL_TIMEOUT = Duration.ofMillis(100);
     private static final int DEFAULT_MAX_COMMIT_ATTEMPTS = 100;

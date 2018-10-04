@@ -36,7 +36,7 @@ import reactor.util.concurrent.Queues;
  * {@link Producer}.
  */
 @Deprecated
-public class MutableSenderOptions<K, V> implements SenderOptions<K, V> {
+class MutableSenderOptions<K, V> implements SenderOptions<K, V> {
 
     private final Map<String, Object> properties;
 

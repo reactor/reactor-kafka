@@ -33,7 +33,7 @@ import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.serialization.Deserializer;
 import reactor.core.scheduler.Scheduler;
 
-public class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
+class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
 
     private final Map<String, Object> properties;
     private final List<Consumer<Collection<ReceiverPartition>>> assignListeners;
