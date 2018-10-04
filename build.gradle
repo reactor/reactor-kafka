@@ -29,12 +29,12 @@ plugins {
 }
 
 ext {
-  gradleVersion = '4.9'
+  gradleVersion = '4.10'
   gradleScriptDir = "${rootProject.projectDir}/gradle"
 
-  kafkaVersion = '1.0.2'
+  kafkaVersion = '2.0.0'
   scalaVersion = '2.11'
-  reactorVersion = '3.1.9.RELEASE'
+  reactorVersion = '3.2.0.RELEASE'
   metricsVersion = '2.2.0'
 
   argparseVersion = '0.5.0'
@@ -42,7 +42,7 @@ ext {
 
   slf4jVersion = '1.7.25'
   junitVersion = '4.12'
-  zkVersion = "3.4.12"
+  zkVersion = "3.4.13"
   powermockVersion = '1.7.4'
 
   javadocLinks = ["http://docs.oracle.com/javase/8/docs/api/",

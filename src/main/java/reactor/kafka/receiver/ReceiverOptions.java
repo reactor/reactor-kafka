@@ -1,29 +1,11 @@
-/*
- * Copyright (c) 2016-2018 Pivotal Software Inc, All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package reactor.kafka.receiver;
 
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
-import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
@@ -33,106 +15,46 @@ import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.RetriableCommitFailedException;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.serialization.Deserializer;
-
 import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
+import reactor.util.annotation.NonNull;
+import reactor.util.annotation.Nullable;
 
-/**
- * Configuration properties for Reactive Kafka {@link KafkaReceiver} and its underlying {@link KafkaConsumer}.
- */
-public class ReceiverOptions<K, V> {
-
-    private static final Duration DEFAULT_POLL_TIMEOUT = Duration.ofMillis(100);
-    private static final int DEFAULT_MAX_COMMIT_ATTEMPTS = 100;
-
-    private final Map<String, Object> properties;
-    private final List<Consumer<Collection<ReceiverPartition>>> assignListeners;
-    private final List<Consumer<Collection<ReceiverPartition>>> revokeListeners;
-
-    private Optional<Deserializer<K>> keyDeserializer;
-    private Optional<Deserializer<V>> valueDeserializer;
-
-    private Duration pollTimeout;
-    private Duration closeTimeout;
-    private Duration commitInterval;
-    private int commitBatchSize;
-    private int atmostOnceCommitAheadSize;
-    private int maxCommitAttempts;
-    private Collection<String> subscribeTopics;
-    private Collection<TopicPartition> assignTopicPartitions;
-    private Pattern subscribePattern;
-    private Supplier<Scheduler> schedulerSupplier;
+public interface ReceiverOptions<K, V> {
 
     /**
      * Creates an options instance with default properties.
      * @return new instance of receiver options
      */
-    public static <K, V> ReceiverOptions<K, V> create() {
-        return new ReceiverOptions<>();
+    @NonNull
+    static <K, V> ReceiverOptions<K, V> create() {
+        return new MutableReceiverOptions<>();
     }
 
     /**
      * Creates an options instance with the specified config overrides for {@link KafkaConsumer}.
      * @return new instance of receiver options
      */
-    public static <K, V> ReceiverOptions<K, V> create(Map<String, Object> configProperties) {
-        ReceiverOptions<K, V> options = create();
-        options.properties.putAll(configProperties);
-        return options;
+    @NonNull
+    static <K, V> ReceiverOptions<K, V> create(@NonNull Map<String, Object> configProperties) {
+        return new MutableReceiverOptions<>(configProperties);
     }
 
     /**
      * Creates an options instance with the specified config overrides for {@link KafkaConsumer}.
      * @return new instance of receiver options
      */
-    public static <K, V> ReceiverOptions<K, V> create(Properties configProperties) {
-        ReceiverOptions<K, V> options = create();
-        configProperties.forEach((name, value) -> options.properties.put((String) name, value));
-        return options;
-    }
-
-    private ReceiverOptions() {
-        properties = new HashMap<>();
-        assignListeners = new ArrayList<>();
-        revokeListeners = new ArrayList<>();
-
-        keyDeserializer = Optional.empty();
-        valueDeserializer = Optional.empty();
-        pollTimeout = DEFAULT_POLL_TIMEOUT;
-        closeTimeout = Duration.ofNanos(Long.MAX_VALUE);
-        commitInterval = Duration.ofMillis(5000); // Kafka default
-        commitBatchSize = 0;
-        maxCommitAttempts = DEFAULT_MAX_COMMIT_ATTEMPTS;
-        properties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
-        schedulerSupplier = Schedulers::parallel;
-    }
-
-    /**
-     * Returns the configuration properties of the underlying {@link KafkaConsumer}.
-     * @return options to configure for Kafka consumer.
-     */
-    public Map<String, Object> consumerProperties() {
-        return properties;
-    }
-
-    /**
-     * Returns the {@link KafkaConsumer} configuration property value for the specified option name.
-     * @return Kafka consumer configuration option value
-     */
-    public Object consumerProperty(String name) {
-        return properties.get(name);
+    @NonNull
+    static <K, V> ReceiverOptions<K, V> create(@NonNull Properties configProperties) {
+        return new MutableReceiverOptions<>(configProperties);
     }
 
     /**
      * Sets {@link KafkaConsumer} configuration property to the specified value.
      * @return options instance with updated Kafka consumer property
      */
-    public ReceiverOptions<K, V> consumerProperty(String name, Object newValue) {
-        this.properties.put(name, newValue);
-        return this;
-    }
+    @NonNull
+    ReceiverOptions<K, V> consumerProperty(@NonNull String name, @NonNull Object newValue);
 
     /**
      * Set a concrete deserializer instant to be used by the {@link KafkaConsumer} for keys. Overrides any setting of the
@@ -140,19 +62,8 @@ public class ReceiverOptions<K, V> {
      * @param keyDeserializer key deserializer to use in the consumer
      * @return options instance with new key deserializer
      */
-    public ReceiverOptions<K, V> withKeyDeserializer(Deserializer<K> keyDeserializer) {
-        this.keyDeserializer = Optional.of(keyDeserializer);
-        return this;
-    }
-
-    /**
-     *
-     * Returns optionally a deserializer witch is used by {@link KafkaConsumer} for key deserialization.
-     * @return configured key deserializer instant
-     */
-    public Optional<Deserializer<K>> keyDeserializer() {
-        return keyDeserializer;
-    }
+    @NonNull
+    ReceiverOptions<K, V> withKeyDeserializer(@NonNull Deserializer<K> keyDeserializer);
 
     /**
      * Set a concrete deserializer instant to be used by the {@link KafkaConsumer} for values. Overrides any setting of the
@@ -160,27 +71,8 @@ public class ReceiverOptions<K, V> {
      * @param valueDeserializer value deserializer to use in the consumer
      * @return options instance with new value deserializer
      */
-    public ReceiverOptions<K, V> withValueDeserializer(Deserializer<V> valueDeserializer) {
-        this.valueDeserializer = Optional.of(valueDeserializer);
-        return this;
-    }
-
-    /**
-     *
-     * Returns optionally a deserializer witch is used by {@link KafkaConsumer} for value deserialization.
-     * @return configured value deserializer instant
-     */
-    public Optional<Deserializer<V>> valueDeserializer() {
-        return valueDeserializer;
-    }
-
-    /**
-     * Returns the timeout for each {@link KafkaConsumer#poll(long)} operation.
-     * @return poll timeout duration
-     */
-    public Duration pollTimeout() {
-        return pollTimeout;
-    }
+    @NonNull
+    ReceiverOptions<K, V> withValueDeserializer(@NonNull Deserializer<V> valueDeserializer);
 
     /**
      * Sets the timeout for each {@link KafkaConsumer#poll(long)} operation. Since
@@ -189,27 +81,15 @@ public class ReceiverOptions<K, V> {
      * Very short timeouts may reduce batching and increase load on the broker,
      * @return options instance with new poll timeout
      */
-    public ReceiverOptions<K, V> pollTimeout(Duration timeout) {
-        this.pollTimeout = timeout;
-        return this;
-    }
-
-    /**
-     * Returns timeout for graceful shutdown of {@link KafkaConsumer}.
-     * @return close timeout duration
-     */
-    public Duration closeTimeout() {
-        return closeTimeout;
-    }
+    @NonNull
+    ReceiverOptions<K, V> pollTimeout(@NonNull Duration timeout);
 
     /**
      * Sets timeout for graceful shutdown of {@link KafkaConsumer}.
      * @return options instance with new close timeout
      */
-    public ReceiverOptions<K, V> closeTimeout(Duration timeout) {
-        this.closeTimeout = timeout;
-        return this;
-    }
+    @NonNull
+    ReceiverOptions<K, V> closeTimeout(@NonNull Duration timeout);
 
     /**
      * Adds a listener for partition assignments. Applications can use this listener to seek
@@ -219,10 +99,8 @@ public class ReceiverOptions<K, V> {
      * assign listeners are invoked once when the receive Flux is subscribed to.
      * @return options instance with new partition assignment listener
      */
-    public ReceiverOptions<K, V> addAssignListener(Consumer<Collection<ReceiverPartition>> onAssign) {
-        assignListeners.add(onAssign);
-        return this;
-    }
+    @NonNull
+    ReceiverOptions<K, V> addAssignListener(@NonNull Consumer<Collection<ReceiverPartition>> onAssign);
 
     /**
      * Adds a listener for partition revocations. Applications can use this listener to commit
@@ -232,44 +110,32 @@ public class ReceiverOptions<K, V> {
      * revoke listeners are invoked once when the receive Flux is terminated.
      * @return options instance with new partition revocation listener
      */
-    public ReceiverOptions<K, V> addRevokeListener(Consumer<Collection<ReceiverPartition>> onRevoke) {
-        revokeListeners.add(onRevoke);
-        return this;
-    }
+    @NonNull
+    ReceiverOptions<K, V> addRevokeListener(@NonNull Consumer<Collection<ReceiverPartition>> onRevoke);
 
     /**
      * Removes all partition assignment listeners.
      * @return options instance without any partition assignment listeners
      */
-    public ReceiverOptions<K, V> clearAssignListeners() {
-        assignListeners.clear();
-        return this;
-    }
+    @NonNull
+    ReceiverOptions<K, V> clearAssignListeners();
 
     /**
      * Removes all partition revocation listeners.
      * @return options instance without any partition revocation listeners
      */
-    public ReceiverOptions<K, V> clearRevokeListeners() {
-        revokeListeners.clear();
-        return this;
-    }
+    @NonNull
+    ReceiverOptions<K, V> clearRevokeListeners();
 
     /**
-     * Returns list of configured partition assignment listeners.
-     * @return list of assignment listeners
+     * Sets subscription using manual assignment to the specified partitions.
+     * This assignment is enabled when the receive Flux of a {@link KafkaReceiver} using this
+     * options instance is subscribed to. Any existing subscriptions or assignments on this
+     * option are deleted.
+     * @return options instance with new partition assignment
      */
-    public List<Consumer<Collection<ReceiverPartition>>> assignListeners() {
-        return assignListeners;
-    }
-
-    /**
-     * Returns list of configured partition revocation listeners.
-     * @return list of revocation listeners
-     */
-    public List<Consumer<Collection<ReceiverPartition>>> revokeListeners() {
-        return revokeListeners;
-    }
+    @NonNull
+    ReceiverOptions<K, V> assignment(Collection<TopicPartition> partitions);
 
     /**
      * Sets subscription using group management to the specified collection of topics.
@@ -278,12 +144,8 @@ public class ReceiverOptions<K, V> {
      * option are deleted.
      * @return options instance with new subscription
      */
-    public ReceiverOptions<K, V> subscription(Collection<String> topics) {
-        subscribeTopics = new ArrayList<>(topics);
-        subscribePattern = null;
-        assignTopicPartitions = null;
-        return this;
-    }
+    @NonNull
+    ReceiverOptions<K, V> subscription(Collection<String> topics);
 
     /**
      * Sets subscription using group management to the specified pattern.
@@ -293,82 +155,8 @@ public class ReceiverOptions<K, V> {
      * matching the pattern are created or deleted.
      * @return options instance with new subscription
      */
-    public ReceiverOptions<K, V> subscription(Pattern pattern) {
-        subscribeTopics = null;
-        subscribePattern = pattern;
-        assignTopicPartitions = null;
-        return this;
-    }
-
-    /**
-     * Sets subscription using manual assignment to the specified partitions.
-     * This assignment is enabled when the receive Flux of a {@link KafkaReceiver} using this
-     * options instance is subscribed to. Any existing subscriptions or assignments on this
-     * option are deleted.
-     * @return options instance with new partition assignment
-     */
-    public ReceiverOptions<K, V> assignment(Collection<TopicPartition> partitions) {
-        subscribeTopics = null;
-        subscribePattern = null;
-        assignTopicPartitions = new ArrayList<>(partitions);
-        return this;
-    }
-
-    /**
-     * Returns the collection of partitions to be assigned if this instance is
-     * configured for manual partition assignment.
-     *
-     * @return partitions to be assigned
-     */
-    public Collection<TopicPartition> assignment() {
-        return assignTopicPartitions;
-    }
-
-    /**
-     * Returns the {@link KafkaConsumer#subscribe(Collection, ConsumerRebalanceListener)},
-     * {@link KafkaConsumer#subscribe(Pattern, ConsumerRebalanceListener)} or {@link KafkaConsumer#assign(Collection)}
-     * operation corresponding to the subscription or assignment options configured for this instance.
-     * @return subscribe or assign operation with rebalance listeners corresponding to this options instance
-     */
-    public Consumer<org.apache.kafka.clients.consumer.Consumer<K, V>> subscriber(ConsumerRebalanceListener listener) {
-        if (subscribeTopics != null)
-            return consumer -> consumer.subscribe(subscribeTopics, listener);
-        else if (subscribePattern != null)
-            return consumer -> consumer.subscribe(subscribePattern, listener);
-        else if (assignTopicPartitions != null)
-            return consumer -> {
-                consumer.assign(assignTopicPartitions);
-                listener.onPartitionsAssigned(assignTopicPartitions);
-            };
-        else
-            throw new IllegalStateException("No subscriptions have been created");
-    }
-
-    /**
-     * Returns the configured Kafka consumer group id.
-     * @return group id
-     */
-    public String groupId() {
-        return (String) consumerProperty(ConsumerConfig.GROUP_ID_CONFIG);
-    }
-
-    /**
-     * Returns the configured heartbeat interval for Kafka consumer.
-     * @return heartbeat interval duration
-     */
-    public Duration heartbeatInterval() {
-        long defaultValue = 3000; // Kafka default
-        long heartbeatIntervalMs = getLongOption(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, defaultValue);
-        return Duration.ofMillis(heartbeatIntervalMs);
-    }
-
-    /**
-     * Returns the configured commit interval for automatic commits of acknowledged records.
-     * @return commit interval duration
-     */
-    public Duration commitInterval() {
-        return commitInterval;
-    }
+    @NonNull
+    ReceiverOptions<K, V> subscription(Pattern pattern);
 
     /**
      * Configures commit interval for automatic commits. At least one commit operation is
@@ -385,20 +173,8 @@ public class ReceiverOptions<K, V> {
      *
      * @return options instance with new commit interval
      */
-    public ReceiverOptions<K, V> commitInterval(Duration commitInterval) {
-        if (commitInterval == null || commitInterval.isNegative())
-            throw new IllegalArgumentException("Commit interval must be >= 0");
-        this.commitInterval = commitInterval;
-        return this;
-    }
-
-    /**
-     * Returns the configured commit batch size for automatic commits of acknowledged records.
-     * @return commit batch size
-     */
-    public int commitBatchSize() {
-        return commitBatchSize;
-    }
+    @NonNull
+    ReceiverOptions<K, V> commitInterval(Duration commitInterval);
 
     /**
      * Configures commit batch size for automatic commits. At least one commit operation is
@@ -413,24 +189,8 @@ public class ReceiverOptions<K, V> {
      * when either the batch size or interval is reached.
      * @return options instance with new commit batch size
      */
-    public ReceiverOptions<K, V> commitBatchSize(int commitBatchSize) {
-        if (commitBatchSize < 0)
-            throw new IllegalArgumentException("Commit batch size must be >= 0");
-        this.commitBatchSize = commitBatchSize;
-        return this;
-    }
-
-
-    /**
-     * Returns the maximum difference between the offset committed for at-most-once
-     * delivery and the offset of the last record dispatched. The maximum number
-     * of records that may be lost per-partition if the application fails is
-     * <code>commitAheadSize + 1</code>
-     * @return commit ahead size for at-most-once delivery
-     */
-    public int atmostOnceCommitAheadSize() {
-        return atmostOnceCommitAheadSize;
-    }
+    @NonNull
+    ReceiverOptions<K, V> commitBatchSize(int commitBatchSize);
 
     /**
      * Configures commit ahead size per partition for at-most-once delivery. Before dispatching
@@ -445,22 +205,8 @@ public class ReceiverOptions<K, V> {
      * performed ahead of dispatch and record dispatch is blocked only if commits haven't completed.
      * @return options instance with new commit ahead size
      */
-    public ReceiverOptions<K, V> atmostOnceCommitAheadSize(int commitAheadSize) {
-        if (commitAheadSize < 0)
-            throw new IllegalArgumentException("Commit ahead size must be >= 0");
-        this.atmostOnceCommitAheadSize = commitAheadSize;
-        return this;
-    }
-
-    /**
-     * Returns the maximum number of consecutive non-fatal commit failures that are tolerated.
-     * For manual commits, failure in commit after the configured number of attempts fails
-     * the commit operation. For auto commits, the receive Flux is terminated.
-     * @return maximum number of commit attempts
-     */
-    public int maxCommitAttempts() {
-        return maxCommitAttempts;
-    }
+    @NonNull
+    ReceiverOptions<K, V> atmostOnceCommitAheadSize(int commitAheadSize);
 
     /**
      * Configures the maximum number of consecutive non-fatal {@link RetriableCommitFailedException}
@@ -470,133 +216,185 @@ public class ReceiverOptions<K, V> {
      *
      * @return options instance with updated number of commit attempts
      */
-    public ReceiverOptions<K, V> maxCommitAttempts(int maxAttempts) {
-        this.maxCommitAttempts = maxAttempts;
-        return this;
-    }
-
-    /**
-     * Returns the Supplier for a Scheduler that Records will be published on
-     * @return Scheduler Supplier to use for publishing
-     */
-    public Supplier<Scheduler> schedulerSupplier() {
-        return schedulerSupplier;
-    }
+    @NonNull
+    ReceiverOptions<K, V> maxCommitAttempts(int maxAttempts);
 
     /**
      * Configures the Supplier for a Scheduler on which Records will be published
      * @return options instance with updated publishing Scheduler Supplier
      */
-    public ReceiverOptions<K, V> schedulerSupplier(Supplier<Scheduler> schedulerSupplier) {
-        this.schedulerSupplier = schedulerSupplier;
-        return this;
+    @NonNull
+    ReceiverOptions<K, V> schedulerSupplier(Supplier<Scheduler> schedulerSupplier);
+
+    /**
+     * Returns the configuration properties of the underlying {@link KafkaConsumer}.
+     * @return options to configure for Kafka consumer.
+     */
+    @NonNull
+    Map<String, Object> consumerProperties();
+
+    /**
+     * Returns the {@link KafkaConsumer} configuration property value for the specified option name.
+     * @return Kafka consumer configuration option value
+     */
+    @Nullable
+    Object consumerProperty(@NonNull String name);
+
+    /**
+     *
+     * Returns optionally a deserializer witch is used by {@link KafkaConsumer} for key deserialization.
+     * @return configured key deserializer instant
+     */
+    @Nullable
+    Deserializer<K> keyDeserializer();
+
+    /**
+     *
+     * Returns optionally a deserializer witch is used by {@link KafkaConsumer} for value deserialization.
+     * @return configured value deserializer instant
+     */
+    @Nullable
+    Deserializer<V> valueDeserializer();
+
+    /**
+     * Returns the timeout for each {@link KafkaConsumer#poll(long)} operation.
+     * @return poll timeout duration
+     */
+    @NonNull
+    Duration pollTimeout();
+
+    /**
+     * Returns timeout for graceful shutdown of {@link KafkaConsumer}.
+     * @return close timeout duration
+     */
+    @NonNull
+    Duration closeTimeout();
+
+    /**
+     * Returns list of configured partition assignment listeners.
+     * @return list of assignment listeners
+     */
+    @NonNull
+    List<Consumer<Collection<ReceiverPartition>>> assignListeners();
+
+    /**
+     * Returns list of configured partition revocation listeners.
+     * @return list of revocation listeners
+     */
+    @NonNull
+    List<Consumer<Collection<ReceiverPartition>>> revokeListeners();
+
+    /**
+     * Returns the collection of partitions to be assigned if this instance is
+     * configured for manual partition assignment.
+     *
+     * @return partitions to be assigned
+     */
+    @Nullable
+    Collection<TopicPartition> assignment();
+
+    /**
+     * Returns the collection of Topics to be subscribed
+     *
+     * @return topics to be assigned
+     */
+    @Nullable
+    Collection<String> subscriptionTopics();
+
+    /**
+     * Returns the Pattern by which the topic should be selected
+     * @return pattern of topics selection
+     */
+    @Nullable
+    Pattern subscriptionPattern();
+
+    /**
+     * Returns the configured Kafka consumer group id.
+     * @return group id
+     */
+    @Nullable
+    String groupId();
+
+    /**
+     * Returns the configured heartbeat interval for Kafka consumer.
+     * @return heartbeat interval duration
+     */
+    @NonNull
+    Duration heartbeatInterval();
+
+    /**
+     * Returns the configured commit interval for automatic commits of acknowledged records.
+     * @return commit interval duration
+     */
+    @NonNull
+    Duration commitInterval();
+
+    /**
+     * Returns the configured commit batch size for automatic commits of acknowledged records.
+     * @return commit batch size
+     */
+    @NonNull
+    int commitBatchSize();
+
+    /**
+     * Returns the maximum difference between the offset committed for at-most-once
+     * delivery and the offset of the last record dispatched. The maximum number
+     * of records that may be lost per-partition if the application fails is
+     * <code>commitAheadSize + 1</code>
+     * @return commit ahead size for at-most-once delivery
+     */
+    @NonNull
+    int atmostOnceCommitAheadSize();
+
+    /**
+     * Returns the maximum number of consecutive non-fatal commit failures that are tolerated.
+     * For manual commits, failure in commit after the configured number of attempts fails
+     * the commit operation. For auto commits, the receive Flux is terminated.
+     * @return maximum number of commit attempts
+     */
+    @NonNull
+    int maxCommitAttempts();
+
+    /**
+     * Returns the Supplier for a Scheduler that Records will be published on
+     * @return Scheduler Supplier to use for publishing
+     */
+    @NonNull
+    Supplier<Scheduler> schedulerSupplier();
+
+    /**
+     * Returns the {@link KafkaConsumer#subscribe(Collection, ConsumerRebalanceListener)},
+     * {@link KafkaConsumer#subscribe(Pattern, ConsumerRebalanceListener)} or {@link KafkaConsumer#assign(Collection)}
+     * operation corresponding to the subscription or assignment options configured for this instance.
+     * @return subscribe or assign operation with rebalance listeners corresponding to this options instance
+     */
+    @NonNull
+    default Consumer<org.apache.kafka.clients.consumer.Consumer<K, V>> subscriber(@NonNull ConsumerRebalanceListener listener) {
+        Objects.requireNonNull(listener);
+
+        if (subscriptionTopics() != null)
+            return consumer -> consumer.subscribe(subscriptionTopics(), listener);
+        else if (subscriptionPattern() != null)
+            return consumer -> consumer.subscribe(subscriptionPattern(), listener);
+        else if (assignment() != null)
+            return consumer -> {
+                consumer.assign(assignment());
+                listener.onPartitionsAssigned(assignment());
+            };
+        else
+            throw new IllegalStateException("No subscriptions have been created");
     }
 
     /**
      * Returns a new immutable instance with the configuration properties of this instance.
+     *
+     * @deprecated will be removed since all operations should be immutable
+     *
      * @return new immutable options instance
      */
-    public ReceiverOptions<K, V> toImmutable() {
-        ReceiverOptions<K, V> options = new ReceiverOptions<K, V>() {
-
-            @Override
-            public Map<String, Object> consumerProperties() {
-                return Collections.unmodifiableMap(super.properties);
-            }
-
-            @Override
-            public ReceiverOptions<K, V> consumerProperty(String name, Object newValue) {
-                throw new java.lang.UnsupportedOperationException("Cannot modify immutable options");
-            }
-
-            @Override
-            public ReceiverOptions<K, V> addAssignListener(Consumer<Collection<ReceiverPartition>> onAssign) {
-                throw new java.lang.UnsupportedOperationException("Cannot modify immutable options");
-            }
-
-            @Override
-            public ReceiverOptions<K, V> addRevokeListener(Consumer<Collection<ReceiverPartition>> onRevoke) {
-                throw new java.lang.UnsupportedOperationException("Cannot modify immutable options");
-            }
-
-            @Override
-            public ReceiverOptions<K, V> subscription(Collection<String> topics) {
-                throw new java.lang.UnsupportedOperationException("Cannot modify immutable options");
-            }
-
-            @Override
-            public ReceiverOptions<K, V> subscription(Pattern pattern) {
-                throw new java.lang.UnsupportedOperationException("Cannot modify immutable options");
-            }
-
-            @Override
-            public ReceiverOptions<K, V> assignment(Collection<TopicPartition> partitions) {
-                throw new java.lang.UnsupportedOperationException("Cannot modify immutable options");
-            }
-
-            @Override
-            public ReceiverOptions<K, V> pollTimeout(Duration timeout) {
-                throw new java.lang.UnsupportedOperationException("Cannot modify immutable options");
-            }
-
-            @Override
-            public ReceiverOptions<K, V> closeTimeout(Duration timeout) {
-                throw new java.lang.UnsupportedOperationException("Cannot modify immutable options");
-            }
-
-            @Override
-            public ReceiverOptions<K, V> commitInterval(Duration interval) {
-                throw new java.lang.UnsupportedOperationException("Cannot modify immutable options");
-            }
-
-            @Override
-            public ReceiverOptions<K, V> commitBatchSize(int commitBatchSize) {
-                throw new java.lang.UnsupportedOperationException("Cannot modify immutable options");
-            }
-
-            @Override
-            public ReceiverOptions<K, V> atmostOnceCommitAheadSize(int commitAheadSize) {
-                throw new java.lang.UnsupportedOperationException("Cannot modify immutable options");
-            }
-
-            @Override
-            public ReceiverOptions<K, V> maxCommitAttempts(int maxRetries) {
-                throw new java.lang.UnsupportedOperationException("Cannot modify immutable options");
-            }
-
-        };
-        options.properties.putAll(properties);
-        options.assignListeners.addAll(assignListeners);
-        options.revokeListeners.addAll(revokeListeners);
-        if (subscribeTopics != null)
-            options.subscribeTopics = new ArrayList<>(subscribeTopics);
-        if (assignTopicPartitions != null)
-            options.assignTopicPartitions = new ArrayList<>(assignTopicPartitions);
-        options.subscribePattern = subscribePattern;
-        options.pollTimeout = pollTimeout;
-        options.closeTimeout = closeTimeout;
-        options.commitInterval = commitInterval;
-        options.commitBatchSize = commitBatchSize;
-        options.atmostOnceCommitAheadSize = atmostOnceCommitAheadSize;
-        options.maxCommitAttempts = maxCommitAttempts;
-        options.schedulerSupplier = schedulerSupplier;
-        options.valueDeserializer = valueDeserializer;
-        options.keyDeserializer = keyDeserializer;
-        return options;
-    }
-
-    private long getLongOption(String optionName, long defaultValue) {
-        Object value = consumerProperty(optionName);
-        long optionValue = 0;
-        if (value != null) {
-            if (value instanceof Long)
-                optionValue = (Long) value;
-            else if (value instanceof String)
-                optionValue = Long.parseLong((String) value);
-            else
-                throw new ConfigException("Invalid value " + value);
-        } else
-            optionValue = defaultValue;
-        return optionValue;
+    @NonNull
+    @Deprecated
+    default ReceiverOptions<K, V> toImmutable() {
+        return new ImmutableReceiverOptions<>(this);
     }
 }

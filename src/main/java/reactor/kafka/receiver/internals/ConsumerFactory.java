@@ -29,7 +29,7 @@ public class ConsumerFactory {
 
     public <K, V> Consumer<K, V> createConsumer(ReceiverOptions<K, V> config) {
         return new KafkaConsumer<>(config.consumerProperties(),
-                                   config.keyDeserializer().orElse(null),
-                                   config.valueDeserializer().orElse(null));
+                                   config.keyDeserializer(),
+                                   config.valueDeserializer());
     }
 }

@@ -48,7 +48,6 @@ import java.util.regex.Pattern;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.consumer.OffsetCommitCallback;
 import org.apache.kafka.clients.consumer.RetriableCommitFailedException;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -1272,11 +1271,7 @@ public class MockReceiverTest {
             public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
             }
         };
-        OffsetCommitCallback commitListener = new OffsetCommitCallback() {
-            @Override
-            public void onComplete(Map<TopicPartition, OffsetAndMetadata> offsets, Exception exception) {
-            }
-        };
+        OffsetCommitCallback commitListener = (offsets, exception) -> { };
         testDisallowedConsumerMethod(c -> c.poll(0));
         testDisallowedConsumerMethod(c -> c.close());
         testDisallowedConsumerMethod(c -> c.assign(Collections.singleton(new TopicPartition(topic, 0))));

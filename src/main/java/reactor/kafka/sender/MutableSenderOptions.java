@@ -1,80 +1,119 @@
+/*
+ * Copyright (c) 2011-2018 Pivotal Software Inc, All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package reactor.kafka.sender;
 
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
-
-import javax.naming.AuthenticationException;
+import java.util.stream.Collectors;
 
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
-import org.apache.kafka.common.config.ConfigException;
-import org.apache.kafka.common.errors.ProducerFencedException;
 import org.apache.kafka.common.serialization.Serializer;
 import reactor.core.scheduler.Scheduler;
-import reactor.util.annotation.NonNull;
-import reactor.util.annotation.Nullable;
+import reactor.core.scheduler.Schedulers;
+import reactor.util.concurrent.Queues;
 
-public interface SenderOptions<K, V> {
+/**
+ * Configuration properties for reactive Kafka {@link KafkaSender} and its underlying Kafka
+ * @deprecated in favor of {@link ImmutableSenderOptions}
+ * {@link Producer}.
+ */
+@Deprecated
+class MutableSenderOptions<K, V> implements SenderOptions<K, V> {
 
-    /**
-     * Creates a sender options instance with default properties.
-     * @return new instance of sender options
-     */
-    @NonNull
-    static <K, V> SenderOptions<K, V> create() {
-        return new MutableSenderOptions<>();
+    private final Map<String, Object> properties;
+
+    private Serializer<K> keySerializer;
+    private Serializer<V> valueSerializer;
+    private Duration closeTimeout;
+    private Scheduler scheduler;
+    private int maxInFlight;
+    private boolean stopOnError;
+
+    MutableSenderOptions() {
+        this(new HashMap<>());
     }
 
-    /**
-     * Creates a sender options instance with the specified config overrides for the underlying
-     * Kafka {@link Producer}.
-     * @return new instance of sender options
-     */
-    @NonNull
-    static <K, V> SenderOptions<K, V> create(@NonNull Map<String, Object> configProperties) {
-        return new MutableSenderOptions<>(configProperties);
+    MutableSenderOptions(Properties properties) {
+        this(
+            properties
+                .entrySet()
+                .stream()
+                .collect(Collectors.toMap(
+                    e -> e.getKey().toString(),
+                    Map.Entry::getValue
+                ))
+        );
     }
 
-    /**
-     * Creates a sender options instance with the specified config overrides for the underlying
-     * Kafka {@link Producer}.
-     * @return new instance of sender options
-     */
-    @NonNull
-    static <K, V> SenderOptions<K, V> create(@NonNull Properties configProperties) {
-        return new MutableSenderOptions<>(configProperties);
+    MutableSenderOptions(Map<String, Object> properties) {
+        this.properties = new HashMap<>(properties);
+
+        closeTimeout = Duration.ofMillis(Long.MAX_VALUE);
+        scheduler = Schedulers.single();
+        maxInFlight = Queues.SMALL_BUFFER_SIZE;
+        stopOnError = true;
     }
 
     /**
      * Returns the configuration properties for the underlying Kafka {@link Producer}.
      * @return configuration options for Kafka producer
      */
-    @NonNull
-    Map<String, Object> producerProperties();
+    @Override
+    public Map<String, Object> producerProperties() {
+        return properties;
+    }
 
     /**
      * Returns the Kafka {@link Producer} configuration property value for the specified option name.
      * @return Kafka producer configuration option value
      */
-    @Nullable
-    Object producerProperty(@NonNull String name);
+    @Override
+    public Object producerProperty(String name) {
+        Objects.requireNonNull(name);
+
+        return properties.get(name);
+    }
 
     /**
      * Sets Kafka {@link Producer} configuration property to the specified value.
      * @return sender options with updated Kafka producer option
      */
-    @NonNull
-    SenderOptions<K, V> producerProperty(@NonNull String name, @NonNull Object value);
+    @Override
+    public SenderOptions<K, V> producerProperty(String name, Object value) {
+        Objects.requireNonNull(name);
+        Objects.requireNonNull(value);
+
+        properties.put(name, value);
+        return this;
+    }
 
     /**
      *
      * Returns optionally a serializer witch is used by {@link KafkaProducer} for key serialization.
      * @return configured key serializer instant
      */
-    @Nullable
-    Serializer<K> keySerializer();
+    @Override
+    public Serializer<K> keySerializer() {
+        return keySerializer;
+    }
 
     /**
      * Set a concrete serializer instant to be used by the {@link KafkaProducer} for keys. Overrides any setting of the
@@ -82,16 +121,21 @@ public interface SenderOptions<K, V> {
      * @param keySerializer key serializer to use in the consumer
      * @return options instance with new key serializer
      */
-    @NonNull
-    SenderOptions<K, V> withKeySerializer(@NonNull Serializer<K> keySerializer);
+    @Override
+    public  SenderOptions<K, V> withKeySerializer(Serializer<K> keySerializer) {
+        this.keySerializer = Objects.requireNonNull(keySerializer);
+        return this;
+    }
 
     /**
      *
      * Returns optionally a serializer witch is used by {@link KafkaProducer} for value serialization.
      * @return configured value serializer instant
      */
-    @Nullable
-    Serializer<V> valueSerializer();
+    @Override
+    public Serializer<V> valueSerializer() {
+        return valueSerializer;
+    }
 
     /**
      * Set a concrete serializer instant to be used by the {@link KafkaProducer} for values. Overrides any setting of the
@@ -99,30 +143,40 @@ public interface SenderOptions<K, V> {
      * @param valueSerializer value serializer to use in the consumer
      * @return options instance with new value serializer
      */
-    @NonNull
-    SenderOptions<K, V> withValueSerializer(@NonNull Serializer<V> valueSerializer);
+    @Override
+    public  SenderOptions<K, V> withValueSerializer(Serializer<V> valueSerializer) {
+        this.valueSerializer = Objects.requireNonNull(valueSerializer);
+        return this;
+    }
 
     /**
      * Returns the scheduler used for publishing send results.
      * @return response scheduler
      */
-    @NonNull
-    Scheduler scheduler();
+    @Override
+    public Scheduler scheduler() {
+        return scheduler;
+    }
 
     /**
      * Sets the scheduler used for publishing send results.
      * @return sender options with updated response scheduler
      */
-    @NonNull
-    SenderOptions<K, V> scheduler(@NonNull Scheduler scheduler);
+    @Override
+    public SenderOptions<K, V> scheduler(Scheduler scheduler) {
+        this.scheduler = Objects.requireNonNull(scheduler);
+        return this;
+    }
 
     /**
      * Returns the maximum number of in-flight records that are fetched
      * from the outbound record publisher while acknowledgements are pending.
      * @return maximum number of in-flight records
      */
-    @NonNull
-    int maxInFlight();
+    @Override
+    public int maxInFlight() {
+        return maxInFlight;
+    }
 
     /**
      * Configures the maximum number of in-flight records that are fetched
@@ -131,8 +185,11 @@ public interface SenderOptions<K, V> {
      * to control memory usage and to avoid blocking the reactive pipeline.
      * @return sender options with new in-flight limit
      */
-    @NonNull
-    SenderOptions<K, V> maxInFlight(@NonNull int maxInFlight);
+    @Override
+    public SenderOptions<K, V> maxInFlight(int maxInFlight) {
+        this.maxInFlight = maxInFlight;
+        return this;
+    }
 
     /**
      * Returns stopOnError configuration which indicates if a send operation
@@ -141,8 +198,10 @@ public interface SenderOptions<K, V> {
      * with a non-fatal exception.
      * @return boolean indicating if send sequences should fail on first error
      */
-    @NonNull
-    boolean stopOnError();
+    @Override
+    public boolean stopOnError() {
+        return stopOnError;
+    }
 
     /**
      * Configures error handling behaviour for {@link KafkaSender#send(org.reactivestreams.Publisher)}.
@@ -156,65 +215,28 @@ public interface SenderOptions<K, V> {
      * @param stopOnError true to stop each send sequence on first failure
      * @return sender options with the new stopOnError flag.
      */
-    @NonNull
-    SenderOptions<K, V> stopOnError(@NonNull boolean stopOnError);
+    @Override
+    public SenderOptions<K, V> stopOnError(boolean stopOnError) {
+        this.stopOnError = stopOnError;
+        return this;
+    }
 
     /**
      * Returns the timeout for graceful shutdown of this sender.
      * @return close timeout duration
      */
-    @NonNull
-    Duration closeTimeout();
+    @Override
+    public Duration closeTimeout() {
+        return closeTimeout;
+    }
 
     /**
      * Configures the timeout for graceful shutdown of this sender.
      * @return sender options with updated close timeout
      */
-    @NonNull
-    SenderOptions<K, V> closeTimeout(@NonNull Duration timeout);
-
-    /**
-     * Senders created from this options will be transactional if a transactional id is
-     * configured using {@link ProducerConfig#TRANSACTIONAL_ID_CONFIG}. If transactional,
-     * {@link KafkaProducer#initTransactions()} is invoked on the producer to initialize
-     * transactions before any operations are performed on the sender. If scheduler is overridden
-     * using {@link #scheduler(Scheduler)}, the configured scheduler
-     * must be single-threaded. Otherwise, the behaviour is undefined and may result in unexpected
-     * exceptions.
-     */
-    @NonNull
-    default boolean isTransactional() {
-        String transactionalId = transactionalId();
-        return transactionalId != null && !transactionalId.isEmpty();
-    }
-
-    /**
-     * Returns the configured transactional id
-     * @return transactional id
-     */
-    @Nullable
-    default String transactionalId() {
-        return (String) producerProperty(ProducerConfig.TRANSACTIONAL_ID_CONFIG);
-    }
-
-    @NonNull
-    default boolean fatalException(@NonNull Throwable t) {
-        return t instanceof AuthenticationException || t instanceof ProducerFencedException;
-    }
-
-    /**
-     * Returns a new immutable instance with the configuration properties of this instance.
-     * @deprecated starting from 3.x version will be immutable by default
-     * @return new immutable instance of sender options
-     */
-    @NonNull
-    @Deprecated
-    default SenderOptions<K, V> toImmutable() {
-        if (isTransactional()) {
-            if (!stopOnError())
-                throw new ConfigException("Transactional senders must be created with stopOnError=true");
-        }
-
-        return new ImmutableSenderOptions<>(this);
+    @Override
+    public SenderOptions<K, V> closeTimeout(Duration timeout) {
+        this.closeTimeout = timeout;
+        return this;
     }
 }

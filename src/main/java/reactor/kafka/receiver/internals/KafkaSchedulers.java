@@ -20,7 +20,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import reactor.core.Disposable;
-import reactor.core.Disposables;
 import reactor.core.scheduler.NonBlocking;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -40,10 +39,6 @@ class KafkaSchedulers {
 
     static EventScheduler newEvent(String groupId) {
         return new EventScheduler(groupId);
-    }
-
-    static Scheduler fromWorker(Scheduler.Worker worker) {
-        return new WorkerScheduler(worker);
     }
 
     final static class EventScheduler implements Scheduler {
@@ -167,84 +162,6 @@ class KafkaSchedulers {
 
             EmitterThread(Runnable target, String name) {
                 super(target, name);
-            }
-        }
-    }
-
-    final static class WorkerScheduler implements Scheduler {
-
-        private final Worker worker;
-
-        private WorkerScheduler(Worker worker) {
-            this.worker = worker;
-        }
-
-        @Override
-        public Disposable schedule(Runnable task) {
-            return worker.schedule(task);
-        }
-
-        @Override
-        public Disposable schedulePeriodically(Runnable task,
-                long initialDelay,
-                long period,
-                TimeUnit unit) {
-            return worker.schedulePeriodically(task, initialDelay, period, unit);
-        }
-
-        @Override
-        public Worker createWorker() {
-            return new WorkerDecorator(worker);
-        }
-
-        @Override
-        public void dispose() {
-            worker.dispose();
-        }
-
-        @Override
-        public boolean isDisposed() {
-            return worker.isDisposed();
-        }
-
-        final static class WorkerDecorator implements Worker {
-            final Worker worker;
-            final Composite tasks;
-
-            WorkerDecorator(Worker worker) {
-                this.worker = worker;
-                this.tasks = Disposables.composite();
-            }
-
-            @Override
-            public void dispose() {
-                tasks.dispose();
-            }
-
-            @Override
-            public boolean isDisposed() {
-                return tasks.isDisposed();
-            }
-
-            @Override
-            public Disposable schedule(Runnable task) {
-                Disposable disposableTask = worker.schedule(task);
-                tasks.add(disposableTask);
-                return disposableTask;
-            }
-
-            @Override
-            public Disposable schedule(Runnable task, long delay, TimeUnit unit) {
-                Disposable disposableTask = worker.schedule(task, delay, unit);
-                tasks.add(disposableTask);
-                return disposableTask;
-            }
-
-            @Override
-            public Disposable schedulePeriodically(Runnable task, long initialDelay, long period, TimeUnit unit) {
-                Disposable disposableTask = worker.schedulePeriodically(task, initialDelay, period, unit);
-                tasks.add(disposableTask);
-                return disposableTask;
             }
         }
     }

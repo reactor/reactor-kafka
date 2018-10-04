@@ -54,6 +54,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoSink;
 import reactor.core.publisher.Operators;
 import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.ReceiverRecord;
 import reactor.kafka.receiver.KafkaReceiver;
@@ -146,7 +147,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
             .map(r -> {
                 TopicPartition topicPartition = new TopicPartition(r.topic(), r.partition());
                 CommittableOffset committableOffset = new CommittableOffset(topicPartition, r.offset());
-                return new ReceiverRecord<K, V>(r, committableOffset);
+                return new ReceiverRecord<>(r, committableOffset);
             });
     }
 
@@ -254,7 +255,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
 
         recordEmitter = EmitterProcessor.create();
         recordSubmission = recordEmitter.sink();
-        scheduler = KafkaSchedulers.fromWorker(receiverOptions.schedulerSupplier().get().createWorker());
+        scheduler = Schedulers.single(receiverOptions.schedulerSupplier().get());
 
         consumerFlux = recordEmitter
                 .publishOn(scheduler)
@@ -456,11 +457,11 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
     private class PollEvent extends Event<ConsumerRecords<K, V>> {
 
         private AtomicInteger pendingCount = new AtomicInteger();
-        private final long pollTimeoutMs;
+        private final Duration pollTimeout;
         private final AtomicBoolean partitionsPaused = new AtomicBoolean();
         PollEvent() {
             super(EventType.POLL);
-            pollTimeoutMs = receiverOptions.pollTimeout().toMillis();
+            pollTimeout = receiverOptions.pollTimeout();
         }
         @Override
         public void run() {
@@ -479,7 +480,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
                             consumer.pause(consumer.assignment());
                     }
 
-                    ConsumerRecords<K, V> records = consumer.poll(pollTimeoutMs);
+                    ConsumerRecords<K, V> records = consumer.poll(pollTimeout);
                     if (records.count() > 0) {
                         recordSubmission.next(records);
                     }
@@ -613,7 +614,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
 
         private void waitFor(long endTimeNanos) {
             while (inProgress.get() > 0 && endTimeNanos - System.nanoTime() > 0) {
-                consumer.poll(1);
+                consumer.poll(Duration.ofMillis(1));
             }
         }
 

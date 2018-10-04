@@ -323,7 +323,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         embeddedKafka.shutdownBroker(brokerId);
         Thread.sleep(3000);
         embeddedKafka.startBroker(brokerId);
-        sendMessages(0, 100);
+        sendMessagesSync(0, 100);
         waitForMessages(latch);
         checkConsumedMessages(0, 100);
         waitForCommits(receiver, 100);
@@ -598,9 +598,9 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     @Test
     public void autoCommitNonRetriableException() throws Exception {
         int count = 5;
-        receiverOptions = receiverOptions.consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
-                                         .maxCommitAttempts(2);
-        testAutoCommitFailureScenarios(false, count, 1000, 0, 10);
+        receiverOptions = receiverOptions.consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+
+        testAutoCommitFailureScenarios(false, count, 2, 0, 10);
 
         Flux<? extends ConsumerRecord<Integer, String>> flux = createReceiver().receiveAutoAck().concatMap(r -> r);
         sendReceiveWithRedelivery(flux, count, count, 3, 5);
@@ -1238,8 +1238,9 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     }
 
     private void sendMessages(int startIndex, int count) {
-        Disposable disposable = kafkaSender.createOutbound().send(Flux.range(startIndex, count)
-                                                             .map(i -> createProducerRecord(i, true)))
+        Disposable disposable = kafkaSender.createOutbound()
+                                           .send(Flux.range(startIndex, count)
+                                                     .map(i -> createProducerRecord(i, true)))
                                            .then()
                                            .subscribe();
         subscribeDisposables.add(disposable);
@@ -1251,7 +1252,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
             .map(i -> createProducerRecord(i, true))
             .concatMap(record -> kafkaSender.createOutbound().send(Mono.just(record)).then()
                                             .doOnSuccess(metadata -> latch.countDown())
-                                            .retry(100))
+                                            .retryBackoff(100, Duration.ofMillis(100)))
             .subscribe();
         assertTrue("Messages not sent ", latch.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
     }
