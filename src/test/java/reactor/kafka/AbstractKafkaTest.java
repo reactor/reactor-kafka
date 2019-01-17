@@ -83,6 +83,7 @@ public class AbstractKafkaTest {
                 exception.printStackTrace(writer);
                 writer.println();
             }
+            DETECTED.clear();
 
             Assert.fail("Blocking calls detected:\n" + new String(output.toByteArray()));
         }
