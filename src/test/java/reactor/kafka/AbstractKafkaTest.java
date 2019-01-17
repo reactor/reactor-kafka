@@ -35,12 +35,15 @@ import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.junit.After;
+import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.rules.TestName;
 
 import kafka.admin.AdminUtils;
 import kafka.cluster.Partition;
 import kafka.utils.ZkUtils;
+import reactor.BlockHound;
 import reactor.core.publisher.Flux;
 import reactor.kafka.cluster.EmbeddedKafkaCluster;
 import reactor.kafka.receiver.ReceiverOffset;
@@ -53,6 +56,28 @@ import scala.Option;
 
 public class AbstractKafkaTest {
     public static final int DEFAULT_TEST_TIMEOUT = 30000;
+
+    private static volatile boolean detected = false;
+
+    static {
+        BlockHound.builder()
+                .allowBlockingCallsInside(org.apache.log4j.Category.class, "log")
+                .allowBlockingCallsInside(java.lang.Throwable.class, "printStackTrace")
+                .blockingMethodCallback(method -> {
+                    new Exception("Blocking call!").printStackTrace();
+                    detected = true;
+                })
+                .install();
+    }
+
+    @After
+    public void tearDownAbstractKafkaTest() {
+        try {
+            Assert.assertFalse("Blocking calls detected", detected);
+        } finally {
+            detected = false;
+        }
+    }
 
     protected String topic = "testtopic";
     protected int partitions = 4;
