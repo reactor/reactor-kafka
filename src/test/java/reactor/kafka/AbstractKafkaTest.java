@@ -66,7 +66,7 @@ public class AbstractKafkaTest {
                 .allowBlockingCallsInside(org.apache.log4j.Category.class, "log")
                 .allowBlockingCallsInside(java.lang.Throwable.class, "printStackTrace")
                 .blockingMethodCallback(method -> {
-                    String message = String.format("Blocking call! %s%s%s\n", method.getClassName(), method.isStatic() ? "." : "#", method.getName());
+                    String message = String.format("[%s] Blocking call! %s%s%s", Thread.currentThread(), method.getClassName(), method.isStatic() ? "." : "#", method.getName());
                     Exception e = new Exception(message);
                     e.printStackTrace();
                     DETECTED.add(e);
