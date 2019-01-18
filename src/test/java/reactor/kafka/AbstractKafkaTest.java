@@ -45,6 +45,7 @@ import org.junit.rules.TestName;
 import kafka.admin.AdminUtils;
 import kafka.cluster.Partition;
 import kafka.utils.ZkUtils;
+import org.junit.rules.Timeout;
 import reactor.BlockHound;
 import reactor.core.publisher.Flux;
 import reactor.kafka.cluster.EmbeddedKafkaCluster;
@@ -101,6 +102,9 @@ public class AbstractKafkaTest {
     public EmbeddedKafkaCluster embeddedKafka = new EmbeddedKafkaCluster(1);
     @Rule
     public TestName testName = new TestName();
+
+    @Rule
+    public Timeout timeout = new Timeout(60, TimeUnit.SECONDS);
 
     protected ReceiverOptions<Integer, String> receiverOptions;
     protected SenderOptions<Integer, String> senderOptions;

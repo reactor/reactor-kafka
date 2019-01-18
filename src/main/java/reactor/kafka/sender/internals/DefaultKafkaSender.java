@@ -86,7 +86,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
         this.hasProducer = new AtomicBoolean();
         this.senderOptions = options.toImmutable()
                                     .scheduler(options.isTransactional()
-                                        ? Schedulers.newSingle(options.transactionalId())
+                                        ? Schedulers.newSingle(r -> options.transactionalId() != null ? new Thread(options.transactionalId()) : new Thread())
                                         : options.scheduler()
                                     );
 
