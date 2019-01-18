@@ -277,21 +277,9 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
     }
 
     private <T> Flux<T> withDoOnRequest(Flux<T> consumerFlux) {
-        return consumerFlux.doOnRequest(toAdd -> {
-            long r, u;
-            for (;;) {
-                r = requestsPending.get();
-                if (r == Long.MAX_VALUE) {
-                    pollEvent.scheduleIfRequired();
-                    return;
-                }
-                u = Operators.addCap(r, toAdd);
-                if (requestsPending.compareAndSet(r, u)) {
-                    if (u > 0) {
-                        pollEvent.scheduleIfRequired();
-                    }
-                    return;
-                }
+        return consumerFlux.doOnRequest(toAdd ->{
+            if (OperatorUtils.safeAddAndGet(requestsPending, toAdd) > 0) {
+                pollEvent.scheduleIfRequired();
             }
         });
     }
