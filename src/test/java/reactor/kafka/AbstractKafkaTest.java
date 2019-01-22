@@ -16,6 +16,7 @@
 package reactor.kafka;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.PrintWriter;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -25,6 +26,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertEquals;
@@ -38,6 +40,7 @@ import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.log4j.Category;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Rule;
@@ -61,33 +64,39 @@ import scala.Option;
 public class AbstractKafkaTest {
     public static final int DEFAULT_TEST_TIMEOUT = 30000;
 
-    private static final List<Exception> DETECTED = new ArrayList<>();
+    private static final List<Exception> DETECTED = new CopyOnWriteArrayList<>();
 
     static {
-        BlockHound.builder()
-                .allowBlockingCallsInside(org.apache.log4j.Category.class, "log")
-                .allowBlockingCallsInside(java.lang.Throwable.class, "printStackTrace")
+        BlockHound.install(builder -> builder
+                .allowBlockingCallsInside(Category.class.getName(), "log")
                 .blockingMethodCallback(method -> {
-                    String message = String.format("[%s] Blocking call! %s%s%s", Thread.currentThread(), method.getClassName(), method.isStatic() ? "." : "#", method.getName());
+                    String message = String.format("[%s] Blocking call! %s", Thread.currentThread(), method);
                     Exception e = new Exception(message);
                     e.printStackTrace();
                     DETECTED.add(e);
-                })
-                .install();
+                }));
     }
 
     @After
     public void tearDownAbstractKafkaTest() {
         if (!DETECTED.isEmpty()) {
-            ByteArrayOutputStream output = new ByteArrayOutputStream();
-            PrintWriter writer = new PrintWriter(output);
-            for (Exception exception : DETECTED) {
-                exception.printStackTrace(writer);
-                writer.println();
+            String outputString;
+            try (
+                    ByteArrayOutputStream output = new ByteArrayOutputStream();
+                    PrintWriter writer = new PrintWriter(output);
+            ) {
+                for (Exception exception : DETECTED) {
+                    exception.printStackTrace(writer);
+                    writer.println();
+                }
+                writer.flush();
+
+                outputString = new String(output.toByteArray());
+            } catch (IOException e) {
+                throw new RuntimeException(e);
             }
             DETECTED.clear();
-
-            Assert.fail("Blocking calls detected:\n" + new String(output.toByteArray()));
+            Assert.fail("Blocking calls detected:\n" + outputString);
         }
     }
 
