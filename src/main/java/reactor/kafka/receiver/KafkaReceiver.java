@@ -46,8 +46,22 @@ public interface KafkaReceiver<K, V> {
      *        must be set on the options instance prior to creating this receiver.
      * @return new receiver instance
      */
-    public static <K, V> KafkaReceiver<K, V> create(ReceiverOptions<K, V> options) {
+    static <K, V> KafkaReceiver<K, V> create(ReceiverOptions<K, V> options) {
         return new DefaultKafkaReceiver<>(ConsumerFactory.INSTANCE, options);
+    }
+
+    /**
+     * Creates a reactive Kafka receiver with the specified configuration options.
+     *
+     * @param factory A custom consumer factory other than the default.
+     * @param options Configuration options of this receiver. Changes made to the options
+     *        after the receiver is created will not be used by the receiver.
+     *        A subscription using group management or a manual assignment of topic partitions
+     *        must be set on the options instance prior to creating this receiver.
+     * @return new receiver instance
+     */
+    static <K, V> KafkaReceiver<K, V> create(ConsumerFactory factory, ReceiverOptions<K, V> options) {
+        return new DefaultKafkaReceiver<>(factory, options);
     }
 
     /**
