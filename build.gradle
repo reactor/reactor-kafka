@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
+ *       https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,7 +16,7 @@
 
 buildscript {
   repositories {
-    maven { url "http://repo.spring.io/plugins-release" }
+    maven { url "https://repo.spring.io/plugins-release" }
   }
   dependencies {
     classpath 'org.asciidoctor:asciidoctorj-pdf:1.5.0-alpha.16',
@@ -45,10 +45,10 @@ ext {
   zkVersion = "3.4.13"
   powermockVersion = '1.7.4'
 
-  javadocLinks = ["http://docs.oracle.com/javase/8/docs/api/",
+  javadocLinks = ["https://docs.oracle.com/javase/8/docs/api/",
                   "https://kafka.apache.org/10/javadoc/",
-                  "http://www.reactive-streams.org/reactive-streams-1.0.2-javadoc/",
-                  "http://projectreactor.io/docs/core/release/api/"] as String[]
+                  "https://www.reactive-streams.org/reactive-streams-1.0.2-javadoc/",
+                  "https://projectreactor.io/docs/core/release/api/"] as String[]
 
 }
 
@@ -71,8 +71,8 @@ configure(allprojects) { project ->
   group = 'io.projectreactor.kafka'
 
   repositories {
-    maven { url 'http://repo.spring.io/libs-release' }
-    maven { url 'http://repo.spring.io/libs-snapshot' }
+    maven { url 'https://repo.spring.io/libs-release' }
+    maven { url 'https://repo.spring.io/libs-snapshot' }
     mavenCentral()
     jcenter()
   }
