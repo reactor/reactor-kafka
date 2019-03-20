@@ -5,14 +5,14 @@
 
 You need Java JRE installed (Java 8 or later).
 
-You need http://kafka.apache.org[Apache Kafka] installed (1.0.0 or later). Kafka can be downloaded
+You need https://kafka.apache.org[Apache Kafka] installed (1.0.0 or later). Kafka can be downloaded
 from https://kafka.apache.org/downloads.html. Note that the Apache Kafka client library used with
 Reactor Kafka should be 2.0.0 or later and the broker version should be 1.0.0 or higher.
 
 === Quick Start
 
 This quick start tutorial sets up a single node Zookeeper and Kafka and runs the sample reactive producer and
-consumer. Instructions to set up multi-broker clusters are available http://kafka.apache.org/documentation#quickstart_multibroker[here].
+consumer. Instructions to set up multi-broker clusters are available https://kafka.apache.org/documentation#quickstart_multibroker[here].
 
 ==== Start Kafka
 
