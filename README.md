@@ -5,7 +5,7 @@ Reactor Kafka
 [![Travis CI](https://img.shields.io/travis/reactor/reactor-kafka.svg)](https://travis-ci.org/reactor/reactor-kafka)
 [![Coverage](https://img.shields.io/codecov/c/github/reactor/reactor-kafka.svg)](https://travis-ci.org/reactor/reactor-kafka)
 
-You need to have [Java 8](http://www.oracle.com/technetwork/java/javase/downloads/index.html) installed.
+You need to have [Java 8](https://www.oracle.com/technetwork/java/javase/downloads/index.html) installed.
 
 ### Building Reactor Kafka jars ###
     ./gradlew jar
@@ -39,8 +39,8 @@ See [reactor-kafka-samples/src/main/java/reactor/kafka/samples/SampleConsumer.ja
 With Gradle from repo.spring.io:
 ```groovy
     repositories {
-      //maven { url 'http://repo.spring.io/snapshot' }
-      maven { url 'http://repo.spring.io/milestone' }
+      //maven { url 'https://repo.spring.io/snapshot' }
+      maven { url 'https://repo.spring.io/milestone' }
       mavenCentral()
     }
 

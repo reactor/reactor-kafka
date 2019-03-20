@@ -42,7 +42,7 @@ the application is implemented in a functional style.
 
 ==== Kafka Connect API
 
-http://kafka.apache.org/documentation#connect[Kafka Connect] provides a simple interface to migrate messages
+https://kafka.apache.org/documentation#connect[Kafka Connect] provides a simple interface to migrate messages
 from an external data system (e.g. a database) to one or more Kafka topics. Using existing connectors,
 this migration can be performed without writing any new code.
 
@@ -56,7 +56,7 @@ use of threads and memory without the need for overflow handling in the applicat
 
 ==== Kafka Streams API
 
-http://kafka.apache.org/documentation#streams[Kafka Streams] provides lightweight APIs to build stream processing
+https://kafka.apache.org/documentation#streams[Kafka Streams] provides lightweight APIs to build stream processing
 applications that process data stored in Kafka using standard streaming concepts and transformation primitives.
 Using a simple threading model, the streams API avoids the need for back-pressure. This model works well in cases
 where transformations do not involve external interactions.
