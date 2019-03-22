@@ -56,5 +56,5 @@ With Gradle from repo.spring.io:
 
 ### License ###
 
-Reactor Kafka is [Apache 2.0 licensed](http://www.apache.org/licenses/LICENSE-2.0.html).
+Reactor Kafka is [Apache 2.0 licensed](https://www.apache.org/licenses/LICENSE-2.0.html).
 
