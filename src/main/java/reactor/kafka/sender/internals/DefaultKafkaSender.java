@@ -290,7 +290,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
                 });
             } catch (Exception e) {
                 inflight.decrementAndGet();
-                handleError(e, correlationMetadata, true);
+                handleError(e, correlationMetadata, stopOnError);
             }
         }
 

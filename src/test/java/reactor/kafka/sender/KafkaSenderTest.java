@@ -27,6 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.assertEquals;
@@ -42,6 +43,8 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.errors.ProducerFencedException;
+import org.apache.kafka.common.serialization.Serializer;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -223,6 +226,31 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                    .doOnError(t -> errorSemaphore.release())
                    .subscribe();
         waitForMessages(consumer, 2, true);
+        assertTrue("Error callback not invoked", errorSemaphore.tryAcquire(requestTimeoutMillis, TimeUnit.MILLISECONDS));
+    }
+
+    /**
+     * Tests that Producer send Exceptions do not cancel Record Publishers when stopOnError=false
+     */
+    @Test
+    public void sendDontStopOnSerializationError() throws Exception {
+        ProducerRecord<Integer, String> recordToFail = createProducerRecord(0, false);
+        ProducerRecord<Integer, String> recordToSucceed = createProducerRecord(1, true);
+
+        recreateSender(senderOptions.stopOnError(false).producerProperty(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, FirstTimeFailingStringSerializer.class.getName()));
+
+        Semaphore errorSemaphore = new Semaphore(0);
+        EmitterProcessor<ProducerRecord<Integer, String>> processor = EmitterProcessor.create();
+        kafkaSender.send(processor.map(producerRecord -> SenderRecord.create(producerRecord, null)))
+            .doOnError(t -> errorSemaphore.release())
+            .subscribe();
+
+        FluxSink<ProducerRecord<Integer, String>> sink = processor.sink();
+        sink.next(recordToFail);
+        sink.next(recordToSucceed);
+        sink.complete();
+
+        waitForMessages(consumer, 1, true);
         assertTrue("Error callback not invoked", errorSemaphore.tryAcquire(requestTimeoutMillis, TimeUnit.MILLISECONDS));
     }
 
@@ -575,4 +603,16 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         kafkaSender = KafkaSender.create(senderOptions);
     }
 
+    public static final class FirstTimeFailingStringSerializer extends StringSerializer implements Serializer<String> {
+
+        private static final AtomicBoolean FIRST_TIME = new AtomicBoolean(true);
+
+        @Override
+        public byte[] serialize(String topic, String data) {
+            if (FIRST_TIME.compareAndSet(true, false)) {
+                throw new IllegalArgumentException("The first time this Serializer is used will fail");
+            }
+            return super.serialize(topic, data);
+        }
+    }
 }

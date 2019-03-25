@@ -12,7 +12,7 @@ ifndef::host-github[:ext-relative: {outfilesuffix}]
 :hide-uri-scheme:
 
 :github-repo: reactor/reactor-kafka
-:github-code: http://github.com/{github-repo}
+:github-code: https://github.com/{github-repo}
 
 // ======================================================================================
 = Introduction

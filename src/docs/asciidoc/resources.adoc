@@ -15,9 +15,9 @@ Reactor Kafka is open source and the code and documentation are available at htt
 
 * https://github.com/reactor/reactor-kafka[Reactor Kafka on github]
 
-* http://kafka.apache.org/documentation.html[Apache Kafka]
+* https://kafka.apache.org/documentation.html[Apache Kafka]
 
-* http://projectreactor.io/[Project Reactor]
+* https://projectreactor.io/[Project Reactor]
 
 * https://github.com/reactor/reactor-core[Reactor Core]
 

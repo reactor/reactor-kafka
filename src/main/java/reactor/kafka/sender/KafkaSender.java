@@ -44,8 +44,20 @@ public interface KafkaSender<K, V> {
      *        after the sender is created will not be used by the sender.
      * @return new instance of Kafka sender
      */
-    public static <K, V> KafkaSender<K, V> create(SenderOptions<K, V> options) {
+    static <K, V> KafkaSender<K, V> create(SenderOptions<K, V> options) {
         return new DefaultKafkaSender<>(ProducerFactory.INSTANCE, options);
+    }
+
+    /**
+     * Creates a Kafka sender that appends records to Kafka topic partitions.
+     *
+     * @param factory A custom producer factory other than the default.
+     * @param options Configuration options of this sender. Changes made to the options
+     *        after the sender is created will not be used by the sender.
+     * @return new instance of Kafka sender
+     */
+    static <K, V> KafkaSender<K, V> create(ProducerFactory factory, SenderOptions<K, V> options) {
+        return new DefaultKafkaSender<>(factory, options);
     }
 
     /**
