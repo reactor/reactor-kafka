@@ -40,7 +40,6 @@ import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
-import org.apache.log4j.Category;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Rule;
@@ -50,7 +49,6 @@ import kafka.admin.AdminUtils;
 import kafka.cluster.Partition;
 import kafka.utils.ZkUtils;
 import org.junit.rules.Timeout;
-import reactor.BlockHound;
 import reactor.core.publisher.Flux;
 import reactor.kafka.cluster.EmbeddedKafkaCluster;
 import reactor.kafka.receiver.ReceiverOffset;
@@ -64,18 +62,7 @@ import scala.Option;
 public class AbstractKafkaTest {
     public static final int DEFAULT_TEST_TIMEOUT = 30000;
 
-    private static final List<Exception> DETECTED = new CopyOnWriteArrayList<>();
-
-    static {
-        BlockHound.install(builder -> builder
-                .allowBlockingCallsInside(Category.class.getName(), "log")
-                .blockingMethodCallback(method -> {
-                    String message = String.format("[%s] Blocking call! %s", Thread.currentThread(), method);
-                    Exception e = new Exception(message);
-                    e.printStackTrace();
-                    DETECTED.add(e);
-                }));
-    }
+    public static final List<Exception> DETECTED = new CopyOnWriteArrayList<>();
 
     @After
     public void tearDownAbstractKafkaTest() {
@@ -114,7 +101,7 @@ public class AbstractKafkaTest {
     public TestName testName = new TestName();
 
     @Rule
-    public Timeout timeout = new Timeout(60, TimeUnit.SECONDS);
+    public Timeout timeout = new Timeout(120, TimeUnit.SECONDS);
 
     protected ReceiverOptions<Integer, String> receiverOptions;
     protected SenderOptions<Integer, String> senderOptions;
