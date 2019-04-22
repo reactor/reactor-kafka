@@ -1137,6 +1137,36 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         checkConsumedMessages(count, count * 3);
     }
 
+    @Test
+    public void receiverStillWorkingAfterExceptionInMap() throws Exception {
+        int sendCount = 20;
+        CountDownLatch latch = new CountDownLatch(sendCount - 4);
+
+        // Crearte receiver
+        Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux = createReceiver()
+                .receive()
+                .map(record -> {
+                    record.receiverOffset().commit();
+                    if (record.key() % 5 == 0)  {
+                        throw new RuntimeException();
+                    }
+                    return record;
+                })
+                .retry();
+        subscribe(kafkaFlux, latch);
+
+        // Create sender
+        Disposable disposable = kafkaSender.createOutbound()
+                .send(Flux.range(0, sendCount)
+                        .map(i -> createProducerRecord(i, i % 5 != 0)))
+                .then()
+                .subscribe();
+        subscribeDisposables.add(disposable);
+
+        waitForMessages(latch);
+        checkConsumedMessages();
+    }
+
     private Disposable sendAndWaitForMessages(Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux, int count) throws Exception {
         CountDownLatch receiveLatch = new CountDownLatch(count);
         Disposable disposable = subscribe(kafkaFlux, receiveLatch);

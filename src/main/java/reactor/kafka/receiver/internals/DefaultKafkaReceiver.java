@@ -242,7 +242,11 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
         }
     }
 
-    private synchronized Flux<ConsumerRecords<K, V>> createConsumerFlux() {
+    private Flux<ConsumerRecords<K, V>> createConsumerFlux() {
+        return Flux.defer(this::createConsumerFluxInner);
+    }
+
+    private synchronized Flux<ConsumerRecords<K, V>> createConsumerFluxInner() {
         if (consumerFlux != null)
             throw new IllegalStateException("Multiple subscribers are not supported for KafkaReceiver flux");
 
