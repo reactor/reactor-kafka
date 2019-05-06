@@ -34,7 +34,7 @@ ext {
 
   kafkaVersion = '2.0.0'
   scalaVersion = '2.11'
-  reactorVersion = '3.2.10.BUILD-SNAPSHOT'
+  reactorVersion = '3.3.0.BUILD-SNAPSHOT'
   metricsVersion = '2.2.0'
 
   argparseVersion = '0.5.0'
@@ -50,6 +50,7 @@ ext {
                   "https://www.reactive-streams.org/reactive-streams-1.0.2-javadoc/",
                   "https://projectreactor.io/docs/core/release/api/"] as String[]
 
+  
 }
 
 apply from: "$gradleScriptDir/setup.gradle"
