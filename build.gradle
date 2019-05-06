@@ -143,6 +143,12 @@ configure(rootProject) {
   archivesBaseName = 'reactor-kafka'
   description = 'Reactor Kafka: A reactive API for Apache Kafka'
 
+  jar {
+    manifest {
+      attributes 'Automatic-Module-Name': 'reactor.kafka'
+    }
+  }
+
   artifacts {
     archives sourcesJar
     archives javadocJar
@@ -169,6 +175,12 @@ project(':reactor-kafka-tools') {
     }
   }
 
+  jar {
+    manifest {
+      attributes 'Automatic-Module-Name': 'reactor.kafka.tools'
+    }
+  }
+
   artifacts {
     archives sourcesJar
     archives javadocJar
@@ -192,6 +204,12 @@ project(':reactor-kafka-samples') {
   test {
     jacoco {
       enabled = false
+    }
+  }
+
+  jar {
+    manifest {
+      attributes 'Automatic-Module-Name': 'reactor.kafka.samples'
     }
   }
 
