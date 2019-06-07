@@ -28,9 +28,9 @@ public class SampleTest extends AbstractKafkaTest {
         int count = 10;
         CountDownLatch sendLatch = new CountDownLatch(count);
         CountDownLatch receiveLatch = new CountDownLatch(count);
-        SampleConsumer consumer = new SampleConsumer(embeddedKafka.bootstrapServers());
+        SampleConsumer consumer = new SampleConsumer(bootstrapServers());
         consumer.consumeMessages(topic, receiveLatch);
-        SampleProducer producer = new SampleProducer(embeddedKafka.bootstrapServers());
+        SampleProducer producer = new SampleProducer(bootstrapServers());
         producer.sendMessages(topic, count, sendLatch);
         sendLatch.await(10, TimeUnit.SECONDS);
         receiveLatch.await(10, TimeUnit.SECONDS);

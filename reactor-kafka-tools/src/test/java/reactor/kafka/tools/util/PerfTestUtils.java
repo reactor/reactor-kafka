@@ -39,18 +39,18 @@ public class PerfTestUtils {
                 percentDiff <= maxPercentDiff || reactive < 5);
     }
 
-    public static Map<String, Object> producerProps(EmbeddedKafkaCluster embeddedKafka) {
+    public static Map<String, Object> producerProps(String bootstrapServers) {
         Map<String, Object> props = new HashMap<>();
-        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, embeddedKafka.bootstrapServers());
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         props.put(ProducerConfig.CLIENT_ID_CONFIG, "prod-perf");
         props.put(ProducerConfig.ACKS_CONFIG, "all");
         props.put(ProducerConfig.SEND_BUFFER_CONFIG, String.valueOf(1024 * 1024));
         return props;
     }
 
-    public static Map<String, Object> consumerProps(EmbeddedKafkaCluster embeddedKafka) {
+    public static Map<String, Object> consumerProps(String bootstrapServers) {
         Map<String, Object> props = new HashMap<>();
-        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, embeddedKafka.bootstrapServers());
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         props.put(ConsumerConfig.CLIENT_ID_CONFIG, "cons-perf");
         return props;
     }

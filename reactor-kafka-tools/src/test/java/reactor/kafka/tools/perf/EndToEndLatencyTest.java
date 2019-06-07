@@ -41,12 +41,12 @@ public class EndToEndLatencyTest extends AbstractKafkaTest {
 
     @Test
     public void performanceRegressionTest() throws Exception {
-        Map<String, Object> producerProps = PerfTestUtils.producerProps(embeddedKafka);
-        Map<String, Object> consumerProps = PerfTestUtils.consumerProps(embeddedKafka);
+        Map<String, Object> producerProps = PerfTestUtils.producerProps(bootstrapServers());
+        Map<String, Object> consumerProps = PerfTestUtils.consumerProps(bootstrapServers());
 
-        NonReactiveEndToEndLatency nonReactive = new NonReactiveEndToEndLatency(consumerProps, producerProps, embeddedKafka.bootstrapServers(), topic);
+        NonReactiveEndToEndLatency nonReactive = new NonReactiveEndToEndLatency(consumerProps, producerProps, bootstrapServers(), topic);
         double[] nrLatencies = TestUtils.execute(() -> nonReactive.runTest(numMessages, messageSize, 10000L), timeoutMs);
-        ReactiveEndToEndLatency reactive = new ReactiveEndToEndLatency(consumerProps, producerProps, embeddedKafka.bootstrapServers(), topic);
+        ReactiveEndToEndLatency reactive = new ReactiveEndToEndLatency(consumerProps, producerProps, bootstrapServers(), topic);
         double[] rLatencies = TestUtils.execute(() -> reactive.runTest(numMessages, messageSize, 10000L), timeoutMs);
 
         double r75 = rLatencies[(int) (rLatencies.length * 0.75)];

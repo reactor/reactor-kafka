@@ -313,7 +313,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                     })
                     .onErrorResume(e -> {
                         Thread.interrupted(); // clear any interrupts
-                        embeddedKafka.waitForBrokers();
+                        waitForBrokers();
                         waitForTopic(topic, partitions, false);
                         TestUtils.sleep(2000);
                         int next = lastSuccessful.get() + 1;

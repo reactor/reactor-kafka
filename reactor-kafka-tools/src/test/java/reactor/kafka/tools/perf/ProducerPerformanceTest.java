@@ -62,6 +62,6 @@ public class ProducerPerformanceTest extends AbstractKafkaTest {
     }
 
     public Map<String, Object> producerProps() {
-        return PerfTestUtils.producerProps(embeddedKafka);
+        return PerfTestUtils.producerProps(bootstrapServers());
     }
 }

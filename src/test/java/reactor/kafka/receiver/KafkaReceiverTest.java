@@ -322,9 +322,9 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux = receiver.receiveAutoAck().concatMap(r -> r);
         CountDownLatch latch = new CountDownLatch(100);
         subscribe(kafkaFlux, latch);
-        embeddedKafka.shutdownBroker(brokerId);
+        shutdownKafkaBroker();
         Thread.sleep(3000);
-        embeddedKafka.startBroker(brokerId);
+        startKafkaBroker();
         sendMessagesSync(0, 100);
         waitForMessages(latch);
         checkConsumedMessages(0, 100);

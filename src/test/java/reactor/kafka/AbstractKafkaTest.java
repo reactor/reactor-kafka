@@ -53,6 +53,8 @@ public abstract class AbstractKafkaTest {
 
     public static final int DEFAULT_TEST_TIMEOUT = 30000;
 
+    private static final EmbeddedKafkaCluster EMBEDDED_KAFKA = new EmbeddedKafkaCluster(1);
+
     protected String topic = "testtopic";
     protected final int partitions = 4;
     protected long receiveTimeoutMillis = DEFAULT_TEST_TIMEOUT;
@@ -60,8 +62,6 @@ public abstract class AbstractKafkaTest {
     protected final long sessionTimeoutMillis = 12000;
     private final long heartbeatIntervalMillis = 3000;
     protected final int brokerId = 0;
-
-    protected static final EmbeddedKafkaCluster embeddedKafka = new EmbeddedKafkaCluster(1);
 
     @Rule
     public final TestName testName = new TestName();
@@ -74,16 +74,20 @@ public abstract class AbstractKafkaTest {
 
     @Before
     public final void setUpAbstractKafkaTest() {
-        embeddedKafka.start();
+        EMBEDDED_KAFKA.start();
         senderOptions = SenderOptions.create(producerProps());
         receiverOptions = createReceiverOptions(testName.getMethodName());
         topic = createNewTopic();
         waitForTopic(topic, partitions, true);
     }
 
+    protected String bootstrapServers() {
+        return EMBEDDED_KAFKA.bootstrapServers();
+    }
+
     public Map<String, Object> producerProps() {
         Map<String, Object> props = new HashMap<>();
-        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, embeddedKafka.bootstrapServers());
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers());
         props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, String.valueOf(requestTimeoutMillis));
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class);
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
@@ -92,7 +96,7 @@ public abstract class AbstractKafkaTest {
 
     protected Map<String, Object> consumerProps(String groupId) {
         Map<String, Object> props = new HashMap<>();
-        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, embeddedKafka.bootstrapServers());
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers());
         props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
         props.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, String.valueOf(sessionTimeoutMillis));
         props.put(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, String.valueOf(heartbeatIntervalMillis));
@@ -163,7 +167,7 @@ public abstract class AbstractKafkaTest {
 
     protected String createNewTopic(String prefix) {
         String newTopic = prefix + "_" + System.nanoTime();
-        ZkUtils zkUtils = new ZkUtils(embeddedKafka.zkClient(), null, false);
+        ZkUtils zkUtils = new ZkUtils(EMBEDDED_KAFKA.zkClient(), null, false);
         Properties props = new Properties();
         AdminUtils.createTopic(zkUtils, newTopic, partitions, 1, props, null);
         waitForTopic(newTopic, 4, true);
@@ -171,7 +175,7 @@ public abstract class AbstractKafkaTest {
     }
 
     protected void waitForTopic(String topic, int partitions, boolean resetMessages) {
-        embeddedKafka.waitForTopic(topic);
+        EMBEDDED_KAFKA.waitForTopic(topic);
         if (resetMessages) {
             expectedMessages.clear();
             receivedMessages.clear();
@@ -184,12 +188,20 @@ public abstract class AbstractKafkaTest {
         }
     }
 
+    protected void waitForBrokers() {
+        EMBEDDED_KAFKA.waitForBrokers();
+    }
+
     protected void shutdownKafkaBroker() {
-        embeddedKafka.shutdownBroker(brokerId);
+        EMBEDDED_KAFKA.shutdownBroker(brokerId);
+    }
+
+    protected void startKafkaBroker() {
+        EMBEDDED_KAFKA.startBroker(brokerId);
     }
 
     protected void restartKafkaBroker() {
-        embeddedKafka.restartBroker(brokerId);
+        EMBEDDED_KAFKA.restartBroker(brokerId);
         waitForTopic(topic, partitions, false);
         for (int i = 0; i < partitions; i++) {
             TestUtils.waitUntil("Leader not elected", null, this::hasLeader, i, Duration.ofSeconds(5));
@@ -198,7 +210,7 @@ public abstract class AbstractKafkaTest {
 
     private boolean hasLeader(int partition) {
         try {
-            Option<Partition> partitionOpt = embeddedKafka.kafkaServer(brokerId).replicaManager().getPartition(new TopicPartition(topic, partition));
+            Option<Partition> partitionOpt = EMBEDDED_KAFKA.kafkaServer(brokerId).replicaManager().getPartition(new TopicPartition(topic, partition));
             if (!partitionOpt.isDefined()) {
                 return false;
             }

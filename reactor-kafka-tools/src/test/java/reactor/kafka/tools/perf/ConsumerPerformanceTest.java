@@ -49,7 +49,7 @@ public class ConsumerPerformanceTest extends AbstractKafkaTest {
     @Test
     public void performanceRegressionTest() throws Exception {
         ConsumerPerfConfig config = new ConsumerPerfConfig();
-        Map<String, Object> consumerProps = PerfTestUtils.consumerProps(embeddedKafka);
+        Map<String, Object> consumerProps = PerfTestUtils.consumerProps(bootstrapServers());
 
         TestUtils.execute(() -> sendToKafka(numMessages, messageSize), timeoutMs);
 
@@ -62,7 +62,7 @@ public class ConsumerPerformanceTest extends AbstractKafkaTest {
     }
 
     private int sendToKafka(int numRecords, int recordSize) throws InterruptedException {
-        Map<String, Object> props = PerfTestUtils.producerProps(embeddedKafka);
+        Map<String, Object> props = PerfTestUtils.producerProps(bootstrapServers());
         props.put(ProducerConfig.RETRIES_CONFIG, Integer.MAX_VALUE);
         new ReactiveProducerPerformance(props, topic, numRecords, recordSize, -1, null, 0)
                 .runTest()
