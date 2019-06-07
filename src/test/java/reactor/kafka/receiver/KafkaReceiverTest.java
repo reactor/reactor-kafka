@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Semaphore;
@@ -217,9 +218,11 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
 
     @Test
     public void wildcardSubscribe() throws Exception {
+        String prefix = UUID.randomUUID().toString();
+        topic = createNewTopic(prefix);
         receiverOptions = receiverOptions
                 .addAssignListener(this::onPartitionsAssigned)
-                .subscription(Pattern.compile("test.*"));
+                .subscription(Pattern.compile(prefix + ".*"));
         Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux =
                 KafkaReceiver.create(receiverOptions)
                         .receive();
@@ -1080,8 +1083,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
 
     @Test
     public void transactionalOffsetCommit() throws Exception {
-        String destTopic = "topic2";
-        createNewTopic(destTopic, partitions);
+        String destTopic = createNewTopic();
 
         int count = 10;
         kafkaSender.createOutbound().send(createProducerRecords(count)).then().block(Duration.ofSeconds(receiveTimeoutMillis));

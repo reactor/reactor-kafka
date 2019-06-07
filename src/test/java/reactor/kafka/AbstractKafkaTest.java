@@ -77,7 +77,7 @@ public abstract class AbstractKafkaTest {
     public final void setUpAbstractKafkaTest() {
         senderOptions = SenderOptions.create(producerProps());
         receiverOptions = createReceiverOptions(testName.getMethodName());
-        createNewTopic(topic, partitions);
+        topic = createNewTopic();
         waitForTopic(topic, partitions, true);
     }
 
@@ -157,11 +157,16 @@ public abstract class AbstractKafkaTest {
         return topicParts;
     }
 
-    protected String createNewTopic(String newTopic, int partitions) {
+    protected String createNewTopic() {
+        return createNewTopic(testName.getMethodName());
+    }
+
+    protected String createNewTopic(String prefix) {
+        String newTopic = prefix + "_" + System.nanoTime();
         ZkUtils zkUtils = new ZkUtils(embeddedKafka.zkClient(), null, false);
         Properties props = new Properties();
         AdminUtils.createTopic(zkUtils, newTopic, partitions, 1, props, null);
-        waitForTopic(newTopic, partitions, true);
+        waitForTopic(newTopic, 4, true);
         return newTopic;
     }
 

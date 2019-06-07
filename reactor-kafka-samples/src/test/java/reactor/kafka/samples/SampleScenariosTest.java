@@ -94,10 +94,8 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         List<Person> expected = new ArrayList<>();
         List<Person> received1 = new ArrayList<>();
         List<Person> received2 = new ArrayList<>();
-        String topic1 = "testtopic1";
-        String topic2 = "testtopic2";
-        createNewTopic(topic1, partitions);
-        createNewTopic(topic2, partitions);
+        String topic1 = createNewTopic();
+        String topic2 = createNewTopic();
         subscribeToDestTopic("test-group", topic1, received1);
         subscribeToDestTopic("test-group", topic2, received2);
         KafkaSinkChain sinkChain = new KafkaSinkChain(bootstrapServers, topic1, topic2);
@@ -133,8 +131,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         List<Person> expected = new ArrayList<>();
         List<Person> received = new ArrayList<>();
         String sourceTopic = topic;
-        String destTopic = "testtopic2";
-        createNewTopic(destTopic, partitions);
+        String destTopic = createNewTopic();
         KafkaTransform flow = new KafkaTransform(bootstrapServers, sourceTopic, destTopic) {
             public ReceiverOptions<Integer, Person> receiverOptions() {
                 return super.receiverOptions().consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
@@ -153,8 +150,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         List<Person> expected = new ArrayList<>();
         List<Person> received = new ArrayList<>();
         String sourceTopic = topic;
-        String destTopic = "testtopic2";
-        createNewTopic(destTopic, partitions);
+        String destTopic = createNewTopic();
         AtmostOnce flow = new AtmostOnce(bootstrapServers, sourceTopic, destTopic) {
             public ReceiverOptions<Integer, Person> receiverOptions() {
                 return super.receiverOptions().consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
@@ -173,10 +169,8 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         List<Person> expected1 = new ArrayList<>();
         List<Person> received1 = new ArrayList<>();
         List<Person> received2 = new ArrayList<>();
-        String destTopic1 = "desttopic1";
-        createNewTopic(destTopic1, partitions);
-        String destTopic2 = "desttopic2";
-        createNewTopic(destTopic2, partitions);
+        String destTopic1 = createNewTopic();
+        String destTopic2 = createNewTopic();
         subscribeToDestTopic("test-group", destTopic1, received1);
         subscribeToDestTopic("test-group", destTopic2, received2);
         TransactionalSend sink = new TransactionalSend(bootstrapServers, destTopic1, destTopic2);
@@ -199,8 +193,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         List<Person> expected = new ArrayList<>();
         List<Person> received = new ArrayList<>();
         String sourceTopic = topic;
-        String destTopic = "testtopic2";
-        createNewTopic(destTopic, partitions);
+        String destTopic = createNewTopic();
         KafkaExactlyOnce flow = new KafkaExactlyOnce(bootstrapServers, sourceTopic, destTopic) {
             public ReceiverOptions<Integer, Person> receiverOptions() {
                 return super.receiverOptions().consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
@@ -221,8 +214,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         List<Person> received = new ArrayList<>();
         AtomicInteger transformCounter = new AtomicInteger();
         String sourceTopic = topic;
-        String destTopic = "testtopic2";
-        createNewTopic(destTopic, partitions);
+        String destTopic = createNewTopic();
         sendMessages(sourceTopic, count, expected);
         KafkaExactlyOnce flow = new KafkaExactlyOnce(bootstrapServers, sourceTopic, destTopic) {
             public ReceiverOptions<Integer, Person> receiverOptions() {
@@ -253,10 +245,8 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         List<Person> received1 = new ArrayList<>();
         List<Person> received2 = new ArrayList<>();
         String sourceTopic = topic;
-        String destTopic1 = "testtopic1";
-        String destTopic2 = "testtopic2";
-        createNewTopic(destTopic1, partitions);
-        createNewTopic(destTopic2, partitions);
+        String destTopic1 = createNewTopic();
+        String destTopic2 = createNewTopic();
         FanOut flow = new FanOut(bootstrapServers, sourceTopic, destTopic1, destTopic2) {
             public ReceiverOptions<Integer, Person> receiverOptions() {
                 return super.receiverOptions().consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
