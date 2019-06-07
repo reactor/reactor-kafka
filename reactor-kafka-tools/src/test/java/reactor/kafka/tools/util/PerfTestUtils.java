@@ -23,8 +23,6 @@ import static org.junit.Assert.assertTrue;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
 
-import reactor.kafka.cluster.EmbeddedKafkaCluster;
-
 public class PerfTestUtils {
 
     public static void verifyReactiveThroughput(double reactive, double nonReactive, double maxPercentDiff) {
