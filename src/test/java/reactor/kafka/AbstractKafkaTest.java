@@ -61,8 +61,7 @@ public abstract class AbstractKafkaTest {
     private final long heartbeatIntervalMillis = 3000;
     protected final int brokerId = 0;
 
-    @Rule
-    public final EmbeddedKafkaCluster embeddedKafka = new EmbeddedKafkaCluster(1);
+    protected static final EmbeddedKafkaCluster embeddedKafka = new EmbeddedKafkaCluster(1);
 
     @Rule
     public final TestName testName = new TestName();
@@ -75,6 +74,7 @@ public abstract class AbstractKafkaTest {
 
     @Before
     public final void setUpAbstractKafkaTest() {
+        embeddedKafka.start();
         senderOptions = SenderOptions.create(producerProps());
         receiverOptions = createReceiverOptions(testName.getMethodName());
         topic = createNewTopic();
