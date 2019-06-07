@@ -80,8 +80,6 @@ public class EmbeddedKafkaCluster {
                     props.put(KafkaConfig.MinInSyncReplicasProp(), "1");
                     props.put(KafkaConfig.TransactionsTopicReplicationFactorProp(), "1");
                     props.put(KafkaConfig.TransactionsTopicMinISRProp(), "1");
-                    props.put(KafkaConfig.GroupInitialRebalanceDelayMsProp(), "0");
-                    props.put(KafkaConfig.OffsetsTopicReplicationFactorProp(), "1");
                     this.brokers.add(new EmbeddedKafkaBroker(props));
                 }
             } catch (IOException e) {
