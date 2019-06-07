@@ -18,22 +18,10 @@ package reactor.kafka.samples;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-import org.junit.After;
-import org.junit.Before;
 import org.junit.Test;
 import reactor.kafka.AbstractKafkaTest;
 
 public class SampleTest extends AbstractKafkaTest {
-
-
-    @Before
-    public void setUp() throws Exception {
-        super.setUp();
-    }
-
-    @After
-    public void tearDown() {
-    }
 
     @Test
     public void sampleTest() throws Exception {

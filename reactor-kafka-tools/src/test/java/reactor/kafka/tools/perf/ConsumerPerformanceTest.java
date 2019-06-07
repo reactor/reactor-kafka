@@ -40,8 +40,6 @@ public class ConsumerPerformanceTest extends AbstractKafkaTest {
 
     @Before
     public void setUp() throws Exception {
-        super.setUp();
-
         numMessages = PerfTestUtils.getTestConfig("reactor.kafka.test.numMessages", 5000000);
         messageSize = PerfTestUtils.getTestConfig("reactor.kafka.test.messageSize", 100);
         maxPercentDiff = PerfTestUtils.getTestConfig("reactor.kafka.test.maxPercentDiff", 50);

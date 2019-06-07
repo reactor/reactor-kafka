@@ -69,7 +69,6 @@ public class SampleScenariosTest extends AbstractKafkaTest {
 
     @Before
     public void setUp() throws Exception {
-        super.setUp();
         bootstrapServers = embeddedKafka.bootstrapServers();
     }
 

@@ -83,7 +83,6 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
 
     @Before
     public void setUp() throws Exception {
-        super.setUp();
         kafkaSender = KafkaSender.create(senderOptions);
         kafkaSenders = new HashSet<>();
         kafkaSenders.add(kafkaSender);
@@ -672,7 +671,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         CountDownLatch receiveLatch1 = new CountDownLatch(count);
         // Subscribe on partition 1
         Flux<? extends ConsumerRecord<Integer, String>> partition1Flux =
-                KafkaReceiver.create(createReceiverOptions(null, "group2")
+                KafkaReceiver.create(createReceiverOptions("group2")
                                 .maxCommitAttempts(100)
                                 .addAssignListener(this::seekToBeginning)
                                 .addAssignListener(this::onPartitionsAssigned)
@@ -1085,7 +1084,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         createNewTopic(destTopic, partitions);
 
         int count = 10;
-        kafkaSender.createOutbound().send(createProducerRecords(0, count, true)).then().block(Duration.ofSeconds(receiveTimeoutMillis));
+        kafkaSender.createOutbound().send(createProducerRecords(count)).then().block(Duration.ofSeconds(receiveTimeoutMillis));
 
         String sourceConsumerGroupId = "source_consumer";
         receiverOptions = receiverOptions.consumerProperty(ConsumerConfig.ISOLATION_LEVEL_CONFIG, "read_committed")
