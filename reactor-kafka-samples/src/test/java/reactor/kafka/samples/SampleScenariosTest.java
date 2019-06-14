@@ -87,11 +87,10 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         List<Person> expected = new ArrayList<>();
         List<Person> received1 = new ArrayList<>();
         List<Person> received2 = new ArrayList<>();
-        String topic1 = createNewTopic();
         String topic2 = createNewTopic();
-        subscribeToDestTopic("test-group", topic1, received1);
+        subscribeToDestTopic("test-group", topic, received1);
         subscribeToDestTopic("test-group", topic2, received2);
-        KafkaSinkChain sinkChain = new KafkaSinkChain(bootstrapServers(), topic1, topic2);
+        KafkaSinkChain sinkChain = new KafkaSinkChain(bootstrapServers(), topic, topic2);
         sinkChain.source(createTestSource(10, expected));
         sinkChain.runScenario();
         waitForMessages(expected, received1);
@@ -162,7 +161,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         List<Person> expected1 = new ArrayList<>();
         List<Person> received1 = new ArrayList<>();
         List<Person> received2 = new ArrayList<>();
-        String destTopic1 = createNewTopic();
+        String destTopic1 = topic;
         String destTopic2 = createNewTopic();
         subscribeToDestTopic("test-group", destTopic1, received1);
         subscribeToDestTopic("test-group", destTopic2, received2);

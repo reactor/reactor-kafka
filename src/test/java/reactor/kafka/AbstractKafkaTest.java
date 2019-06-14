@@ -78,7 +78,6 @@ public abstract class AbstractKafkaTest {
         senderOptions = SenderOptions.create(producerProps());
         receiverOptions = createReceiverOptions(testName.getMethodName());
         topic = createNewTopic();
-        waitForTopic(topic, partitions, true);
     }
 
     protected String bootstrapServers() {
