@@ -51,11 +51,11 @@ import scala.Option;
 
 public abstract class AbstractKafkaTest {
 
-    public static final int DEFAULT_TEST_TIMEOUT = 30000;
+    public static final int DEFAULT_TEST_TIMEOUT = 60_000;
 
     private static final EmbeddedKafkaCluster EMBEDDED_KAFKA = new EmbeddedKafkaCluster(1);
 
-    protected String topic = "testtopic";
+    protected String topic;
     protected final int partitions = 4;
     protected long receiveTimeoutMillis = DEFAULT_TEST_TIMEOUT;
     protected final long requestTimeoutMillis = 3000;
