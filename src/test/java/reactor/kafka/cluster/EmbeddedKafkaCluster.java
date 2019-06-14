@@ -22,6 +22,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.net.ServerSocketFactory;
 
@@ -34,7 +35,6 @@ import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.network.ListenerName;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.utils.SystemTime;
-import org.junit.rules.ExternalResource;
 
 import kafka.server.KafkaConfig;
 import kafka.server.KafkaServer;
@@ -42,59 +42,49 @@ import kafka.utils.TestUtils;
 import kafka.utils.ZKStringSerializer$;
 import kafka.zk.EmbeddedZookeeper;
 
-public class EmbeddedKafkaCluster extends ExternalResource {
+public class EmbeddedKafkaCluster {
 
     private final int numBrokers;
     private EmbeddedZookeeper zookeeper;
     private ZkClient zkClient;
     private List<EmbeddedKafkaBroker> brokers = new ArrayList<>();
+    private final AtomicBoolean started = new AtomicBoolean();
 
     public EmbeddedKafkaCluster(int numBrokers) {
         this.numBrokers = numBrokers;
     }
 
-    @Override
-    public void before() throws IOException {
-        this.zookeeper = new EmbeddedZookeeper();
-        String zkConnect = "127.0.0.1:" + zookeeper.port();
-        this.zkClient = new ZkClient(zkConnect, 5000, 5000, ZKStringSerializer$.MODULE$);
+    public void start() {
+        if (started.compareAndSet(false, true)) {
+            try {
+                this.zookeeper = new EmbeddedZookeeper();
+                String zkConnect = "127.0.0.1:" + zookeeper.port();
+                this.zkClient = new ZkClient(zkConnect, 5000, 5000, ZKStringSerializer$.MODULE$);
 
-        for (int i = 0; i < numBrokers; i++) {
-            ServerSocket ss = ServerSocketFactory.getDefault().createServerSocket(0);
-            int brokerPort = ss.getLocalPort();
-            ss.close();
-            Properties props = TestUtils.createBrokerConfig(i,
-                zkConnect,
-                true,
-                true,
-                brokerPort,
-                scala.Option.apply(null),
-                scala.Option.apply(null),
-                scala.Option.apply(null),
-                true, false, 0, false, 0, false, 0,
-                scala.Option.apply(null),
-                1,
-                false);
-            props.put(KafkaConfig.MinInSyncReplicasProp(), "1");
-            props.put(KafkaConfig.TransactionsTopicReplicationFactorProp(), "1");
-            props.put(KafkaConfig.TransactionsTopicMinISRProp(), "1");
-            this.brokers.add(new EmbeddedKafkaBroker(props));
-        }
-    }
-
-    @Override
-    public void after() {
-        for (EmbeddedKafkaBroker broker : brokers) {
-            broker.shutdown();
-        }
-        brokers.clear();
-        if (this.zkClient != null) {
-            this.zkClient.close();
-            this.zkClient = null;
-        }
-        if (zookeeper != null) {
-            zookeeper.shutdown();
-            zookeeper = null;
+                for (int i = 0; i < numBrokers; i++) {
+                    ServerSocket ss = ServerSocketFactory.getDefault().createServerSocket(0);
+                    int brokerPort = ss.getLocalPort();
+                    ss.close();
+                    Properties props = TestUtils.createBrokerConfig(i,
+                        zkConnect,
+                        true,
+                        true,
+                        brokerPort,
+                        scala.Option.apply(null),
+                        scala.Option.apply(null),
+                        scala.Option.apply(null),
+                        true, false, 0, false, 0, false, 0,
+                        scala.Option.apply(null),
+                        1,
+                        false);
+                    props.put(KafkaConfig.MinInSyncReplicasProp(), "1");
+                    props.put(KafkaConfig.TransactionsTopicReplicationFactorProp(), "1");
+                    props.put(KafkaConfig.TransactionsTopicMinISRProp(), "1");
+                    this.brokers.add(new EmbeddedKafkaBroker(props));
+                }
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
         }
     }
 

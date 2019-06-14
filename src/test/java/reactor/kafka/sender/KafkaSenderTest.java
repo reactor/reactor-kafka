@@ -75,7 +75,6 @@ public class KafkaSenderTest extends AbstractKafkaTest {
 
     @Before
     public void setUp() throws Exception {
-        super.setUp();
         kafkaSender = KafkaSender.create(senderOptions);
         consumer = createConsumer();
     }
@@ -314,7 +313,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                     })
                     .onErrorResume(e -> {
                         Thread.interrupted(); // clear any interrupts
-                        embeddedKafka.waitForBrokers();
+                        waitForBrokers();
                         waitForTopic(topic, partitions, false);
                         TestUtils.sleep(2000);
                         int next = lastSuccessful.get() + 1;
@@ -444,7 +443,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         senderOptions = senderOptions.producerProperty(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true")
                                      .producerProperty(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, "10000");
         recreateSender(senderOptions);
-        kafkaSender.createOutbound().send(createProducerRecords(0, count, true).delayElements(Duration.ofMillis(100)))
+        kafkaSender.createOutbound().send(createProducerRecords(count).delayElements(Duration.ofMillis(100)))
                    .then()
                    .subscribe();
         shutdownKafkaBroker();

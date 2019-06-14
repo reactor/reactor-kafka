@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Semaphore;
@@ -83,7 +84,6 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
 
     @Before
     public void setUp() throws Exception {
-        super.setUp();
         kafkaSender = KafkaSender.create(senderOptions);
         kafkaSenders = new HashSet<>();
         kafkaSenders.add(kafkaSender);
@@ -218,9 +218,11 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
 
     @Test
     public void wildcardSubscribe() throws Exception {
+        String prefix = UUID.randomUUID().toString();
+        topic = createNewTopic(prefix);
         receiverOptions = receiverOptions
                 .addAssignListener(this::onPartitionsAssigned)
-                .subscription(Pattern.compile("test.*"));
+                .subscription(Pattern.compile(prefix + ".*"));
         Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux =
                 KafkaReceiver.create(receiverOptions)
                         .receive();
@@ -320,9 +322,9 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux = receiver.receiveAutoAck().concatMap(r -> r);
         CountDownLatch latch = new CountDownLatch(100);
         subscribe(kafkaFlux, latch);
-        embeddedKafka.shutdownBroker(brokerId);
+        shutdownKafkaBroker();
         Thread.sleep(3000);
-        embeddedKafka.startBroker(brokerId);
+        startKafkaBroker();
         sendMessagesSync(0, 100);
         waitForMessages(latch);
         checkConsumedMessages(0, 100);
@@ -672,7 +674,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         CountDownLatch receiveLatch1 = new CountDownLatch(count);
         // Subscribe on partition 1
         Flux<? extends ConsumerRecord<Integer, String>> partition1Flux =
-                KafkaReceiver.create(createReceiverOptions(null, "group2")
+                KafkaReceiver.create(createReceiverOptions("group2")
                                 .maxCommitAttempts(100)
                                 .addAssignListener(this::seekToBeginning)
                                 .addAssignListener(this::onPartitionsAssigned)
@@ -1081,11 +1083,10 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
 
     @Test
     public void transactionalOffsetCommit() throws Exception {
-        String destTopic = "topic2";
-        createNewTopic(destTopic, partitions);
+        String destTopic = createNewTopic();
 
         int count = 10;
-        kafkaSender.createOutbound().send(createProducerRecords(0, count, true)).then().block(Duration.ofSeconds(receiveTimeoutMillis));
+        kafkaSender.createOutbound().send(createProducerRecords(count)).then().block(Duration.ofSeconds(receiveTimeoutMillis));
 
         String sourceConsumerGroupId = "source_consumer";
         receiverOptions = receiverOptions.consumerProperty(ConsumerConfig.ISOLATION_LEVEL_CONFIG, "read_committed")
