@@ -14,11 +14,6 @@
  * limitations under the License.
  */
 
-task wrapper(type: Wrapper, description: "Create a Gradle self-download wrapper") {
-    group = 'Project Setup'
-    gradleVersion = "$gradleVersion"
-}
-
 configure(allprojects) { project ->
 
     apply plugin: 'propdeps-maven'
@@ -92,6 +87,11 @@ def customizePom(def pom, def gradleProject) {
                     id = 'OlegDokuka'
                     name = 'Oleh Dokuka'
                     email = 'oleh.dokuka@icloud.com'
+                }
+                developer {
+                    id = 'bsideup'
+                    name = 'Sergei Egorov'
+                    email = 'segorov@pivotal.io'
                 }
             }
             issueManagement {

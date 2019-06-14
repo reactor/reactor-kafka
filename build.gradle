@@ -24,41 +24,29 @@ buildscript {
             'io.spring.gradle:spring-io-plugin:0.0.8.RELEASE'
   }
 }
+
 plugins {
   id 'org.asciidoctor.convert' version '1.5.8.1'
 }
 
 ext {
   gradleVersion = '4.10'
-  gradleScriptDir = "${rootProject.projectDir}/gradle"
 
   kafkaVersion = '2.0.0'
   scalaVersion = '2.11'
   reactorVersion = '3.3.0.BUILD-SNAPSHOT'
-  metricsVersion = '2.2.0'
-
-  argparseVersion = '0.5.0'
-  joptVersion = '4.9'
 
   slf4jVersion = '1.7.25'
   junitVersion = '4.12'
   zkVersion = "3.4.13"
   powermockVersion = '1.7.4'
 
-  javadocLinks = ["https://docs.oracle.com/javase/8/docs/api/",
-                  "https://kafka.apache.org/10/javadoc/",
-                  "https://www.reactive-streams.org/reactive-streams-1.0.2-javadoc/",
-                  "https://projectreactor.io/docs/core/release/api/"] as String[]
-
-  
-}
-
-apply from: "$gradleScriptDir/setup.gradle"
-apply from: "$gradleScriptDir/doc.gradle"
-
-configurations.all {
-  // check for snapshot updates every time
-  resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+  javadocLinks = [
+          "https://docs.oracle.com/javase/8/docs/api/",
+          "https://kafka.apache.org/10/javadoc/",
+          "https://www.reactive-streams.org/reactive-streams-1.0.2-javadoc/",
+          "https://projectreactor.io/docs/core/release/api/"
+  ] as String[]
 }
 
 allprojects {
@@ -66,16 +54,18 @@ allprojects {
   jacoco {
     toolVersion = '0.8.1'
   }
-}
 
-configure(allprojects) { project ->
   group = 'io.projectreactor.kafka'
 
   repositories {
+    jcenter()
     maven { url 'https://repo.spring.io/libs-release' }
     maven { url 'https://repo.spring.io/libs-snapshot' }
-    mavenCentral()
-    jcenter()
+  }
+
+  configurations.all {
+    // check for snapshot updates every time
+    resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
   }
 
   apply plugin: 'maven'
@@ -107,7 +97,7 @@ configure(allprojects) { project ->
     configFile = new File(rootDir, "checkstyle/checkstyle.xml")
     configProperties = [suppressionsXml: "$rootDir/checkstyle/suppressions.xml"]
   }
-  test.dependsOn('checkstyleMain', 'checkstyleTest')
+  check.dependsOn(checkstyleMain, checkstyleTest)
 
   jacocoTestReport {
     dependsOn test
@@ -117,12 +107,8 @@ configure(allprojects) { project ->
       xml.enabled = true
     }
   }
-  jacocoTestReport.dependsOn test
 
   dependencies {
-    compile "org.apache.kafka:kafka-clients:$kafkaVersion"
-    compile "io.projectreactor:reactor-core:$reactorVersion"
-
     testCompile "org.apache.kafka:kafka-clients:$kafkaVersion:test"
     testCompile "junit:junit:$junitVersion"
 
@@ -140,6 +126,9 @@ configure(allprojects) { project ->
 }
 
 configure(rootProject) {
+  apply from: "${rootProject.projectDir}/gradle/doc.gradle"
+  apply from: "${rootProject.projectDir}/gradle/publishing.gradle"
+
   archivesBaseName = 'reactor-kafka'
   description = 'Reactor Kafka: A reactive API for Apache Kafka'
 
@@ -149,77 +138,17 @@ configure(rootProject) {
     }
   }
 
+  dependencies {
+    compile "org.apache.kafka:kafka-clients:$kafkaVersion"
+    compile "io.projectreactor:reactor-core:$reactorVersion"
+  }
+
   artifacts {
     archives sourcesJar
     archives javadocJar
     archives docsZip
   }
 }
-
-project(':reactor-kafka-tools') {
-  archivesBaseName = 'reactor-kafka-tools'
-  description = 'Tools for Reactor Kafka'
-  dependencies {
-    compile rootProject
-    compile "com.yammer.metrics:metrics-core:$metricsVersion"
-    compile "net.sf.jopt-simple:jopt-simple:$joptVersion"
-    compile "net.sourceforge.argparse4j:argparse4j:$argparseVersion"
-
-    testCompile rootProject.sourceSets.test.output
-  }
-
-  test {
-    systemProperties System.properties
-    jacoco {
-      enabled = false
-    }
-  }
-
-  jar {
-    manifest {
-      attributes 'Automatic-Module-Name': 'reactor.kafka.tools'
-    }
-  }
-
-  artifacts {
-    archives sourcesJar
-    archives javadocJar
-  }
-}
-
-project(':reactor-kafka-samples') {
-  archivesBaseName = 'reactor-kafka-samples'
-  description = 'Samples for Reactor Kafka'
-  dependencies {
-    compile rootProject
-    compile "com.yammer.metrics:metrics-core:$metricsVersion"
-
-    testCompile rootProject.sourceSets.test.output
-  }
-
-  task classpath << {
-    println sourceSets.main.runtimeClasspath.asPath
-  }
-
-  test {
-    jacoco {
-      enabled = false
-    }
-  }
-
-  jar {
-    manifest {
-      attributes 'Automatic-Module-Name': 'reactor.kafka.samples'
-    }
-  }
-
-  artifacts {
-    archives sourcesJar
-    archives javadocJar
-  }
-}
-
-
 
 // aggregates jacoco results from the top-level project and subprojects with jacoco enabled and generates a report
 task jacocoRootTestReport(type: JacocoReport) {

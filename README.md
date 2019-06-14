@@ -19,8 +19,8 @@ You need to have [Java 8](https://www.oracle.com/technetwork/java/javase/downloa
 
 ### Sample producer and consumer ###
 
-See [reactor-kafka-samples/src/main/java/reactor/kafka/samples/SampleProducer.java](reactor-kafka-samples/src/main/java/reactor/kafka/samples/SampleProducer.java) for sample reactive producer.
-See [reactor-kafka-samples/src/main/java/reactor/kafka/samples/SampleConsumer.java](reactor-kafka-samples/src/main/java/reactor/kafka/samples/SampleConsumer.java) for sample reactive consumer.
+See [reactor-kafka-samples/src/test/java/reactor/kafka/samples/SampleProducer.java](reactor-kafka-samples/src/test/java/reactor/kafka/samples/SampleProducer.java) for sample reactive producer.
+See [reactor-kafka-samples/src/test/java/reactor/kafka/samples/SampleConsumer.java](reactor-kafka-samples/src/test/java/reactor/kafka/samples/SampleConsumer.java) for sample reactive consumer.
 
 #### Setup Kafka cluster and create topic: ####
 1. Start Zookeeper and Kafka server
