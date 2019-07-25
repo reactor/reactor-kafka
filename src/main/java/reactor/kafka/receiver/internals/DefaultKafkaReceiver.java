@@ -473,8 +473,13 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
                     }
                     if (isActive.get()) {
                         int count = ((ackMode == AckMode.AUTO_ACK || ackMode == AckMode.EXACTLY_ONCE) && records.count() > 0) ? 1 : records.count();
-                        if (requestsPending.get() == Long.MAX_VALUE || requestsPending.addAndGet(0 - count) > 0 || commitEvent.inProgress.get() > 0)
+                        if (requestsPending.get() == Long.MAX_VALUE || requestsPending.addAndGet(0 - count) > 0 || commitEvent.inProgress.get() > 0) {
                             scheduleIfRequired();
+                        } else {
+                            if (!partitionsPaused.getAndSet(true)) {
+                                consumer.pause(consumer.assignment());
+                            }
+                        }
                     }
                 }
             } catch (Exception e) {
