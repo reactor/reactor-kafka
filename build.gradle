@@ -47,7 +47,7 @@ ext {
 
   javadocLinks = ["https://docs.oracle.com/javase/8/docs/api/",
                   "https://kafka.apache.org/10/javadoc/",
-                  "https://www.reactive-streams.org/reactive-streams-1.0.2-javadoc/",
+                  "https://www.reactive-streams.org/reactive-streams-1.0.3-javadoc/",
                   "https://projectreactor.io/docs/core/release/api/"] as String[]
 
   
