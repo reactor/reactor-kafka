@@ -21,3 +21,6 @@ This release is a maintenance release. The following are the major updates:
 * Update to Apache Kafka 2.0.0 client
 * Stabilize test-suite
 
+== What's new in Reactor Kafka 1.2.0.RELEASE
+
+This release simply aligns with Reactor 3.3.0.RELEASE version.

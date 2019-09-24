@@ -40,13 +40,13 @@ With Gradle from repo.spring.io:
 ```groovy
     repositories {
       //maven { url 'https://repo.spring.io/snapshot' }
-      maven { url 'https://repo.spring.io/milestone' }
+      //maven { url 'https://repo.spring.io/milestone' }
       mavenCentral()
     }
 
     dependencies {
-      compile "io.projectreactor.kafka:reactor-kafka:1.2.0.BUILD-SNAPSHOT"
-//      compile "io.projectreactor.kafka:reactor-kafka:1.1.1.RELEASE"
+      //compile "io.projectreactor.kafka:reactor-kafka:1.2.1.BUILD-SNAPSHOT"
+      compile "io.projectreactor.kafka:reactor-kafka:1.2.0.RELEASE"
     }
 ```
 
