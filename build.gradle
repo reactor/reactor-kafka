@@ -34,7 +34,7 @@ ext {
 
   kafkaVersion = '2.0.0'
   scalaVersion = '2.11'
-  reactorVersion = '3.3.0.RELEASE'
+  reactorVersion = '3.3.1.BUILD-SNAPSHOT'
   metricsVersion = '2.2.0'
 
   argparseVersion = '0.5.0'
