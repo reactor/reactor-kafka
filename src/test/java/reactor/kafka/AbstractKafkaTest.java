@@ -54,7 +54,7 @@ public abstract class AbstractKafkaTest {
 
     public static final int DEFAULT_TEST_TIMEOUT = 60_000;
 
-    private EmbeddedKafkaCluster EMBEDDED_KAFKA;
+    private EmbeddedKafkaCluster embeddedKafka;
 
     protected String topic;
     protected final int partitions = 4;
@@ -75,8 +75,8 @@ public abstract class AbstractKafkaTest {
 
     @Before
     public final void setUpAbstractKafkaTest() {
-        EMBEDDED_KAFKA = new EmbeddedKafkaCluster(1);
-        EMBEDDED_KAFKA.start();
+        embeddedKafka = new EmbeddedKafkaCluster(1);
+        embeddedKafka.start();
         senderOptions = SenderOptions.create(producerProps());
         receiverOptions = createReceiverOptions(testName.getMethodName());
         topic = createNewTopic();
@@ -84,11 +84,11 @@ public abstract class AbstractKafkaTest {
 
     @After
     public final void cleanup() {
-        EMBEDDED_KAFKA.shutdownBroker(0);
+        embeddedKafka.shutdownBroker(0);
     }
 
     protected String bootstrapServers() {
-        return EMBEDDED_KAFKA.bootstrapServers();
+        return embeddedKafka.bootstrapServers();
     }
 
     public Map<String, Object> producerProps() {
@@ -173,7 +173,7 @@ public abstract class AbstractKafkaTest {
 
     protected String createNewTopic(String prefix) {
         String newTopic = prefix + "_" + System.nanoTime();
-        ZkUtils zkUtils = new ZkUtils(EMBEDDED_KAFKA.zkClient(), null, false);
+        ZkUtils zkUtils = new ZkUtils(embeddedKafka.zkClient(), null, false);
         Properties props = new Properties();
         AdminUtils.createTopic(zkUtils, newTopic, partitions, 1, props, null);
         waitForTopic(newTopic, 4, true);
@@ -181,7 +181,7 @@ public abstract class AbstractKafkaTest {
     }
 
     protected void waitForTopic(String topic, int partitions, boolean resetMessages) {
-        EMBEDDED_KAFKA.waitForTopic(topic);
+        embeddedKafka.waitForTopic(topic);
         if (resetMessages) {
             expectedMessages.clear();
             receivedMessages.clear();
@@ -195,19 +195,19 @@ public abstract class AbstractKafkaTest {
     }
 
     protected void waitForBrokers() {
-        EMBEDDED_KAFKA.waitForBrokers();
+        embeddedKafka.waitForBrokers();
     }
 
     protected void shutdownKafkaBroker() {
-        EMBEDDED_KAFKA.shutdownBroker(brokerId);
+        embeddedKafka.shutdownBroker(brokerId);
     }
 
     protected void startKafkaBroker() {
-        EMBEDDED_KAFKA.startBroker(brokerId);
+        embeddedKafka.startBroker(brokerId);
     }
 
     protected void restartKafkaBroker() {
-        EMBEDDED_KAFKA.restartBroker(brokerId);
+        embeddedKafka.restartBroker(brokerId);
         waitForTopic(topic, partitions, false);
         for (int i = 0; i < partitions; i++) {
             TestUtils.waitUntil("Leader not elected", null, this::hasLeader, i, Duration.ofSeconds(5));
@@ -216,7 +216,7 @@ public abstract class AbstractKafkaTest {
 
     private boolean hasLeader(int partition) {
         try {
-            Option<Partition> partitionOpt = EMBEDDED_KAFKA.kafkaServer(brokerId).replicaManager().getPartition(new TopicPartition(topic, partition));
+            Option<Partition> partitionOpt = embeddedKafka.kafkaServer(brokerId).replicaManager().getPartition(new TopicPartition(topic, partition));
             if (!partitionOpt.isDefined()) {
                 return false;
             }
