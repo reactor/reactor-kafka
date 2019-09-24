@@ -34,6 +34,7 @@ import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.rules.TestName;
@@ -53,7 +54,7 @@ public abstract class AbstractKafkaTest {
 
     public static final int DEFAULT_TEST_TIMEOUT = 60_000;
 
-    private static final EmbeddedKafkaCluster EMBEDDED_KAFKA = new EmbeddedKafkaCluster(1);
+    private EmbeddedKafkaCluster EMBEDDED_KAFKA;
 
     protected String topic;
     protected final int partitions = 4;
@@ -74,10 +75,16 @@ public abstract class AbstractKafkaTest {
 
     @Before
     public final void setUpAbstractKafkaTest() {
+        EMBEDDED_KAFKA = new EmbeddedKafkaCluster(1);
         EMBEDDED_KAFKA.start();
         senderOptions = SenderOptions.create(producerProps());
         receiverOptions = createReceiverOptions(testName.getMethodName());
         topic = createNewTopic();
+    }
+
+    @After
+    public final void cleanup() {
+        EMBEDDED_KAFKA.shutdownBroker(0);
     }
 
     protected String bootstrapServers() {
