@@ -17,6 +17,7 @@ import org.apache.kafka.clients.consumer.RetriableCommitFailedException;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.Deserializer;
 import reactor.core.scheduler.Scheduler;
+import reactor.kafka.receiver.errors.ReceiverExceptionHandler;
 import reactor.util.annotation.NonNull;
 import reactor.util.annotation.Nullable;
 
@@ -227,6 +228,13 @@ public interface ReceiverOptions<K, V> {
     ReceiverOptions<K, V> schedulerSupplier(Supplier<Scheduler> schedulerSupplier);
 
     /**
+     * Configures the Exception Handler for receiver errors
+     * @return options instance with updated receiver exception handler
+     */
+    @NonNull
+    ReceiverOptions<K, V> receiverExceptionHandler(ReceiverExceptionHandler receiverExceptionHandler);
+
+    /**
      * Returns the configuration properties of the underlying {@link KafkaConsumer}.
      * @return options to configure for Kafka consumer.
      */
@@ -361,6 +369,13 @@ public interface ReceiverOptions<K, V> {
      */
     @NonNull
     Supplier<Scheduler> schedulerSupplier();
+
+    /**
+     * Returns the Exception Handler for receiver errors
+     * @return Receiver Exception Handler for receiver errors
+     */
+    @NonNull
+    ReceiverExceptionHandler receiverExceptionHandler();
 
     /**
      * Returns the {@link KafkaConsumer#subscribe(Collection, ConsumerRebalanceListener)},

@@ -32,6 +32,8 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.serialization.Deserializer;
 import reactor.core.scheduler.Scheduler;
+import reactor.kafka.receiver.errors.LogAndFailReceiverExceptionHandler;
+import reactor.kafka.receiver.errors.ReceiverExceptionHandler;
 
 class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
 
@@ -52,6 +54,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
     private final Collection<TopicPartition> assignTopicPartitions;
     private final Pattern subscribePattern;
     private final Supplier<Scheduler> schedulerSupplier;
+    private final ReceiverExceptionHandler receiverExceptionHandler;
 
     ImmutableReceiverOptions(ReceiverOptions<K, V> options) {
         this(
@@ -69,7 +72,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
             options.subscriptionTopics(),
             options.assignment(),
             options.subscriptionPattern(),
-            options.schedulerSupplier()
+            options.schedulerSupplier(),
+            options.receiverExceptionHandler()
         );
     }
 
@@ -88,7 +92,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
         Collection<String> topics,
         Collection<TopicPartition> partitions,
         Pattern pattern,
-        Supplier<Scheduler> supplier
+        Supplier<Scheduler> supplier,
+        ReceiverExceptionHandler receiverExceptionHandler
     ) {
         this.properties = new HashMap<>(properties);
         this.assignListeners = new ArrayList<>(assignListeners);
@@ -105,6 +110,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
         this.assignTopicPartitions = partitions == null ? null : new HashSet<>(partitions);
         this.subscribePattern = pattern;
         this.schedulerSupplier = supplier;
+        this.receiverExceptionHandler = receiverExceptionHandler == null ? new LogAndFailReceiverExceptionHandler() : receiverExceptionHandler;
     }
 
     @Override
@@ -140,7 +146,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
-                schedulerSupplier
+                schedulerSupplier,
+                receiverExceptionHandler
         );
     }
 
@@ -161,7 +168,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
-                schedulerSupplier
+                schedulerSupplier,
+                receiverExceptionHandler
         );
     }
 
@@ -187,7 +195,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
-                schedulerSupplier
+                schedulerSupplier,
+                receiverExceptionHandler
         );
     }
 
@@ -221,7 +230,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
-                schedulerSupplier
+                schedulerSupplier,
+                receiverExceptionHandler
         );
     }
 
@@ -250,7 +260,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
-                schedulerSupplier
+                schedulerSupplier,
+                receiverExceptionHandler
         );
     }
 
@@ -276,7 +287,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
-                schedulerSupplier
+                schedulerSupplier,
+                receiverExceptionHandler
         );
     }
 
@@ -302,7 +314,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
-                schedulerSupplier
+                schedulerSupplier,
+                receiverExceptionHandler
         );
     }
 
@@ -323,7 +336,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
-                schedulerSupplier
+                schedulerSupplier,
+                receiverExceptionHandler
         );
     }
 
@@ -344,7 +358,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
-                schedulerSupplier
+                schedulerSupplier,
+                receiverExceptionHandler
         );
     }
 
@@ -375,7 +390,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 Objects.requireNonNull(topics),
                 null,
                 null,
-                schedulerSupplier
+                schedulerSupplier,
+                receiverExceptionHandler
         );
     }
 
@@ -396,7 +412,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 null,
                 null,
                 Objects.requireNonNull(pattern),
-                schedulerSupplier
+                schedulerSupplier,
+                receiverExceptionHandler
         );
     }
 
@@ -417,7 +434,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 null,
                 Objects.requireNonNull(partitions),
                 null,
-                schedulerSupplier
+                schedulerSupplier,
+                receiverExceptionHandler
         );
     }
 
@@ -473,7 +491,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
-                schedulerSupplier
+                schedulerSupplier,
+                receiverExceptionHandler
         );
     }
 
@@ -502,7 +521,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
-                schedulerSupplier
+                schedulerSupplier,
+                receiverExceptionHandler
         );
     }
 
@@ -531,7 +551,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
-                schedulerSupplier
+                schedulerSupplier,
+                receiverExceptionHandler
         );
     }
 
@@ -560,7 +581,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
-                schedulerSupplier
+                schedulerSupplier,
+                receiverExceptionHandler
         );
     }
 
@@ -586,7 +608,35 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
-                Objects.requireNonNull(schedulerSupplier)
+                Objects.requireNonNull(schedulerSupplier),
+                receiverExceptionHandler
+        );
+    }
+
+    @Override
+    public ReceiverExceptionHandler receiverExceptionHandler() {
+        return receiverExceptionHandler;
+    }
+
+    @Override
+    public ReceiverOptions<K, V> receiverExceptionHandler(ReceiverExceptionHandler receiverExceptionHandler) {
+        return new ImmutableReceiverOptions<>(
+                properties,
+                assignListeners,
+                revokeListeners,
+                keyDeserializer,
+                valueDeserializer,
+                pollTimeout,
+                closeTimeout,
+                commitInterval,
+                commitBatchSize,
+                atmostOnceCommitAheadSize,
+                maxCommitAttempts,
+                subscribeTopics,
+                assignTopicPartitions,
+                subscribePattern,
+                schedulerSupplier,
+                Objects.requireNonNull(receiverExceptionHandler)
         );
     }
 

@@ -59,6 +59,7 @@ import reactor.kafka.receiver.ReceiverRecord;
 import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOffset;
 import reactor.kafka.receiver.ReceiverPartition;
+import reactor.kafka.receiver.errors.ReceiverExceptionHandler;
 import reactor.kafka.receiver.internals.CommittableBatch.CommitArgs;
 import reactor.kafka.sender.TransactionManager;
 
@@ -335,9 +336,11 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
         subscribeDisposables.add(eventFlux.subscribe(event -> doEvent(event)));
     }
 
-    private void fail(Throwable e) {
-        log.error("Consumer flux exception", e);
-        recordSubmission.error(e);
+    private void fail(Exception e) {
+        ReceiverExceptionHandler.ReceiverExceptionHandlerResponse exceptionHandlerResponse = receiverOptions.receiverExceptionHandler().handle(e);
+        if (ReceiverExceptionHandler.ReceiverExceptionHandlerResponse.FAIL == exceptionHandlerResponse) {
+            recordSubmission.error(e);
+        }
     }
 
     private void dispose() {

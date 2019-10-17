@@ -36,6 +36,8 @@ import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.serialization.Deserializer;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
+import reactor.kafka.receiver.errors.LogAndFailReceiverExceptionHandler;
+import reactor.kafka.receiver.errors.ReceiverExceptionHandler;
 
 /**
  * Configuration properties for Reactive Kafka {@link KafkaReceiver} and its underlying {@link KafkaConsumer}.
@@ -66,6 +68,7 @@ class MutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
     private Collection<TopicPartition> assignTopicPartitions;
     private Pattern subscribePattern;
     private Supplier<Scheduler> schedulerSupplier;
+    private ReceiverExceptionHandler receiverExceptionHandler;
 
     MutableReceiverOptions() {
         this(new HashMap<>());
@@ -95,6 +98,7 @@ class MutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
         maxCommitAttempts = DEFAULT_MAX_COMMIT_ATTEMPTS;
         properties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
         schedulerSupplier = Schedulers::parallel;
+        receiverExceptionHandler = new LogAndFailReceiverExceptionHandler();
     }
 
     /**
@@ -522,6 +526,25 @@ class MutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
     @Override
     public ReceiverOptions<K, V> schedulerSupplier(Supplier<Scheduler> schedulerSupplier) {
         this.schedulerSupplier = Objects.requireNonNull(schedulerSupplier);
+        return this;
+    }
+
+    /**
+     * Returns the Exception Handler for receiver errors
+     * @return Receiver Exception Handler for receiver errors
+     */
+    @Override
+    public ReceiverExceptionHandler receiverExceptionHandler() {
+        return receiverExceptionHandler;
+    }
+
+    /**
+     * Configures the Exception Handler for receiver errors
+     * @return options instance with updated receiver exception handler
+     */
+    @Override
+    public ReceiverOptions<K, V> receiverExceptionHandler(ReceiverExceptionHandler receiverExceptionHandler) {
+        this.receiverExceptionHandler = receiverExceptionHandler;
         return this;
     }
 
