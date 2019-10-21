@@ -24,7 +24,7 @@ public interface SenderOptions<K, V> {
     @NonNull
     static <K, V> SenderOptions<K, V> create() {
         @SuppressWarnings("deprecation")
-        SenderOptions<K, V> options = new MutableSenderOptions<>();
+        SenderOptions<K, V> options = new ImmutableSenderOptions<>();
         return options;
     }
 
@@ -36,7 +36,7 @@ public interface SenderOptions<K, V> {
     @NonNull
     static <K, V> SenderOptions<K, V> create(@NonNull Map<String, Object> configProperties) {
         @SuppressWarnings("deprecation")
-        SenderOptions<K, V> options = new MutableSenderOptions<>(configProperties);
+        SenderOptions<K, V> options = new ImmutableSenderOptions<>(configProperties);
         return options;
     }
 
@@ -48,7 +48,7 @@ public interface SenderOptions<K, V> {
     @NonNull
     static <K, V> SenderOptions<K, V> create(@NonNull Properties configProperties) {
         @SuppressWarnings("deprecation")
-        SenderOptions<K, V> options = new MutableSenderOptions<>(configProperties);
+        SenderOptions<K, V> options = new ImmutableSenderOptions<>(configProperties);
         return options;
     }
 

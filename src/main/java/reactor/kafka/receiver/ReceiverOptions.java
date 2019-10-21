@@ -29,7 +29,7 @@ public interface ReceiverOptions<K, V> {
     @NonNull
     static <K, V> ReceiverOptions<K, V> create() {
         @SuppressWarnings("deprecation")
-        ReceiverOptions<K, V> options = new MutableReceiverOptions<>();
+        ReceiverOptions<K, V> options = new ImmutableReceiverOptions<K, V>();
         return options;
     }
 
@@ -40,7 +40,7 @@ public interface ReceiverOptions<K, V> {
     @NonNull
     static <K, V> ReceiverOptions<K, V> create(@NonNull Map<String, Object> configProperties) {
         @SuppressWarnings("deprecation")
-        ReceiverOptions<K, V> options = new MutableReceiverOptions<>(configProperties);
+        ReceiverOptions<K, V> options = new ImmutableReceiverOptions<>(configProperties);
         return options;
     }
 
@@ -51,7 +51,7 @@ public interface ReceiverOptions<K, V> {
     @NonNull
     static <K, V> ReceiverOptions<K, V> create(@NonNull Properties configProperties) {
         @SuppressWarnings("deprecation")
-        ReceiverOptions<K, V> options = new MutableReceiverOptions<>(configProperties);
+        ReceiverOptions<K, V> options = new ImmutableReceiverOptions<>(configProperties);
         return options;
     }
 

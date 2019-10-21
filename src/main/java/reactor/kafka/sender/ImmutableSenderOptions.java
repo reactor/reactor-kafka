@@ -19,12 +19,16 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Properties;
+import java.util.stream.Collectors;
 
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.Serializer;
 import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
+import reactor.util.concurrent.Queues;
 
 class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
 
@@ -35,6 +39,33 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
     private final Scheduler           scheduler;
     private final int                 maxInFlight;
     private final boolean             stopOnError;
+
+    ImmutableSenderOptions() {
+        this(new HashMap<>());
+    }
+
+    ImmutableSenderOptions(Properties properties) {
+        this(
+            properties
+                .entrySet()
+                .stream()
+                .collect(Collectors.toMap(
+                    e -> e.getKey().toString(),
+                    Map.Entry::getValue
+                ))
+        );
+    }
+
+    ImmutableSenderOptions(Map<String, Object> properties) {
+        this.properties = new HashMap<>(properties);
+        keySerializer = null;
+        valueSerializer = null;
+
+        closeTimeout = Duration.ofMillis(Long.MAX_VALUE);
+        scheduler = Schedulers.single();
+        maxInFlight = Queues.SMALL_BUFFER_SIZE;
+        stopOnError = true;
+    }
 
     ImmutableSenderOptions(SenderOptions<K, V> options) {
         this(
@@ -284,5 +315,34 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
                 maxInFlight,
                 stopOnError
         );
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(
+            properties,
+            keySerializer,
+            valueSerializer,
+            closeTimeout,
+            scheduler,
+            maxInFlight,
+            stopOnError
+        );
+    }
+
+    @Override
+    public boolean equals(Object object) {
+        if (this == object) return true;
+        if (object != null && getClass().equals(object.getClass())) {
+            ImmutableSenderOptions<?, ?> that = (ImmutableSenderOptions<?, ?>) object;
+            return Objects.equals(maxInFlight, that.maxInFlight)
+                && Objects.equals(stopOnError, that.stopOnError)
+                && Objects.equals(properties, that.properties)
+                && Objects.equals(keySerializer, that.keySerializer)
+                && Objects.equals(valueSerializer, that.valueSerializer)
+                && Objects.equals(closeTimeout, that.closeTimeout)
+                && Objects.equals(scheduler, that.scheduler);
+        }
+        return false;
     }
 }
