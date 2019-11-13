@@ -246,7 +246,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
         if (consumerFlux != null)
             throw new IllegalStateException("Multiple subscribers are not supported for KafkaReceiver flux");
 
-        Consumer<Flux<?>> kafkaSubscribeOrAssign = (flux) -> receiverOptions.subscriber(this).accept(consumer);
+        Consumer<Flux<?>> kafkaSubscribeOrAssign = flux -> receiverOptions.subscriber(this).accept(consumer);
         initEvent = new InitEvent(kafkaSubscribeOrAssign);
         pollEvent = new PollEvent();
 

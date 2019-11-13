@@ -352,7 +352,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
     private class SendSubscriber<T> extends AbstractSendSubscriber<SenderRecord<K, V, T>, SenderResult<T>, T> {
 
         SendSubscriber(Producer<K, V> producer, CoreSubscriber<? super SenderResult<T>> actual, boolean stopOnError) {
-           super(producer, actual, stopOnError);
+            super(producer, actual, stopOnError);
         }
 
         @Override
@@ -374,7 +374,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
     private class SendSubscriberNoResponse extends AbstractSendSubscriber<ProducerRecord<K, V>, Object, Void> {
 
         SendSubscriberNoResponse(Producer<K, V> producer, CoreSubscriber<? super Object> actual, boolean stopOnError) {
-           super(producer, actual, stopOnError);
+            super(producer, actual, stopOnError);
         }
 
         @Override

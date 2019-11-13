@@ -69,15 +69,17 @@ configure(rootProject) {
                 stylesheet: 'golo.css',
                 appversion: "$rootProject.version",
                 'source-highlighter': 'coderay'
-
-        doLast {
-            file("$outputDir/pdf/index.pdf").renameTo("$outputDir/pdf/reactor-kafka-reference-guide-${version}.pdf")
-        }
     }
     task docsZip(type: Zip, dependsOn: asciidoctor) {
-       baseName = 'reactor-kafka-docs'
-       from("$buildDir/asciidoc/pdf/reactor-kafka-reference-guide-${version}.pdf") { into("docs/") }
-       from("$buildDir/asciidoc/html5/index.html") { into("docs/") }
-       from("$buildDir/asciidoc/html5/images") { into("images/") }
+        baseName = 'reactor-kafka-docs'
+        afterEvaluate() {
+            //we copy the pdf late, when a potential customVersion has been applied to rootProject
+            from("$buildDir/asciidoc/pdf/index.pdf") {
+                into ("docs/")
+                rename("index.pdf", "reactor-kafka-reference-guide-${rootProject.version}.pdf")
+            }
+        }
+        from("$buildDir/asciidoc/html5/index.html") { into("docs/") }
+        from("$buildDir/asciidoc/html5/images") { into("images/") }
     }
 }

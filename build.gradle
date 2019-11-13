@@ -19,22 +19,20 @@ buildscript {
     maven { url "https://repo.spring.io/plugins-release" }
   }
   dependencies {
-    classpath 'org.asciidoctor:asciidoctorj-pdf:1.5.0-alpha.16',
-            'org.springframework.build.gradle:propdeps-plugin:0.0.7',
-            'io.spring.gradle:spring-io-plugin:0.0.8.RELEASE'
+    classpath 'org.asciidoctor:asciidoctorj-pdf:1.5.0-alpha.16'
   }
 }
 plugins {
   id 'org.asciidoctor.convert' version '1.5.8.1'
+  id "com.jfrog.artifactory" version "4.9.8" apply false
 }
 
 ext {
-  gradleVersion = '4.10'
   gradleScriptDir = "${rootProject.projectDir}/gradle"
 
   kafkaVersion = '2.0.0'
   scalaVersion = '2.11'
-  reactorVersion = '3.2.13.BUILD-SNAPSHOT'
+  reactorCoreVersion = '3.2.13.BUILD-SNAPSHOT'
   metricsVersion = '2.2.0'
 
   argparseVersion = '0.5.0'
@@ -52,7 +50,6 @@ ext {
 
 }
 
-apply from: "$gradleScriptDir/setup.gradle"
 apply from: "$gradleScriptDir/doc.gradle"
 
 configurations.all {
@@ -80,9 +77,9 @@ configure(allprojects) { project ->
   apply plugin: 'maven'
   apply plugin: 'eclipse'
   apply plugin: 'idea'
-  apply plugin: 'propdeps'
   apply plugin: 'checkstyle'
   apply plugin: 'java'
+  apply from: "$gradleScriptDir/setup.gradle"
 
   sourceCompatibility = targetCompatibility = 1.8
 
@@ -120,12 +117,12 @@ configure(allprojects) { project ->
 
   dependencies {
     compile "org.apache.kafka:kafka-clients:$kafkaVersion"
-    compile "io.projectreactor:reactor-core:$reactorVersion"
+    compile "io.projectreactor:reactor-core:$reactorCoreVersion"
 
     testCompile "org.apache.kafka:kafka-clients:$kafkaVersion:test"
     testCompile "junit:junit:$junitVersion"
 
-    testCompile "io.projectreactor:reactor-test:$reactorVersion"
+    testCompile "io.projectreactor:reactor-test:$reactorCoreVersion"
     testCompile "org.apache.zookeeper:zookeeper:$zkVersion"
     testCompile "org.apache.kafka:kafka_$scalaVersion:$kafkaVersion"
     testCompile "org.apache.kafka:kafka-clients:$kafkaVersion:test"
@@ -142,11 +139,8 @@ configure(rootProject) {
   archivesBaseName = 'reactor-kafka'
   description = 'Reactor Kafka: A reactive API for Apache Kafka'
 
-  artifacts {
-    archives sourcesJar
-    archives javadocJar
-    archives docsZip
-  }
+  //add specific task artifacts to the publication
+  publishing.publications.mavenJava.artifact(docsZip)
 }
 
 project(':reactor-kafka-tools') {
@@ -167,11 +161,6 @@ project(':reactor-kafka-tools') {
       enabled = false
     }
   }
-
-  artifacts {
-    archives sourcesJar
-    archives javadocJar
-  }
 }
 
 project(':reactor-kafka-samples') {
@@ -184,19 +173,10 @@ project(':reactor-kafka-samples') {
     testCompile rootProject.sourceSets.test.output
   }
 
-  task classpath << {
-    println sourceSets.main.runtimeClasspath.asPath
-  }
-
   test {
     jacoco {
       enabled = false
     }
-  }
-
-  artifacts {
-    archives sourcesJar
-    archives javadocJar
   }
 }
 
@@ -208,9 +188,9 @@ task jacocoRootTestReport(type: JacocoReport) {
   def jacocoProjects = allprojects.findAll { it.test.jacoco.enabled }
 
   logger.info('Aggregating JaCoCo Coverage from projects : {}', jacocoProjects)
-  executionData = files(jacocoProjects.jacocoTestReport.executionData)
-  sourceDirectories = files(jacocoProjects.sourceSets.main.allSource.srcDirs)
-  classDirectories =  files(jacocoProjects.sourceSets.main.output)
+  getExecutionData().from(files(jacocoProjects.jacocoTestReport.executionData))
+  getSourceDirectories().from(files(jacocoProjects.sourceSets.main.allSource.srcDirs))
+  getClassDirectories().from(files(jacocoProjects.sourceSets.main.output))
 
   reports {
     xml.enabled true
@@ -219,7 +199,7 @@ task jacocoRootTestReport(type: JacocoReport) {
 
   onlyIf = { true }
   doFirst {
-    executionData = files(executionData.findAll { it.exists() })
+    getExecutionData().from(files(executionData.findAll { it.exists() }))
   }
 }
 jacocoRootTestReport.dependsOn allprojects.test
