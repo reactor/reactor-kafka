@@ -156,7 +156,7 @@ public class MockReceiverTest {
         try {
             atomicHolder.set(null);
             cache.invoke(Schedulers.class, atomicHolder, "parallel",
-                (Supplier<Scheduler>) () -> Schedulers.fromExecutor((r) -> {
+                (Supplier<Scheduler>) () -> Schedulers.fromExecutor(r -> {
                     throw new RejectedExecutionException();
                 })
             );
@@ -194,7 +194,7 @@ public class MockReceiverTest {
         try {
             atomicHolder.set(null);
             cache.invoke(Schedulers.class, atomicHolder, "parallel",
-                (Supplier<Scheduler>) () -> Schedulers.fromExecutor((r) -> {
+                (Supplier<Scheduler>) () -> Schedulers.fromExecutor(r -> {
                     throw new RejectedExecutionException();
                 })
             );
