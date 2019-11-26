@@ -71,7 +71,8 @@ configure(rootProject) {
                 'source-highlighter': 'coderay'
     }
     task docsZip(type: Zip, dependsOn: asciidoctor) {
-        baseName = 'reactor-kafka-docs'
+        archiveBaseName.set('reactor-kafka')
+        archiveClassifier.set('docs')
         afterEvaluate() {
             //we copy the pdf late, when a potential customVersion has been applied to rootProject
             from("$buildDir/asciidoc/pdf/index.pdf") {
