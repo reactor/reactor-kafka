@@ -121,7 +121,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
                     senderRecords.subscribe(new SendSubscriber<>(producer, s, senderOptions.stopOnError()));
                 }
             }
-        .doOnError(e -> log.trace("Send failed with exception {}", e))
+        .doOnError(e -> log.trace("Send failed with exception", e))
         .publishOn(senderOptions.scheduler(), senderOptions.maxInFlight()));
     }
 
@@ -181,7 +181,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
                         Flux.from(records).subscribe(new SendSubscriberNoResponse(producer, s, senderOptions.stopOnError()));
                     }
                 }
-                .doOnError(e -> log.trace("Send failed with exception {}", e))
+                .doOnError(e -> log.trace("Send failed with exception", e))
                 .publishOn(senderOptions.scheduler(), senderOptions.maxInFlight())
             );
     }
@@ -296,7 +296,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
 
         @Override
         public void onError(Throwable t) {
-            log.trace("Sender failed with exception {}", t);
+            log.trace("Sender failed with exception", t);
             if (state.compareAndSet(SubscriberState.ACTIVE, SubscriberState.COMPLETE) ||
                     state.compareAndSet(SubscriberState.OUTBOUND_DONE, SubscriberState.COMPLETE)) {
                 actual.onError(t);
@@ -326,7 +326,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
         }
 
         public void handleError(Exception e, C correlation, boolean abort) {
-            log.error("error {}", e);
+            log.error("Sender failed", e);
             boolean complete = checkComplete(e);
             firstException.compareAndSet(null, e);
             if (!complete) {
