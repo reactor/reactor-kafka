@@ -3,6 +3,8 @@ jdk:
   - openjdk8
 
 sudo: required
+services:
+  - docker
 
 after_success:
   - bash <(curl -s https://codecov.io/bash)

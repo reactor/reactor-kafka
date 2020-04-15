@@ -17,44 +17,57 @@ package reactor.kafka;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Properties;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.DescribeTopicsResult;
+import org.apache.kafka.clients.admin.KafkaAdminClient;
+import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.TopicPartitionInfo;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
-import org.junit.After;
+import org.junit.Assume;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.rules.TestName;
 
-import kafka.admin.AdminUtils;
-import kafka.cluster.Partition;
-import kafka.utils.ZkUtils;
+import org.testcontainers.containers.KafkaContainer;
 import reactor.core.publisher.Flux;
-import reactor.kafka.cluster.EmbeddedKafkaCluster;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.SenderRecord;
 import reactor.kafka.util.TestUtils;
-import scala.Option;
 
 public abstract class AbstractKafkaTest {
 
     public static final int DEFAULT_TEST_TIMEOUT = 60_000;
 
-    private EmbeddedKafkaCluster embeddedKafka;
+    private static final KafkaContainer KAFKA = new KafkaContainer()
+            .withNetwork(null)
+            .withEnv("KAFKA_TRANSACTION_STATE_LOG_MIN_ISR", "1")
+            .withEnv("KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR", "1")
+            .withReuse(true);
 
     protected String topic;
     protected final int partitions = 4;
@@ -62,7 +75,6 @@ public abstract class AbstractKafkaTest {
     protected final long requestTimeoutMillis = 3000;
     protected final long sessionTimeoutMillis = 12000;
     private final long heartbeatIntervalMillis = 3000;
-    protected final int brokerId = 0;
 
     @Rule
     public final TestName testName = new TestName();
@@ -75,20 +87,14 @@ public abstract class AbstractKafkaTest {
 
     @Before
     public final void setUpAbstractKafkaTest() {
-        embeddedKafka = new EmbeddedKafkaCluster(1);
-        embeddedKafka.start();
+        KAFKA.start();
         senderOptions = SenderOptions.create(producerProps());
         receiverOptions = createReceiverOptions(testName.getMethodName());
         topic = createNewTopic();
     }
 
-    @After
-    public final void cleanup() {
-        embeddedKafka.shutdownBroker(0);
-    }
-
     protected String bootstrapServers() {
-        return embeddedKafka.bootstrapServers();
+        return KAFKA.getBootstrapServers();
     }
 
     public Map<String, Object> producerProps() {
@@ -173,15 +179,24 @@ public abstract class AbstractKafkaTest {
 
     protected String createNewTopic(String prefix) {
         String newTopic = prefix + "_" + System.nanoTime();
-        ZkUtils zkUtils = new ZkUtils(embeddedKafka.zkClient(), null, false);
-        Properties props = new Properties();
-        AdminUtils.createTopic(zkUtils, newTopic, partitions, 1, props, null);
-        waitForTopic(newTopic, 4, true);
+
+        try (
+            AdminClient adminClient = KafkaAdminClient.create(
+                Collections.singletonMap(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers())
+            )
+        ) {
+            adminClient.createTopics(Arrays.asList(new NewTopic(newTopic, partitions, (short) 1)))
+                    .all()
+                    .get(10, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        waitForTopic(newTopic, true);
         return newTopic;
     }
 
-    protected void waitForTopic(String topic, int partitions, boolean resetMessages) {
-        embeddedKafka.waitForTopic(topic);
+    protected void waitForTopic(String topic, boolean resetMessages) {
+        waitForTopic(topic);
         if (resetMessages) {
             expectedMessages.clear();
             receivedMessages.clear();
@@ -194,33 +209,73 @@ public abstract class AbstractKafkaTest {
         }
     }
 
+    private void waitForTopic(String topic) {
+        Map<String, Object> props = new HashMap<>();
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers());
+        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class);
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class);
+        props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, 1000);
+        try (KafkaProducer<byte[], byte[]> producer = new KafkaProducer<>(props)) {
+            int maxRetries = 10;
+            boolean done = false;
+            for (int i = 0; i < maxRetries && !done; i++) {
+                List<PartitionInfo> partitionInfo = producer.partitionsFor(topic);
+                done = !partitionInfo.isEmpty();
+                for (PartitionInfo info : partitionInfo) {
+                    if (info.leader() == null || info.leader().id() < 0)
+                        done = false;
+                }
+            }
+            assertTrue("Timed out waiting for topic", done);
+        }
+    }
+
     protected void waitForBrokers() {
-        embeddedKafka.waitForBrokers();
+        int maxRetries = 50;
+        for (int i = 0; i < maxRetries; i++) {
+            try {
+                bootstrapServers();
+                break;
+            } catch (Exception e) {
+                reactor.kafka.util.TestUtils.sleep(500);
+            }
+        }
+    }
+
+    protected void assumeBrokerRestartSupport() {
+        Assume.assumeTrue("supports broker restart", false);
     }
 
     protected void shutdownKafkaBroker() {
-        embeddedKafka.shutdownBroker(brokerId);
+        assumeBrokerRestartSupport();
+        // TODO embeddedKafka.shutdownBroker(brokerId);
     }
 
     protected void startKafkaBroker() {
-        embeddedKafka.startBroker(brokerId);
-    }
-
-    protected void restartKafkaBroker() {
-        embeddedKafka.restartBroker(brokerId);
-        waitForTopic(topic, partitions, false);
+        assumeBrokerRestartSupport();
+        // TODO embeddedKafka.restartBroker(brokerId);
+        waitForTopic(topic, false);
         for (int i = 0; i < partitions; i++) {
             TestUtils.waitUntil("Leader not elected", null, this::hasLeader, i, Duration.ofSeconds(5));
         }
     }
 
     private boolean hasLeader(int partition) {
-        try {
-            Option<Partition> partitionOpt = embeddedKafka.kafkaServer(brokerId).replicaManager().getPartition(new TopicPartition(topic, partition));
-            if (!partitionOpt.isDefined()) {
+        try (
+            AdminClient adminClient = KafkaAdminClient.create(
+                Collections.singletonMap(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers())
+            )
+        ) {
+            DescribeTopicsResult describeTopicsResult = adminClient.describeTopics(Arrays.asList(topic));
+            TopicDescription topicDescription = describeTopicsResult.values().get(topic).get(10, TimeUnit.SECONDS);
+
+            TopicPartitionInfo partitionInfo = topicDescription.partitions().get(partition);
+
+            if (partitionInfo == null) {
                 return false;
             }
-            return partitionOpt.get().leaderReplicaIfLocal().isDefined();
+
+            return partitionInfo.leader() != null;
         } catch (Exception e) {
             return false;
         }
