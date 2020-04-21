@@ -88,7 +88,6 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
 
     private final ConsumerFactory                                  consumerFactory;
     private final ReceiverOptions<K, V>                            receiverOptions;
-    private final List<Flux<? extends Event<?>>>                   fluxList;
     private final List<Disposable>                                 subscribeDisposables;
     private final AtomicLong                                       requestsPending;
     private final AtomicBoolean                                    needsHeartbeat;
@@ -102,12 +101,10 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
     private       AtmostOnceOffsets                                atmostOnceOffsets;
     private       EmitterProcessor<Event<?>>                       eventEmitter;
     private       FluxSink<Event<?>>                               eventSubmission;
-    private       EmitterProcessor<ConsumerRecords<K, V>>          recordEmitter;
     private       FluxSink<ConsumerRecords<K, V>>                  recordSubmission;
     private       InitEvent                                        initEvent;
     private       PollEvent                                        pollEvent;
     private       CommitEvent                                      commitEvent;
-    private       Flux<Event<?>>                                   eventFlux;
     private       Flux<ConsumerRecords<K, V>>                      consumerFlux;
     private       org.apache.kafka.clients.consumer.Consumer<K, V> consumer;
     private       org.apache.kafka.clients.consumer.Consumer<K, V> consumerProxy;
@@ -123,7 +120,6 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
     }
 
     public DefaultKafkaReceiver(ConsumerFactory consumerFactory, ReceiverOptions<K, V> receiverOptions) {
-        fluxList = new ArrayList<>();
         subscribeDisposables = new ArrayList<>();
         requestsPending = new AtomicLong();
         needsHeartbeat = new AtomicBoolean();
@@ -252,7 +248,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
 
         commitEvent = new CommitEvent();
 
-        recordEmitter = EmitterProcessor.create();
+        EmitterProcessor<ConsumerRecords<K, V>> recordEmitter = EmitterProcessor.create();
         recordSubmission = recordEmitter.sink();
         scheduler = Schedulers.single(receiverOptions.schedulerSupplier().get());
 
@@ -307,7 +303,6 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
         if (!isActive.compareAndSet(false, true))
             throw new IllegalStateException("Multiple subscribers are not supported for KafkaReceiver flux");
 
-        fluxList.clear();
         requestsPending.set(0);
         consecutiveCommitFailures.set(0);
         awaitingTransaction.set(false);
@@ -316,23 +311,31 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
         eventSubmission = eventEmitter.sink(OverflowStrategy.BUFFER);
         eventScheduler.start();
 
-        Flux<InitEvent> initFlux = Flux.just(initEvent);
+        Disposable eventLoopDisposable = eventEmitter
+            .as(flux -> {
+                switch (ackMode) {
+                    case AUTO_ACK:
+                    case MANUAL_ACK:
+                        Duration commitInterval = receiverOptions.commitInterval();
+                        if (commitInterval.isZero()) {
+                            return flux;
+                        }
 
-        fluxList.add(eventEmitter);
-        fluxList.add(initFlux);
+                        Flux<CommitEvent> periodicCommitFlux = Flux.interval(commitInterval)
+                            .onBackpressureLatest()
+                            .map(i -> commitEvent.periodicEvent());
 
-        Duration commitInterval = receiverOptions.commitInterval();
-        if ((ackMode == AckMode.AUTO_ACK || ackMode == AckMode.MANUAL_ACK) && !commitInterval.isZero()) {
-            Flux<CommitEvent> periodicCommitFlux = Flux.interval(receiverOptions.commitInterval())
-                                                       .onBackpressureLatest()
-                                                       .map(i -> commitEvent.periodicEvent());
-            fluxList.add(periodicCommitFlux);
-        }
+                        return flux.mergeWith(periodicCommitFlux);
+                    default:
+                        return flux;
+                }
+            })
+            .startWith(initEvent)
+            .publishOn(eventScheduler)
+            .doOnNext(this::doEvent)
+            .subscribe();
 
-        eventFlux = Flux.merge(fluxList)
-                        .publishOn(eventScheduler);
-
-        subscribeDisposables.add(eventFlux.subscribe(event -> doEvent(event)));
+        subscribeDisposables.add(eventLoopDisposable);
     }
 
     private void fail(Throwable e) {
@@ -365,7 +368,6 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
             } catch (Exception e) {
                 log.warn("Cancel exception: " + e);
             } finally {
-                fluxList.clear();
                 eventScheduler.dispose();
                 scheduler.dispose();
                 try {
