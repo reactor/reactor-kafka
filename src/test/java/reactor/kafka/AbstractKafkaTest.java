@@ -47,6 +47,7 @@ import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Before;
 import org.junit.Rule;
@@ -248,12 +249,12 @@ public abstract class AbstractKafkaTest {
 
     protected void shutdownKafkaBroker() {
         assumeBrokerRestartSupport();
-        // TODO embeddedKafka.shutdownBroker(brokerId);
+        Assert.fail("Not implemented");
     }
 
     protected void startKafkaBroker() {
         assumeBrokerRestartSupport();
-        // TODO embeddedKafka.restartBroker(brokerId);
+        Assert.fail("Not implemented");
         waitForTopic(topic, false);
         for (int i = 0; i < partitions; i++) {
             TestUtils.waitUntil("Leader not elected", null, this::hasLeader, i, Duration.ofSeconds(5));
