@@ -91,10 +91,13 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
     private final List<Disposable>                                 subscribeDisposables;
     private final AtomicLong                                       requestsPending;
     private final AtomicInteger                                    consecutiveCommitFailures;
-    private final KafkaSchedulers.EventScheduler                   eventScheduler;
     private final AtomicBoolean                                    isActive;
-    private final AtomicBoolean                                    isClosed;
     private final AtomicBoolean                                    awaitingTransaction;
+
+    final AtomicBoolean isClosed;
+
+    final KafkaSchedulers.EventScheduler eventScheduler;
+
     private       AtmostOnceOffsets                                atmostOnceOffsets;
     private       EmitterProcessor<Event<?>>                       eventEmitter;
     private       FluxSink<Event<?>>                               eventSubmission;
@@ -493,7 +496,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
     }
 
     class CommitEvent extends Event<Map<TopicPartition, OffsetAndMetadata>> {
-        private final CommittableBatch commitBatch;
+        final CommittableBatch commitBatch;
         final AckMode ackMode;
         private final AtomicBoolean isPending = new AtomicBoolean();
         private final AtomicInteger inProgress = new AtomicInteger();

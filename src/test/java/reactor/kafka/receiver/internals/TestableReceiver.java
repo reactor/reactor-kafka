@@ -63,13 +63,12 @@ public class TestableReceiver {
     }
 
     public void terminate() throws Exception {
-        Scheduler scheduler = TestUtils.getField(kafkaReceiver, "eventScheduler");
+        Scheduler scheduler = kafkaReceiver.eventScheduler;
         scheduler.dispose();
     }
 
     public Map<TopicPartition, Long> fluxOffsetMap() {
-        Map<TopicPartition, Long> commitOffsets = TestUtils.getField(kafkaReceiver, "commitEvent.commitBatch.consumedOffsets");
-        return commitOffsets;
+        return kafkaReceiver.commitEvent.commitBatch.consumedOffsets;
     }
 
     public Flux<ReceiverRecord<Integer, String>> receiveWithManualCommitFailures(boolean retriable, int failureCount,
@@ -123,7 +122,7 @@ public class TestableReceiver {
     }
 
     public void waitForClose() throws Exception {
-        AtomicBoolean receiverClosed = TestUtils.getField(kafkaReceiver, "isClosed");
+        AtomicBoolean receiverClosed = kafkaReceiver.isClosed;
         TestUtils.waitUntil("KafkaReceiver not closed", null, closed -> closed.get(), receiverClosed, Duration.ofMillis(10000));
     }
 

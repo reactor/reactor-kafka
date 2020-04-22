@@ -28,7 +28,7 @@ import reactor.core.publisher.MonoSink;
 
 class CommittableBatch {
 
-    private final Map<TopicPartition, Long> consumedOffsets;
+    final Map<TopicPartition, Long> consumedOffsets;
     private final Map<TopicPartition, Long> latestOffsets;
     private int batchSize;
     private List<MonoSink<Void>> callbackEmitters;

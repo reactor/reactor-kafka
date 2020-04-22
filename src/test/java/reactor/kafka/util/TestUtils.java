@@ -80,26 +80,6 @@ public class TestUtils {
         }
     }
 
-    @SuppressWarnings("unchecked")
-    public static <T> T getField(Object parentObj, String fieldPath) {
-        try {
-            Object obj = parentObj;
-            for (String field : fieldPath.split("\\."))
-                obj = MemberModifier.field(obj.getClass(), field).get(obj);
-            return (T) obj;
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    public static void setField(Object obj, String field, Object value) {
-        try {
-            MemberModifier.field(obj.getClass(), field).set(obj, value);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
     public static void execute(Runnable runnable, long maxTimeMs) throws Exception {
         execute(() -> {
             runnable.run();
