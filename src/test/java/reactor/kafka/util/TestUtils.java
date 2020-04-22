@@ -28,7 +28,6 @@ import java.util.regex.Pattern;
 
 import static org.junit.Assert.fail;
 
-import org.powermock.api.support.membermodification.MemberModifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
