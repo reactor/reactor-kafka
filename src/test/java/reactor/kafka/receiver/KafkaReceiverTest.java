@@ -779,7 +779,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         sendMessagesSync(0, sendBatchSize);
         shutdownKafkaBroker();
         TestUtils.sleep(5000);
-        restartKafkaBroker();
+        startKafkaBroker();
         sendMessagesSync(sendBatchSize, sendBatchSize);
         waitForMessages(receiveLatch);
         checkConsumedMessages();
