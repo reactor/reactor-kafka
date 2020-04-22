@@ -46,11 +46,13 @@ import org.apache.kafka.common.errors.ProducerFencedException;
 import org.apache.kafka.common.serialization.Serializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.After;
+import org.junit.AssumptionViolatedException;
 import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import reactor.core.Exceptions;
 import reactor.core.publisher.EmitterProcessor;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
@@ -115,6 +117,8 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                        .then()
                        .doOnError(t -> errorSemaphore.release())
                        .subscribe();
+        } catch (AssumptionViolatedException e) {
+            throw e;
         } catch (Exception e) {
             // ignore
             assertTrue("Invalid exception " + e, e.getClass().getName().contains("CancelException"));
@@ -264,6 +268,8 @@ public class KafkaSenderTest extends AbstractKafkaTest {
             kafkaSender.send(createSenderRecordErrorFlux(count, true, false))
                        .doOnError(t -> errorSemaphore.release())
                        .subscribe();
+        } catch (AssumptionViolatedException e) {
+            throw e;
         } catch (Exception e) {
             // ignore
             assertTrue("Invalid exception " + e, e.getClass().getName().contains("CancelException"));
@@ -314,7 +320,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                     .onErrorResume(e -> {
                         Thread.interrupted(); // clear any interrupts
                         waitForBrokers();
-                        waitForTopic(topic, partitions, false);
+                        waitForTopic(topic, false);
                         TestUtils.sleep(2000);
                         int next = lastSuccessful.get() + 1;
                         return outboundFlux(next, count - next);
@@ -448,7 +454,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                    .subscribe();
         shutdownKafkaBroker();
         Thread.sleep(200);
-        restartKafkaBroker();
+        startKafkaBroker();
         waitForMessages(consumer, count, true);
         checkConsumedMessages();
     }
@@ -567,6 +573,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
     }
 
     private Flux<ProducerRecord<Integer, String>> createOutboundErrorFlux(int count, boolean failOnError, boolean hasRetry) {
+        assumeBrokerRestartSupport();
         return Flux.range(0, count)
                    .map(i -> {
                        int failureIndex = 1;
@@ -577,10 +584,13 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                                shutdownKafkaBroker();
                            } else if (i == restartIndex) {
                                Thread.sleep(requestTimeoutMillis);     // wait for previous request to timeout
-                               restartKafkaBroker();
+                               startKafkaBroker();
                            }
-                       } catch (Exception e) {
+                       } catch (InterruptedException e) {
+                           Thread.currentThread().interrupt();
                            throw new RuntimeException(e);
+                       } catch (AssumptionViolatedException e) {
+                           throw Exceptions.bubble(e);
                        }
 
                        boolean expectSuccess = hasRetry || i < failureIndex || (!failOnError && i >= restartIndex);
