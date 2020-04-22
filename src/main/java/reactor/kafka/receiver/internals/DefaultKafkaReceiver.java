@@ -62,7 +62,7 @@ import reactor.kafka.receiver.ReceiverPartition;
 import reactor.kafka.receiver.internals.CommittableBatch.CommitArgs;
 import reactor.kafka.sender.TransactionManager;
 
-public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, ConsumerRebalanceListener {
+public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
 
     private static final Logger log = LoggerFactory.getLogger(DefaultKafkaReceiver.class.getName());
 
@@ -88,29 +88,21 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
 
     private final ConsumerFactory                                  consumerFactory;
     private final ReceiverOptions<K, V>                            receiverOptions;
-    private final List<Flux<? extends Event<?>>>                   fluxList;
     private final List<Disposable>                                 subscribeDisposables;
-    private final AtomicLong                                       requestsPending;
-    private final AtomicBoolean                                    needsHeartbeat;
-    private final AtomicInteger
-                                                                   consecutiveCommitFailures;
     private final KafkaSchedulers.EventScheduler                   eventScheduler;
     private final AtomicBoolean                                    isActive;
     private final AtomicBoolean                                    isClosed;
     private final AtomicBoolean                                    awaitingTransaction;
-    private       AckMode                                          ackMode;
     private       AtmostOnceOffsets                                atmostOnceOffsets;
     private       EmitterProcessor<Event<?>>                       eventEmitter;
     private       FluxSink<Event<?>>                               eventSubmission;
-    private       EmitterProcessor<ConsumerRecords<K, V>>          recordEmitter;
     private       FluxSink<ConsumerRecords<K, V>>                  recordSubmission;
-    private       InitEvent                                        initEvent;
     private       PollEvent                                        pollEvent;
-    private       CommitEvent                                      commitEvent;
-    private       Flux<Event<?>>                                   eventFlux;
     private       Flux<ConsumerRecords<K, V>>                      consumerFlux;
     private       org.apache.kafka.clients.consumer.Consumer<K, V> consumer;
     private       org.apache.kafka.clients.consumer.Consumer<K, V> consumerProxy;
+
+    CommitEvent commitEvent;
 
     Scheduler scheduler;
 
@@ -123,11 +115,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
     }
 
     public DefaultKafkaReceiver(ConsumerFactory consumerFactory, ReceiverOptions<K, V> receiverOptions) {
-        fluxList = new ArrayList<>();
         subscribeDisposables = new ArrayList<>();
-        requestsPending = new AtomicLong();
-        needsHeartbeat = new AtomicBoolean();
-        consecutiveCommitFailures = new AtomicInteger();
         isActive = new AtomicBoolean();
         isClosed = new AtomicBoolean();
         awaitingTransaction = new AtomicBoolean();
@@ -139,8 +127,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
 
     @Override
     public Flux<ReceiverRecord<K, V>> receive() {
-        this.ackMode = AckMode.MANUAL_ACK;
-        Flux<ConsumerRecord<K, V>> flux = createConsumerFlux()
+        Flux<ConsumerRecord<K, V>> flux = createConsumerFlux(AckMode.MANUAL_ACK)
                 .concatMap(Flux::fromIterable, Integer.MAX_VALUE);
         return withDoOnRequest(flux)
             .map(r -> {
@@ -152,8 +139,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
 
     @Override
     public Flux<Flux<ConsumerRecord<K, V>>> receiveAutoAck() {
-        this.ackMode = AckMode.AUTO_ACK;
-        Flux<ConsumerRecords<K, V>> flux = withDoOnRequest(createConsumerFlux());
+        Flux<ConsumerRecords<K, V>> flux = withDoOnRequest(createConsumerFlux(AckMode.AUTO_ACK));
         return flux
                 .map(consumerRecords -> Flux.fromIterable(consumerRecords)
                                             .doAfterTerminate(() -> {
@@ -164,9 +150,8 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
 
     @Override
     public Flux<ConsumerRecord<K, V>> receiveAtmostOnce() {
-        this.ackMode = AckMode.ATMOST_ONCE;
         atmostOnceOffsets = new AtmostOnceOffsets();
-        return createConsumerFlux()
+        return createConsumerFlux(AckMode.ATMOST_ONCE)
             .concatMap(cr -> Flux
                     .fromIterable(cr)
                     .concatMap(r -> {
@@ -192,8 +177,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
 
     @Override
     public Flux<Flux<ConsumerRecord<K, V>>> receiveExactlyOnce(TransactionManager transactionManager) {
-        this.ackMode = AckMode.EXACTLY_ONCE;
-        Flux<ConsumerRecords<K, V>> flux = withDoOnRequest(createConsumerFlux());
+        Flux<ConsumerRecords<K, V>> flux = withDoOnRequest(createConsumerFlux(AckMode.EXACTLY_ONCE));
         return  flux.map(consumerRecords -> transactionManager.begin()
                                  .then(Mono.fromCallable(() -> awaitingTransaction.getAndSet(true)))
                                  .thenMany(transactionalRecords(transactionManager, consumerRecords)))
@@ -219,18 +203,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
         });
     }
 
-    @Override
-    public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
-        log.debug("onPartitionsAssigned {}", partitions);
-        // onAssign methods may perform seek. It is safe to use the consumer here since we are in a poll()
-        if (!partitions.isEmpty()) {
-            for (Consumer<Collection<ReceiverPartition>> onAssign : receiverOptions.assignListeners())
-                onAssign.accept(toSeekable(partitions));
-        }
-    }
-
-    @Override
-    public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
+    private void onPartitionsRevoked(AckMode ackMode, Collection<TopicPartition> partitions) {
         log.debug("onPartitionsRevoked {}", partitions);
         if (!partitions.isEmpty()) {
             // It is safe to use the consumer here since we are in a poll()
@@ -242,17 +215,15 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
         }
     }
 
-    private synchronized Flux<ConsumerRecords<K, V>> createConsumerFlux() {
+    private synchronized Flux<ConsumerRecords<K, V>> createConsumerFlux(AckMode ackMode) {
         if (consumerFlux != null)
             throw new IllegalStateException("Multiple subscribers are not supported for KafkaReceiver flux");
 
-        Consumer<Flux<?>> kafkaSubscribeOrAssign = flux -> receiverOptions.subscriber(this).accept(consumer);
-        initEvent = new InitEvent(kafkaSubscribeOrAssign);
-        pollEvent = new PollEvent();
+        pollEvent = new PollEvent(ackMode);
 
-        commitEvent = new CommitEvent();
+        commitEvent = new CommitEvent(ackMode);
 
-        recordEmitter = EmitterProcessor.create();
+        EmitterProcessor<ConsumerRecords<K, V>> recordEmitter = EmitterProcessor.create();
         recordSubmission = recordEmitter.sink();
         scheduler = Schedulers.single(receiverOptions.schedulerSupplier().get());
 
@@ -260,24 +231,24 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
                 .publishOn(scheduler)
                 .doOnSubscribe(s -> {
                     try {
-                        start();
+                        start(ackMode);
                     } catch (Exception e) {
                         log.error("Subscription to event flux failed", e);
                         throw e;
                     }
                 })
                 .doOnRequest(r -> {
-                    if (requestsPending.get() > 0)
+                    if (pollEvent.requestsPending.get() > 0)
                         pollEvent.scheduleIfRequired();
                 })
-                .doAfterTerminate(this::dispose)
-                .doOnCancel(this::dispose);
+                .doAfterTerminate(() -> dispose(ackMode))
+                .doOnCancel(() -> dispose(ackMode));
         return consumerFlux;
     }
 
     private <T> Flux<T> withDoOnRequest(Flux<T> consumerFlux) {
         return consumerFlux.doOnRequest(toAdd -> {
-            if (OperatorUtils.safeAddAndGet(requestsPending, toAdd) > 0) {
+            if (OperatorUtils.safeAddAndGet(pollEvent.requestsPending, toAdd) > 0) {
                 pollEvent.scheduleIfRequired();
             }
         });
@@ -291,10 +262,6 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
         return commitEvent.commitBatch;
     }
 
-    void close() {
-        dispose(true);
-    }
-
     private Collection<ReceiverPartition> toSeekable(Collection<TopicPartition> partitions) {
         List<ReceiverPartition> seekableList = new ArrayList<>(partitions.size());
         for (TopicPartition partition : partitions)
@@ -302,37 +269,42 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
         return seekableList;
     }
 
-    private void start() {
+    private void start(AckMode ackMode) {
         log.debug("start");
         if (!isActive.compareAndSet(false, true))
             throw new IllegalStateException("Multiple subscribers are not supported for KafkaReceiver flux");
 
-        fluxList.clear();
-        requestsPending.set(0);
-        consecutiveCommitFailures.set(0);
         awaitingTransaction.set(false);
 
         eventEmitter = EmitterProcessor.create();
         eventSubmission = eventEmitter.sink(OverflowStrategy.BUFFER);
         eventScheduler.start();
 
-        Flux<InitEvent> initFlux = Flux.just(initEvent);
+        Disposable eventLoopDisposable = eventEmitter
+            .as(flux -> {
+                switch (ackMode) {
+                    case AUTO_ACK:
+                    case MANUAL_ACK:
+                        Duration commitInterval = receiverOptions.commitInterval();
+                        if (commitInterval.isZero()) {
+                            return flux;
+                        }
 
-        fluxList.add(eventEmitter);
-        fluxList.add(initFlux);
+                        Flux<CommitEvent> periodicCommitFlux = Flux.interval(commitInterval)
+                            .onBackpressureLatest()
+                            .map(i -> commitEvent.periodicEvent());
 
-        Duration commitInterval = receiverOptions.commitInterval();
-        if ((ackMode == AckMode.AUTO_ACK || ackMode == AckMode.MANUAL_ACK) && !commitInterval.isZero()) {
-            Flux<CommitEvent> periodicCommitFlux = Flux.interval(receiverOptions.commitInterval())
-                                                       .onBackpressureLatest()
-                                                       .map(i -> commitEvent.periodicEvent());
-            fluxList.add(periodicCommitFlux);
-        }
+                        return flux.mergeWith(periodicCommitFlux);
+                    default:
+                        return flux;
+                }
+            })
+            .startWith(new InitEvent(ackMode))
+            .publishOn(eventScheduler)
+            .doOnNext(this::doEvent)
+            .subscribe();
 
-        eventFlux = Flux.merge(fluxList)
-                        .publishOn(eventScheduler);
-
-        subscribeDisposables.add(eventFlux.subscribe(event -> doEvent(event)));
+        subscribeDisposables.add(eventLoopDisposable);
     }
 
     private void fail(Throwable e) {
@@ -340,21 +312,21 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
         recordSubmission.error(e);
     }
 
-    private void dispose() {
+    private void dispose(AckMode ackMode) {
         boolean isEventsThread = eventScheduler.isCurrentThreadFromScheduler();
         boolean isEventsEmitterAvailable =
                 !(eventSubmission.isCancelled() || eventEmitter.isTerminated() || eventEmitter.isCancelled());
-        this.dispose(!isEventsThread && isEventsEmitterAvailable);
+        this.dispose(!isEventsThread && isEventsEmitterAvailable, ackMode);
     }
 
-    private void dispose(boolean async) {
+    private void dispose(boolean async, AckMode ackMode) {
         log.debug("dispose {}", isActive);
         if (isActive.compareAndSet(true, false)) {
             boolean isConsumerClosed = consumer == null;
             try {
                 if (!isConsumerClosed) {
                     consumer.wakeup();
-                    CloseEvent closeEvent = new CloseEvent(receiverOptions.closeTimeout());
+                    CloseEvent closeEvent = new CloseEvent(receiverOptions.closeTimeout(), ackMode);
                     if (async) {
                         emit(closeEvent);
                         isConsumerClosed = closeEvent.await();
@@ -365,7 +337,6 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
             } catch (Exception e) {
                 log.warn("Cancel exception: " + e);
             } finally {
-                fluxList.clear();
                 eventScheduler.dispose();
                 scheduler.dispose();
                 try {
@@ -420,10 +391,11 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
 
     private class InitEvent extends Event<ConsumerRecords<K, V>> {
 
-        private final Consumer<Flux<?>> kafkaSubscribeOrAssign;
-        InitEvent(Consumer<Flux<?>> kafkaSubscribeOrAssign) {
+        private final AckMode ackMode;
+
+        InitEvent(AckMode ackMode) {
             super(EventType.INIT);
-            this.kafkaSubscribeOrAssign = kafkaSubscribeOrAssign;
+            this.ackMode = ackMode;
         }
         @Override
         public void run() {
@@ -431,7 +403,25 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
                 isActive.set(true);
                 isClosed.set(false);
                 consumer = consumerFactory.createConsumer(receiverOptions);
-                kafkaSubscribeOrAssign.accept(consumerFlux);
+
+                receiverOptions
+                        .subscriber(new ConsumerRebalanceListener() {
+                            @Override
+                            public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
+                                log.debug("onPartitionsAssigned {}", partitions);
+                                // onAssign methods may perform seek. It is safe to use the consumer here since we are in a poll()
+                                if (!partitions.isEmpty()) {
+                                    for (Consumer<Collection<ReceiverPartition>> onAssign : receiverOptions.assignListeners())
+                                        onAssign.accept(toSeekable(partitions));
+                                }
+                            }
+
+                            @Override
+                            public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
+                                DefaultKafkaReceiver.this.onPartitionsRevoked(ackMode, partitions);
+                            }
+                        })
+                        .accept(consumer);
             } catch (Exception e) {
                 if (isActive.get()) {
                     log.error("Unexpected exception", e);
@@ -445,14 +435,18 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
 
         private AtomicInteger pendingCount = new AtomicInteger();
         private final Duration pollTimeout;
+
+        private final AckMode ackMode;
         private final AtomicBoolean partitionsPaused = new AtomicBoolean();
-        PollEvent() {
+        private final AtomicLong requestsPending = new AtomicLong();
+
+        PollEvent(AckMode ackMode) {
             super(EventType.POLL);
+            this.ackMode = ackMode;
             pollTimeout = receiverOptions.pollTimeout();
         }
         @Override
         public void run() {
-            needsHeartbeat.set(false);
             try {
                 if (isActive.get()) {
                     // Ensure that commits are not queued behind polls since number of poll events is
@@ -495,10 +489,14 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
 
     class CommitEvent extends Event<Map<TopicPartition, OffsetAndMetadata>> {
         private final CommittableBatch commitBatch;
+        final AckMode ackMode;
         private final AtomicBoolean isPending = new AtomicBoolean();
         private final AtomicInteger inProgress = new AtomicInteger();
-        CommitEvent() {
+        private final AtomicInteger consecutiveCommitFailures = new AtomicInteger();
+
+        CommitEvent(AckMode ackMode) {
             super(EventType.COMMIT);
+            this.ackMode = ackMode;
             this.commitBatch = new CommittableBatch();
         }
         @Override
@@ -655,10 +653,12 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
     }
     private class CloseEvent extends Event<ConsumerRecords<K, V>> {
         private final long closeEndTimeNanos;
+        private final AckMode ackMode;
         private Semaphore semaphore = new Semaphore(0);
-        CloseEvent(Duration timeout) {
+        CloseEvent(Duration timeout, AckMode ackMode) {
             super(EventType.CLOSE);
             this.closeEndTimeNanos = System.nanoTime() + timeout.toNanos();
+            this.ackMode = ackMode;
         }
         @Override
         public void run() {
@@ -666,7 +666,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V>, Consumer
                 if (consumer != null) {
                     Collection<TopicPartition> manualAssignment = receiverOptions.assignment();
                     if (manualAssignment != null && !manualAssignment.isEmpty())
-                        onPartitionsRevoked(manualAssignment);
+                        onPartitionsRevoked(ackMode, manualAssignment);
                     int attempts = 3;
                     for (int i = 0; i < attempts; i++) {
                         try {

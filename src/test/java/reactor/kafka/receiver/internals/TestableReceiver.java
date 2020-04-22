@@ -36,6 +36,7 @@ import reactor.core.scheduler.Scheduler;
 import reactor.kafka.receiver.ReceiverRecord;
 import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOffset;
+import reactor.kafka.receiver.internals.DefaultKafkaReceiver.AckMode;
 import reactor.kafka.util.TestUtils;
 
 public class TestableReceiver {
@@ -111,7 +112,7 @@ public class TestableReceiver {
     }
 
     public void injectCommitEventForRetriableException() {
-        DefaultKafkaReceiver<?, ?>.CommitEvent newEvent = kafkaReceiver.new CommitEvent() {
+        kafkaReceiver.commitEvent = kafkaReceiver.new CommitEvent(AckMode.AUTO_ACK) {
             protected boolean isRetriableException(Exception exception) {
                 boolean retriable = exception instanceof RetriableCommitFailedException ||
                         exception.toString().contains(Errors.UNKNOWN_TOPIC_OR_PARTITION.exception().getMessage()) ||
@@ -119,7 +120,6 @@ public class TestableReceiver {
                 return retriable;
             }
         };
-        TestUtils.setField(kafkaReceiver, "commitEvent", newEvent);
     }
 
     public void waitForClose() throws Exception {
