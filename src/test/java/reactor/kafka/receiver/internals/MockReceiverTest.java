@@ -171,7 +171,9 @@ public class MockReceiverTest {
             } catch (Exception e) {
                 assertTrue(e instanceof RejectedExecutionException);
             }
-            assertTrue("Internals of KafkaReceive must be cleaned up", receiver.scheduler.isDisposed());
+            if (receiver.consumerFlux != null) {
+                assertTrue("Internals of KafkaReceive must be cleaned up", receiver.consumerFlux.scheduler.isDisposed());
+            }
             assumeTrue("Consumer should be closed if unexpected error occurred", consumer.closed());
         } finally {
             atomicHolder.set(null);
@@ -209,7 +211,9 @@ public class MockReceiverTest {
             } catch (Exception e) {
                 assertTrue(e instanceof RejectedExecutionException);
             }
-            assertTrue("Internals of KafkaReceive must be cleaned up", receiver.scheduler.isDisposed());
+            if (receiver.consumerFlux != null) {
+                assertTrue("Internals of KafkaReceive must be cleaned up", receiver.consumerFlux.scheduler.isDisposed());
+            }
             assumeTrue("Consumer should be closed if unexpected error occurred", consumer.closed());
         } finally {
             atomicHolder.set(null);
@@ -1252,7 +1256,7 @@ public class MockReceiverTest {
                         return true;
                     });
                     return mono.then(Mono.just(r))
-                               .publishOn(receiver.scheduler);
+                               .publishOn(receiver.consumerFlux.scheduler);
                 });
         sendMessages(topic, 0, 10);
         receiveAndVerify(inboundFlux, 10);
@@ -1301,7 +1305,7 @@ public class MockReceiverTest {
                         return true;
                     });
                     return mono.then(Mono.just(r))
-                               .publishOn(receiver.scheduler);
+                               .publishOn(receiver.consumerFlux.scheduler);
                 });
         StepVerifier.create(inboundFlux)
             .expectError(UnsupportedOperationException.class)
@@ -1400,7 +1404,7 @@ public class MockReceiverTest {
                 receiver
                 .receive()
                 .concatMap(r -> onNext.apply(r)
-                                      .publishOn(receiver.scheduler), 1);
+                                      .publishOn(receiver.consumerFlux.scheduler), 1);
         receiveAndVerify(inboundFlux, receiveCount);
     }
 
@@ -1433,7 +1437,7 @@ public class MockReceiverTest {
         DefaultKafkaReceiver<Integer, String> receiver = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions);
         StepVerifier.create(receiver.receive()
                                     .concatMap(r -> onNext.apply(r)
-                                                          .publishOn(receiver.scheduler)), 1)
+                                                          .publishOn(receiver.consumerFlux.scheduler)), 1)
             .expectErrorMatches(t -> {
                 if (t.getSuppressed().length > 0) {
                     for (Throwable suppressed: t.getSuppressed()) {
