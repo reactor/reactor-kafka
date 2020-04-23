@@ -18,7 +18,6 @@ package reactor.kafka.receiver.internals;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.Semaphore;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
 
@@ -36,7 +35,6 @@ import reactor.core.scheduler.Scheduler;
 import reactor.kafka.receiver.ReceiverRecord;
 import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOffset;
-import reactor.kafka.receiver.internals.DefaultKafkaReceiver.AckMode;
 import reactor.kafka.util.TestUtils;
 
 public class TestableReceiver {
@@ -63,19 +61,19 @@ public class TestableReceiver {
     }
 
     public void terminate() throws Exception {
-        Scheduler scheduler = kafkaReceiver.eventScheduler;
+        Scheduler scheduler = kafkaReceiver.consumerFlux.eventScheduler;
         scheduler.dispose();
     }
 
     public Map<TopicPartition, Long> fluxOffsetMap() {
-        return kafkaReceiver.commitEvent.commitBatch.consumedOffsets;
+        return kafkaReceiver.consumerFlux.commitEvent.commitBatch.consumedOffsets;
     }
 
     public Flux<ReceiverRecord<Integer, String>> receiveWithManualCommitFailures(boolean retriable, int failureCount,
             Semaphore receiveSemaphore, Semaphore successSemaphore, Semaphore failureSemaphore) {
         AtomicInteger retryCount = new AtomicInteger();
-        if (retriable)
-            injectCommitEventForRetriableException();
+//        if (retriable)
+//            injectCommitEventForRetriableException();
         return kafkaReceiver.receive()
                 .doOnSubscribe(s -> {
                     if (retriable)
@@ -111,7 +109,7 @@ public class TestableReceiver {
     }
 
     public void injectCommitEventForRetriableException() {
-        kafkaReceiver.commitEvent = kafkaReceiver.new CommitEvent(AckMode.AUTO_ACK) {
+        kafkaReceiver.consumerFlux.commitEvent = kafkaReceiver.consumerFlux.new CommitEvent() {
             protected boolean isRetriableException(Exception exception) {
                 boolean retriable = exception instanceof RetriableCommitFailedException ||
                         exception.toString().contains(Errors.UNKNOWN_TOPIC_OR_PARTITION.exception().getMessage()) ||
@@ -122,8 +120,15 @@ public class TestableReceiver {
     }
 
     public void waitForClose() throws Exception {
-        AtomicBoolean receiverClosed = kafkaReceiver.isClosed;
-        TestUtils.waitUntil("KafkaReceiver not closed", null, closed -> closed.get(), receiverClosed, Duration.ofMillis(10000));
+        TestUtils.waitUntil(
+            "KafkaReceiver not closed",
+            null,
+            ignored -> {
+                return kafkaReceiver.consumerFlux == null || kafkaReceiver.consumerFlux.isClosed.get();
+            },
+            null,
+            Duration.ofMillis(10000)
+        );
     }
 
     public static void setNonExistentPartition(ReceiverOffset offset) {

@@ -15,807 +15,123 @@
  */
 package reactor.kafka.receiver.internals;
 
-import java.lang.reflect.InvocationHandler;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Proxy;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Consumer;
 import java.util.function.Function;
 
-import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.consumer.OffsetAndMetadata;
-import org.apache.kafka.clients.consumer.RetriableCommitFailedException;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.errors.WakeupException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import reactor.core.Disposable;
-import reactor.core.publisher.EmitterProcessor;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.FluxSink;
-import reactor.core.publisher.FluxSink.OverflowStrategy;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.MonoSink;
-import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.ReceiverRecord;
 import reactor.kafka.receiver.KafkaReceiver;
-import reactor.kafka.receiver.ReceiverOffset;
-import reactor.kafka.receiver.ReceiverPartition;
-import reactor.kafka.receiver.internals.CommittableBatch.CommitArgs;
 import reactor.kafka.sender.TransactionManager;
 
 public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
 
-    private static final Logger log = LoggerFactory.getLogger(DefaultKafkaReceiver.class.getName());
+    private final ConsumerFactory consumerFactory;
 
-    /** Note: Methods added to this set should also be included in javadoc for {@link KafkaReceiver#doOnConsumer(Function)} */
-    private static final Set<String> DELEGATE_METHODS = new HashSet<>(Arrays.asList(
-        "assignment",
-        "subscription",
-        "seek",
-        "seekToBeginning",
-        "seekToEnd",
-        "position",
-        "committed",
-        "metrics",
-        "partitionsFor",
-        "listTopics",
-        "paused",
-        "pause",
-        "resume",
-        "offsetsForTimes",
-        "beginningOffsets",
-        "endOffsets"
-    ));
+    private final ReceiverOptions<K, V> receiverOptions;
 
-    private final ConsumerFactory                                  consumerFactory;
-    private final ReceiverOptions<K, V>                            receiverOptions;
-    private final List<Disposable>                                 subscribeDisposables;
-    private final AtomicBoolean                                    isActive;
-    private final AtomicBoolean                                    awaitingTransaction;
-
-    final AtomicBoolean isClosed;
-
-    final KafkaSchedulers.EventScheduler eventScheduler;
-
-    private       AtmostOnceOffsets                                atmostOnceOffsets;
-    private       EmitterProcessor<Event<?>>                       eventEmitter;
-    private       FluxSink<Event<?>>                               eventSubmission;
-    private       FluxSink<ConsumerRecords<K, V>>                  recordSubmission;
-    private       PollEvent                                        pollEvent;
-    private       Flux<ConsumerRecords<K, V>>                      consumerFlux;
-    private       org.apache.kafka.clients.consumer.Consumer<K, V> consumer;
-    private       org.apache.kafka.clients.consumer.Consumer<K, V> consumerProxy;
-
-    CommitEvent commitEvent;
-
-    Scheduler scheduler;
-
-    enum EventType {
-        INIT, POLL, COMMIT, CUSTOM, CLOSE
-    }
-
-    enum AckMode {
-        AUTO_ACK, MANUAL_ACK, ATMOST_ONCE, EXACTLY_ONCE
-    }
+    ConsumerFlux<K, V> consumerFlux;
 
     public DefaultKafkaReceiver(ConsumerFactory consumerFactory, ReceiverOptions<K, V> receiverOptions) {
-        subscribeDisposables = new ArrayList<>();
-        isActive = new AtomicBoolean();
-        isClosed = new AtomicBoolean();
-        awaitingTransaction = new AtomicBoolean();
-
         this.consumerFactory = consumerFactory;
         this.receiverOptions = receiverOptions.toImmutable();
-        this.eventScheduler = KafkaSchedulers.newEvent(receiverOptions.groupId());
     }
 
     @Override
     public Flux<ReceiverRecord<K, V>> receive() {
-        Flux<ConsumerRecord<K, V>> flux = createConsumerFlux(AckMode.MANUAL_ACK)
-                .concatMap(Flux::fromIterable, Integer.MAX_VALUE);
-        return withDoOnRequest(flux)
-            .map(r -> {
-                TopicPartition topicPartition = new TopicPartition(r.topic(), r.partition());
-                CommittableOffset committableOffset = new CommittableOffset(topicPartition, r.offset());
-                return new ReceiverRecord<>(r, committableOffset);
-            });
+        ConsumerFlux<K, V> consumerFlux = createConsumerFlux(AckMode.MANUAL_ACK);
+        return consumerFlux
+            .doAfterTerminate(this::dispose)
+            .doOnCancel(this::dispose)
+            .concatMap(Flux::fromIterable, Integer.MAX_VALUE)
+            .map(record -> new ReceiverRecord<>(
+                record,
+                consumerFlux.new CommittableOffset(record)
+            ))
+            .doOnRequest(consumerFlux::handleRequest);
     }
 
     @Override
     public Flux<Flux<ConsumerRecord<K, V>>> receiveAutoAck() {
-        Flux<ConsumerRecords<K, V>> flux = withDoOnRequest(createConsumerFlux(AckMode.AUTO_ACK));
-        return flux
-                .map(consumerRecords -> Flux.fromIterable(consumerRecords)
-                                            .doAfterTerminate(() -> {
-                                                for (ConsumerRecord<K, V> r : consumerRecords)
-                                                    new CommittableOffset(r).acknowledge();
-                                            }));
+        ConsumerFlux<K, V> consumerFlux = createConsumerFlux(AckMode.AUTO_ACK);
+        return consumerFlux
+            .doAfterTerminate(this::dispose)
+            .doOnCancel(this::dispose)
+            .doOnRequest(consumerFlux::handleRequest)
+            .map(consumerRecords -> {
+                return Flux.fromIterable(consumerRecords)
+                    .doAfterTerminate(() -> {
+                        for (ConsumerRecord<K, V> r : consumerRecords) {
+                            consumerFlux.new CommittableOffset(r).acknowledge();
+                        }
+                    });
+            });
     }
 
     @Override
     public Flux<ConsumerRecord<K, V>> receiveAtmostOnce() {
-        atmostOnceOffsets = new AtmostOnceOffsets();
-        return createConsumerFlux(AckMode.ATMOST_ONCE)
-            .concatMap(cr -> Flux
-                    .fromIterable(cr)
+        ConsumerFlux<K, V> consumerFlux = createConsumerFlux(AckMode.ATMOST_ONCE);
+        return consumerFlux
+            .doAfterTerminate(this::dispose)
+            .doOnCancel(this::dispose)
+            .concatMap(records -> {
+                return Flux
+                    .fromIterable(records)
                     .concatMap(r -> {
-                        long offset = r.offset();
-                        TopicPartition partition =
-                            new TopicPartition(r.topic(), r.partition());
-                        long committedOffset = atmostOnceOffsets.committedOffset(partition);
-                        atmostOnceOffsets.onDispatch(partition, offset);
-                        long commitAheadSize = receiverOptions.atmostOnceCommitAheadSize();
-                        CommittableOffset committable =
-                            new CommittableOffset(partition, offset + commitAheadSize);
-                        if (offset >= committedOffset)
-                            return committable.commit()
-                                              .then(Mono.just(r))
-                                              .publishOn(scheduler);
-                        else if (committedOffset - offset >= commitAheadSize / 2)
-                            committable.commit().subscribe();
-                        return Mono.just(r);
-                    }, Integer.MAX_VALUE),
-            Integer.MAX_VALUE)
-            .transform(this::withDoOnRequest);
+                        return consumerFlux.commit(r)
+                            // TODO remove?
+                            .publishOn(consumerFlux.scheduler)
+                            .thenReturn(r);
+                    }, Integer.MAX_VALUE);
+            }, Integer.MAX_VALUE)
+            .doOnRequest(consumerFlux::handleRequest);
     }
 
     @Override
     public Flux<Flux<ConsumerRecord<K, V>>> receiveExactlyOnce(TransactionManager transactionManager) {
-        Flux<ConsumerRecords<K, V>> flux = withDoOnRequest(createConsumerFlux(AckMode.EXACTLY_ONCE));
-        return  flux.map(consumerRecords -> transactionManager.begin()
-                                 .then(Mono.fromCallable(() -> awaitingTransaction.getAndSet(true)))
-                                 .thenMany(transactionalRecords(transactionManager, consumerRecords)))
-                                 .publishOn(transactionManager.scheduler());
-    }
+        ConsumerFlux<K, V> consumerFlux = createConsumerFlux(AckMode.EXACTLY_ONCE);
+        return consumerFlux
+            .doAfterTerminate(this::dispose)
+            .doOnCancel(this::dispose)
+            .doOnRequest(consumerFlux::handleRequest)
+            .map(consumerRecords -> {
+                if (consumerRecords.isEmpty()) {
+                    return Flux.<ConsumerRecord<K, V>>empty();
+                }
+                CommittableBatch offsetBatch = new CommittableBatch();
+                for (ConsumerRecord<K, V> r : consumerRecords) {
+                    offsetBatch.updateOffset(new TopicPartition(r.topic(), r.partition()), r.offset());
+                }
 
-    private Flux<ConsumerRecord<K, V>> transactionalRecords(TransactionManager transactionManager, ConsumerRecords<K, V> records) {
-        if (records.isEmpty())
-            return Flux.empty();
-        CommittableBatch offsetBatch = new CommittableBatch();
-        for (ConsumerRecord<K, V> r : records)
-            offsetBatch.updateOffset(new TopicPartition(r.topic(), r.partition()), r.offset());
-        return Flux.fromIterable(records)
-                   .concatWith(transactionManager.sendOffsets(offsetBatch.getAndClearOffsets().offsets(), receiverOptions.groupId()))
-                   .doAfterTerminate(() -> awaitingTransaction.set(false));
+                return transactionManager.begin()
+                    .then(Mono.fromRunnable(() -> consumerFlux.awaitingTransaction.getAndSet(true)))
+                    .thenMany(Flux.fromIterable(consumerRecords))
+                    .concatWith(transactionManager.sendOffsets(offsetBatch.getAndClearOffsets().offsets(), receiverOptions.groupId()))
+                    .doAfterTerminate(() -> consumerFlux.awaitingTransaction.set(false));
+            })
+            .publishOn(transactionManager.scheduler());
     }
 
     @Override
     public <T> Mono<T> doOnConsumer(Function<org.apache.kafka.clients.consumer.Consumer<K, V>, ? extends T> function) {
-        return Mono.create(monoSink -> {
-            CustomEvent<T> event = new CustomEvent<>(function, monoSink);
-            emit(event);
-        });
+        return Mono.defer(() -> consumerFlux.doOnConsumer(function));
     }
 
-    private void onPartitionsRevoked(AckMode ackMode, Collection<TopicPartition> partitions) {
-        log.debug("onPartitionsRevoked {}", partitions);
-        if (!partitions.isEmpty()) {
-            // It is safe to use the consumer here since we are in a poll()
-            if (ackMode != AckMode.ATMOST_ONCE)
-                commitEvent.runIfRequired(true);
-            for (Consumer<Collection<ReceiverPartition>> onRevoke : receiverOptions.revokeListeners()) {
-                onRevoke.accept(toSeekable(partitions));
-            }
-        }
-    }
-
-    private synchronized Flux<ConsumerRecords<K, V>> createConsumerFlux(AckMode ackMode) {
-        if (consumerFlux != null)
+    private synchronized ConsumerFlux<K, V> createConsumerFlux(AckMode ackMode) {
+        if (consumerFlux != null) {
             throw new IllegalStateException("Multiple subscribers are not supported for KafkaReceiver flux");
+        }
 
-        pollEvent = new PollEvent(ackMode);
-
-        commitEvent = new CommitEvent(ackMode);
-
-        EmitterProcessor<ConsumerRecords<K, V>> recordEmitter = EmitterProcessor.create();
-        recordSubmission = recordEmitter.sink();
-        scheduler = Schedulers.single(receiverOptions.schedulerSupplier().get());
-
-        consumerFlux = recordEmitter
-                .publishOn(scheduler)
-                .doOnSubscribe(s -> {
-                    try {
-                        start(ackMode);
-                    } catch (Exception e) {
-                        log.error("Subscription to event flux failed", e);
-                        throw e;
-                    }
-                })
-                .doOnRequest(r -> {
-                    if (pollEvent.requestsPending.get() > 0)
-                        pollEvent.scheduleIfRequired();
-                })
-                .doAfterTerminate(() -> dispose(ackMode))
-                .doOnCancel(() -> dispose(ackMode));
-        return consumerFlux;
+        return consumerFlux = new ConsumerFlux<>(ackMode, receiverOptions, consumerFactory);
     }
 
-    private <T> Flux<T> withDoOnRequest(Flux<T> consumerFlux) {
-        return consumerFlux.doOnRequest(toAdd -> {
-            if (OperatorUtils.safeAddAndGet(pollEvent.requestsPending, toAdd) > 0) {
-                pollEvent.scheduleIfRequired();
-            }
-        });
-    }
-
-    org.apache.kafka.clients.consumer.Consumer<K, V> kafkaConsumer() {
-        return consumer;
-    }
-
-    CommittableBatch committableBatch() {
-        return commitEvent.commitBatch;
-    }
-
-    private Collection<ReceiverPartition> toSeekable(Collection<TopicPartition> partitions) {
-        List<ReceiverPartition> seekableList = new ArrayList<>(partitions.size());
-        for (TopicPartition partition : partitions)
-            seekableList.add(new SeekablePartition(consumer, partition));
-        return seekableList;
-    }
-
-    private void start(AckMode ackMode) {
-        log.debug("start");
-        if (!isActive.compareAndSet(false, true))
-            throw new IllegalStateException("Multiple subscribers are not supported for KafkaReceiver flux");
-
-        awaitingTransaction.set(false);
-
-        eventEmitter = EmitterProcessor.create();
-        eventSubmission = eventEmitter.sink(OverflowStrategy.BUFFER);
-        eventScheduler.start();
-
-        Disposable eventLoopDisposable = eventEmitter
-            .as(flux -> {
-                switch (ackMode) {
-                    case AUTO_ACK:
-                    case MANUAL_ACK:
-                        Duration commitInterval = receiverOptions.commitInterval();
-                        if (commitInterval.isZero()) {
-                            return flux;
-                        }
-
-                        Flux<CommitEvent> periodicCommitFlux = Flux.interval(commitInterval)
-                            .onBackpressureLatest()
-                            .map(i -> commitEvent.periodicEvent());
-
-                        return flux.mergeWith(periodicCommitFlux);
-                    default:
-                        return flux;
-                }
-            })
-            .startWith(new InitEvent(ackMode))
-            .publishOn(eventScheduler)
-            .doOnNext(this::doEvent)
-            .subscribe();
-
-        subscribeDisposables.add(eventLoopDisposable);
-    }
-
-    private void fail(Throwable e) {
-        log.error("Consumer flux exception", e);
-        recordSubmission.error(e);
-    }
-
-    private void dispose(AckMode ackMode) {
-        boolean isEventsThread = eventScheduler.isCurrentThreadFromScheduler();
-        boolean isEventsEmitterAvailable =
-                !(eventSubmission.isCancelled() || eventEmitter.isTerminated() || eventEmitter.isCancelled());
-        this.dispose(!isEventsThread && isEventsEmitterAvailable, ackMode);
-    }
-
-    private void dispose(boolean async, AckMode ackMode) {
-        log.debug("dispose {}", isActive);
-        if (isActive.compareAndSet(true, false)) {
-            boolean isConsumerClosed = consumer == null;
-            try {
-                if (!isConsumerClosed) {
-                    consumer.wakeup();
-                    CloseEvent closeEvent = new CloseEvent(receiverOptions.closeTimeout(), ackMode);
-                    if (async) {
-                        emit(closeEvent);
-                        isConsumerClosed = closeEvent.await();
-                    } else {
-                        closeEvent.run();
-                    }
-                }
-            } catch (Exception e) {
-                log.warn("Cancel exception: " + e);
-            } finally {
-                eventScheduler.dispose();
-                scheduler.dispose();
-                try {
-                    for (Disposable disposable : subscribeDisposables)
-                        disposable.dispose();
-                } finally {
-                    // If the consumer was not closed within the specified timeout
-                    // try to close again. This is not safe, so ignore exceptions and
-                    // retry.
-                    int maxRetries = 10;
-                    for (int i = 0; i < maxRetries && !isConsumerClosed; i++) {
-                        try {
-                            if (consumer != null)
-                                consumer.close();
-                            isConsumerClosed = true;
-                        } catch (Exception e) {
-                            if (i == maxRetries - 1)
-                                log.warn("Consumer could not be closed", e);
-                        }
-                    }
-                    consumerFlux = null;
-                    consumerProxy = null;
-                    atmostOnceOffsets = null;
-                    isClosed.set(true);
-                }
-            }
-        }
-    }
-
-    private void doEvent(Event<?> event) {
-        log.trace("doEvent {}", event.eventType);
-        try {
-            event.run();
-        } catch (Exception e) {
-            fail(e);
-        }
-    }
-
-    private void emit(Event<?> event) {
-        eventSubmission.next(event);
-    }
-
-    abstract class Event<R> implements Runnable {
-        protected EventType eventType;
-        Event(EventType eventType) {
-            this.eventType = eventType;
-        }
-        public EventType eventType() {
-            return eventType;
-        }
-    }
-
-    private class InitEvent extends Event<ConsumerRecords<K, V>> {
-
-        private final AckMode ackMode;
-
-        InitEvent(AckMode ackMode) {
-            super(EventType.INIT);
-            this.ackMode = ackMode;
-        }
-        @Override
-        public void run() {
-            try {
-                isActive.set(true);
-                isClosed.set(false);
-                consumer = consumerFactory.createConsumer(receiverOptions);
-
-                receiverOptions
-                        .subscriber(new ConsumerRebalanceListener() {
-                            @Override
-                            public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
-                                log.debug("onPartitionsAssigned {}", partitions);
-                                // onAssign methods may perform seek. It is safe to use the consumer here since we are in a poll()
-                                if (!partitions.isEmpty()) {
-                                    for (Consumer<Collection<ReceiverPartition>> onAssign : receiverOptions.assignListeners())
-                                        onAssign.accept(toSeekable(partitions));
-                                }
-                            }
-
-                            @Override
-                            public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
-                                DefaultKafkaReceiver.this.onPartitionsRevoked(ackMode, partitions);
-                            }
-                        })
-                        .accept(consumer);
-            } catch (Exception e) {
-                if (isActive.get()) {
-                    log.error("Unexpected exception", e);
-                    fail(e);
-                }
-            }
-        }
-    }
-
-    private class PollEvent extends Event<ConsumerRecords<K, V>> {
-
-        private AtomicInteger pendingCount = new AtomicInteger();
-        private final Duration pollTimeout;
-
-        private final AckMode ackMode;
-        private final AtomicBoolean partitionsPaused = new AtomicBoolean();
-        private final AtomicLong requestsPending = new AtomicLong();
-
-        PollEvent(AckMode ackMode) {
-            super(EventType.POLL);
-            this.ackMode = ackMode;
-            pollTimeout = receiverOptions.pollTimeout();
-        }
-        @Override
-        public void run() {
-            try {
-                if (isActive.get()) {
-                    // Ensure that commits are not queued behind polls since number of poll events is
-                    // chosen by reactor.
-                    commitEvent.runIfRequired(false);
-                    pendingCount.decrementAndGet();
-                    if (requestsPending.get() > 0 && !awaitingTransaction.get()) {
-                        if (partitionsPaused.getAndSet(false))
-                            consumer.resume(consumer.assignment());
-                    } else {
-                        if (!partitionsPaused.getAndSet(true))
-                            consumer.pause(consumer.assignment());
-                    }
-
-                    ConsumerRecords<K, V> records = consumer.poll(pollTimeout);
-                    if (records.count() > 0) {
-                        recordSubmission.next(records);
-                    }
-                    if (isActive.get()) {
-                        int count = ((ackMode == AckMode.AUTO_ACK || ackMode == AckMode.EXACTLY_ONCE) && records.count() > 0) ? 1 : records.count();
-                        if (requestsPending.get() == Long.MAX_VALUE || requestsPending.addAndGet(0 - count) > 0 || commitEvent.inProgress.get() > 0)
-                            scheduleIfRequired();
-                    }
-                }
-            } catch (Exception e) {
-                if (isActive.get()) {
-                    log.error("Unexpected exception", e);
-                    fail(e);
-                }
-            }
-        }
-
-        void scheduleIfRequired() {
-            if (pendingCount.get() <= 0) {
-                emit(this);
-                pendingCount.incrementAndGet();
-            }
-        }
-    }
-
-    class CommitEvent extends Event<Map<TopicPartition, OffsetAndMetadata>> {
-        final CommittableBatch commitBatch;
-        final AckMode ackMode;
-        private final AtomicBoolean isPending = new AtomicBoolean();
-        private final AtomicInteger inProgress = new AtomicInteger();
-        private final AtomicInteger consecutiveCommitFailures = new AtomicInteger();
-
-        CommitEvent(AckMode ackMode) {
-            super(EventType.COMMIT);
-            this.ackMode = ackMode;
-            this.commitBatch = new CommittableBatch();
-        }
-        @Override
-        public void run() {
-            if (!isPending.compareAndSet(true, false))
-                return;
-            final CommitArgs commitArgs = commitBatch.getAndClearOffsets();
-            try {
-                if (commitArgs != null) {
-                    if (!commitArgs.offsets().isEmpty()) {
-                        inProgress.incrementAndGet();
-                        switch (ackMode) {
-                            case ATMOST_ONCE:
-                                try {
-                                    consumer.commitSync(commitArgs.offsets());
-                                    handleSuccess(commitArgs, commitArgs.offsets());
-                                    atmostOnceOffsets.onCommit(commitArgs.offsets());
-                                } catch (Exception e) {
-                                    handleFailure(commitArgs, e);
-                                }
-                                inProgress.decrementAndGet();
-                                break;
-                            case EXACTLY_ONCE:
-                                // Handled separately using transactional KafkaSender
-                                break;
-                            default:
-                                consumer.commitAsync(commitArgs.offsets(), (offsets, exception) -> {
-                                    inProgress.decrementAndGet();
-                                    if (exception == null)
-                                        handleSuccess(commitArgs, offsets);
-                                    else
-                                        handleFailure(commitArgs, exception);
-                                });
-                                pollEvent.scheduleIfRequired();
-                                break;
-                        }
-                        if (ackMode != AckMode.ATMOST_ONCE) {
-                        } else {
-                        }
-                    } else {
-                        handleSuccess(commitArgs, commitArgs.offsets());
-                    }
-                }
-            } catch (Exception e) {
-                log.error("Unexpected exception", e);
-                inProgress.decrementAndGet();
-                handleFailure(commitArgs, e);
-            }
-        }
-
-        void runIfRequired(boolean force) {
-            if (force)
-                isPending.set(true);
-            if (isPending.get())
-                run();
-        }
-
-        private void handleSuccess(CommitArgs commitArgs, Map<TopicPartition, OffsetAndMetadata> offsets) {
-            if (!offsets.isEmpty())
-                consecutiveCommitFailures.set(0);
-            if (commitArgs.callbackEmitters() != null) {
-                for (MonoSink<Void> emitter : commitArgs.callbackEmitters()) {
-                    emitter.success();
-                }
-            }
-        }
-
-        private void handleFailure(CommitArgs commitArgs, Exception exception) {
-            log.warn("Commit failed", exception);
-            boolean mayRetry = isRetriableException(exception) &&
-                    !isClosed.get() &&
-                    consecutiveCommitFailures.incrementAndGet() < receiverOptions.maxCommitAttempts();
-            if (!mayRetry) {
-                List<MonoSink<Void>> callbackEmitters = commitArgs.callbackEmitters();
-                if (callbackEmitters != null && !callbackEmitters.isEmpty()) {
-                    isPending.set(false);
-                    commitBatch.restoreOffsets(commitArgs, false);
-                    for (MonoSink<Void> emitter : callbackEmitters) {
-                        emitter.error(exception);
-                    }
-                } else
-                    fail(exception);
-            } else {
-                commitBatch.restoreOffsets(commitArgs, true);
-                log.warn("Commit failed with exception" + exception + ", retries remaining " + (receiverOptions.maxCommitAttempts() - consecutiveCommitFailures.get()));
-                isPending.set(true);
-                pollEvent.scheduleIfRequired();
-            }
-        }
-
-        private CommitEvent periodicEvent() {
-            isPending.set(true);
-            return this;
-        }
-
-        private void scheduleIfRequired() {
-            if (isActive.get() && isPending.compareAndSet(false, true))
-                emit(this);
-        }
-
-        private void waitFor(long endTimeNanos) {
-            while (inProgress.get() > 0 && endTimeNanos - System.nanoTime() > 0) {
-                consumer.poll(Duration.ofMillis(1));
-            }
-        }
-
-        protected boolean isRetriableException(Exception exception) { // allow override for testing
-            return exception instanceof RetriableCommitFailedException;
-        }
-    }
-
-    private class CustomEvent<T> extends Event<Void> {
-        private final Function<org.apache.kafka.clients.consumer.Consumer<K, V>, ? extends T> function;
-        private MonoSink<T> monoSink;
-        CustomEvent(Function<org.apache.kafka.clients.consumer.Consumer<K, V>, ? extends T> function,
-                MonoSink<T> monoSink) {
-            super(EventType.CUSTOM);
-            this.function = function;
-            this.monoSink = monoSink;
-        }
-        @Override
-        public void run() {
-            if (isActive.get()) {
-                try {
-                    T ret = function.apply(consumerProxy());
-                    monoSink.success(ret);
-                } catch (Throwable e) {
-                    monoSink.error(e);
-                }
-            }
-        }
-
-        @SuppressWarnings("unchecked")
-        private org.apache.kafka.clients.consumer.Consumer<K, V> consumerProxy() {
-            if (consumerProxy == null) {
-                Class<?>[] interfaces = new Class<?>[]{org.apache.kafka.clients.consumer.Consumer.class};
-                InvocationHandler handler = (proxy, method, args) -> {
-                    if (DELEGATE_METHODS.contains(method.getName())) {
-                        try {
-                            return method.invoke(consumer, args);
-                        } catch (InvocationTargetException e) {
-                            throw e.getCause();
-                        }
-                    } else
-                        throw new UnsupportedOperationException("Method is not supported: " + method);
-                };
-                consumerProxy = (org.apache.kafka.clients.consumer.Consumer<K, V>) Proxy.newProxyInstance(
-                        org.apache.kafka.clients.consumer.Consumer.class.getClassLoader(),
-                        interfaces,
-                        handler);
-            }
-            return consumerProxy;
-        }
-    }
-    private class CloseEvent extends Event<ConsumerRecords<K, V>> {
-        private final long closeEndTimeNanos;
-        private final AckMode ackMode;
-        private Semaphore semaphore = new Semaphore(0);
-        CloseEvent(Duration timeout, AckMode ackMode) {
-            super(EventType.CLOSE);
-            this.closeEndTimeNanos = System.nanoTime() + timeout.toNanos();
-            this.ackMode = ackMode;
-        }
-        @Override
-        public void run() {
-            try {
-                if (consumer != null) {
-                    Collection<TopicPartition> manualAssignment = receiverOptions.assignment();
-                    if (manualAssignment != null && !manualAssignment.isEmpty())
-                        onPartitionsRevoked(ackMode, manualAssignment);
-                    int attempts = 3;
-                    for (int i = 0; i < attempts; i++) {
-                        try {
-                            boolean forceCommit = true;
-                            if (ackMode == AckMode.ATMOST_ONCE)
-                                forceCommit = atmostOnceOffsets.undoCommitAhead(committableBatch());
-                            // For exactly-once, offsets are committed by a producer, consumer may be closed immediately
-                            if (ackMode != AckMode.EXACTLY_ONCE) {
-                                commitEvent.runIfRequired(forceCommit);
-                                commitEvent.waitFor(closeEndTimeNanos);
-                            }
-
-                            long timeoutNanos = closeEndTimeNanos - System.nanoTime();
-                            if (timeoutNanos < 0)
-                                timeoutNanos = 0;
-                            consumer.close(timeoutNanos, TimeUnit.NANOSECONDS);
-                            break;
-                        } catch (WakeupException e) {
-                            if (i == attempts - 1)
-                                throw e;
-                        }
-                    }
-                }
-                semaphore.release();
-            } catch (Exception e) {
-                log.error("Unexpected exception during close", e);
-                fail(e);
-            }
-        }
-        boolean await(long timeoutNanos) throws InterruptedException {
-            return semaphore.tryAcquire(timeoutNanos, TimeUnit.NANOSECONDS);
-        }
-        boolean await() {
-            boolean closed = false;
-            long remainingNanos;
-            while (!closed && (remainingNanos = closeEndTimeNanos - System.nanoTime()) > 0) {
-                try {
-                    closed = await(remainingNanos);
-                } catch (InterruptedException e) {
-                    // ignore
-                }
-            }
-            return closed;
-        }
-    }
-
-    class CommittableOffset implements ReceiverOffset {
-
-        private final TopicPartition topicPartition;
-        private final long commitOffset;
-        private final AtomicBoolean acknowledged;
-
-        public CommittableOffset(ConsumerRecord<K, V> record) {
-            this(new TopicPartition(record.topic(), record.partition()), record.offset());
-        }
-
-        public CommittableOffset(TopicPartition topicPartition, long nextOffset) {
-            this.topicPartition = topicPartition;
-            this.commitOffset = nextOffset;
-            this.acknowledged = new AtomicBoolean(false);
-        }
-
-        @Override
-        public Mono<Void> commit() {
-            if (maybeUpdateOffset() > 0)
-                return scheduleCommit();
-            else
-                return Mono.empty();
-        }
-
-        @Override
-        public void acknowledge() {
-            int commitBatchSize = receiverOptions.commitBatchSize();
-            long uncommittedCount = maybeUpdateOffset();
-            if (commitBatchSize > 0 && uncommittedCount >= commitBatchSize)
-                scheduleIfRequired();
-        }
-
-        @Override
-        public TopicPartition topicPartition() {
-            return topicPartition;
-        }
-
-        @Override
-        public long offset() {
-            return commitOffset;
-        }
-
-        private int maybeUpdateOffset() {
-            if (acknowledged.compareAndSet(false, true))
-                return commitEvent.commitBatch.updateOffset(topicPartition, commitOffset);
-            else
-                return commitEvent.commitBatch.batchSize();
-        }
-
-        private Mono<Void> scheduleCommit() {
-            return Mono.create(emitter -> {
-                commitEvent.commitBatch.addCallbackEmitter(emitter);
-                scheduleIfRequired();
-            });
-        }
-
-        private void scheduleIfRequired() {
-            commitEvent.scheduleIfRequired();
-        }
-
-        @Override
-        public String toString() {
-            return topicPartition + "@" + commitOffset;
-        }
-    }
-
-    private static class AtmostOnceOffsets {
-        private final Map<TopicPartition, Long> committedOffsets;
-        private final Map<TopicPartition, Long> dispatchedOffsets;
-
-        AtmostOnceOffsets() {
-            this.committedOffsets = new ConcurrentHashMap<TopicPartition, Long>();
-            this.dispatchedOffsets = new ConcurrentHashMap<TopicPartition, Long>();
-        }
-
-        void onCommit(Map<TopicPartition, OffsetAndMetadata> offsets) {
-            for (Map.Entry<TopicPartition, OffsetAndMetadata> entry : offsets.entrySet())
-                committedOffsets.put(entry.getKey(), entry.getValue().offset());
-        }
-
-        void onDispatch(TopicPartition topicPartition, long offset) {
-            dispatchedOffsets.put(topicPartition, offset);
-        }
-
-        long committedOffset(TopicPartition topicPartition) {
-            Long offset = committedOffsets.get(topicPartition);
-            return offset == null ? -1 : offset.longValue();
-        }
-
-        boolean undoCommitAhead(CommittableBatch committableBatch) {
-            boolean undoRequired = false;
-            for (Map.Entry<TopicPartition, Long> entry : committedOffsets.entrySet()) {
-                TopicPartition topicPartition = entry.getKey();
-                long offsetToCommit = dispatchedOffsets.get(entry.getKey()) + 1;
-                if (entry.getValue() > offsetToCommit) {
-                    committableBatch.updateOffset(topicPartition, offsetToCommit);
-                    undoRequired = true;
-                }
-            }
-            return undoRequired;
+    private synchronized void dispose() {
+        if (consumerFlux != null) {
+            consumerFlux.dispose();
+            consumerFlux = null;
         }
     }
 }
