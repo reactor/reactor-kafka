@@ -31,7 +31,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import reactor.core.publisher.Flux;
-import reactor.core.scheduler.Scheduler;
 import reactor.kafka.receiver.ReceiverRecord;
 import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOffset;
@@ -60,11 +59,6 @@ public class TestableReceiver {
         return kafkaFlux;
     }
 
-    public void terminate() throws Exception {
-        Scheduler scheduler = kafkaReceiver.consumerFlux.eventScheduler;
-        scheduler.dispose();
-    }
-
     public Map<TopicPartition, Long> fluxOffsetMap() {
         return kafkaReceiver.consumerFlux.commitEvent.commitBatch.consumedOffsets;
     }
@@ -72,8 +66,6 @@ public class TestableReceiver {
     public Flux<ReceiverRecord<Integer, String>> receiveWithManualCommitFailures(boolean retriable, int failureCount,
             Semaphore receiveSemaphore, Semaphore successSemaphore, Semaphore failureSemaphore) {
         AtomicInteger retryCount = new AtomicInteger();
-//        if (retriable)
-//            injectCommitEventForRetriableException();
         return kafkaReceiver.receive()
                 .doOnSubscribe(s -> {
                     if (retriable)
