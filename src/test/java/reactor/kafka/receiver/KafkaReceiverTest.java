@@ -1292,7 +1292,6 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     private void restartAndCheck(KafkaReceiver<Integer, String> receiver,
             int sendStartIndex, int sendCount, int maxRedelivered) throws Exception {
         Thread.sleep(500); // Give a little time for commits to complete before terminating abruptly
-        new TestableReceiver(receiver).terminate();
         cancelSubscriptions(true);
         clearReceivedMessages();
         Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux2 = createReceiver().receiveAtmostOnce();

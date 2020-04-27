@@ -34,8 +34,9 @@ class CommittableBatch {
     private List<MonoSink<Void>> callbackEmitters = new ArrayList<>();
 
     public synchronized int updateOffset(TopicPartition topicPartition, long offset) {
-        if (consumedOffsets.put(topicPartition, offset) != (Long) offset)
+        if (!((Long) offset).equals(consumedOffsets.put(topicPartition, offset))) {
             batchSize++;
+        }
         return batchSize;
     }
 

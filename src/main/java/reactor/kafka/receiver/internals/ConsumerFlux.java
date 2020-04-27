@@ -17,13 +17,13 @@ import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoSink;
 import reactor.core.publisher.Operators;
+import reactor.core.publisher.UnicastProcessor;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOffset;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.ReceiverPartition;
-import reactor.kafka.receiver.internals.KafkaSchedulers.EventScheduler;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
@@ -36,7 +36,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.Semaphore;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -80,7 +80,7 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
 
     final FluxSink<ConsumerRecords<K, V>> recordSubmission = recordEmitter.sink();
 
-    AtmostOnceOffsets atmostOnceOffsets = new AtmostOnceOffsets();
+    final AtmostOnceOffsets atmostOnceOffsets = new AtmostOnceOffsets();
 
     final PollEvent pollEvent;
 
@@ -92,15 +92,13 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
 
     final Scheduler scheduler;
 
-    final EventScheduler eventScheduler;
-
     CommitEvent commitEvent;
 
     org.apache.kafka.clients.consumer.Consumer<K, V> consumer;
 
     org.apache.kafka.clients.consumer.Consumer<K, V> consumerProxy;
 
-    EmitterProcessor<Event> eventEmitter;
+    UnicastProcessor<Event> eventEmitter;
 
     FluxSink<Event> eventSubmission;
 
@@ -116,7 +114,6 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
         pollEvent = new PollEvent();
         commitEvent = new CommitEvent();
         scheduler = Schedulers.single(receiverOptions.schedulerSupplier().get());
-        eventScheduler = KafkaSchedulers.newEvent(receiverOptions.groupId());
     }
 
     @Override
@@ -170,13 +167,17 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
 
     private void start() {
         log.debug("start");
-        if (!isActive.compareAndSet(false, true))
+        if (!isActive.compareAndSet(false, true)) {
             throw new IllegalStateException("Multiple subscribers are not supported for KafkaReceiver flux");
+        }
 
         awaitingTransaction.set(false);
 
-        eventEmitter = EmitterProcessor.create();
+        eventEmitter = UnicastProcessor.create();
         eventSubmission = eventEmitter.sink(FluxSink.OverflowStrategy.BUFFER);
+
+        Scheduler eventScheduler = KafkaSchedulers.newEvent(receiverOptions.groupId());
+        this.subscribeDisposables.add(eventScheduler);
         eventScheduler.start();
 
         Disposable eventLoopDisposable = eventEmitter
@@ -215,51 +216,61 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
 
     @Override
     public void dispose() {
-        boolean isEventsThread = eventScheduler.isCurrentThreadFromScheduler();
-        boolean isEventsEmitterAvailable =
-            !(eventSubmission.isCancelled() || eventEmitter.isTerminated() || eventEmitter.isCancelled());
-        boolean async = !isEventsThread && isEventsEmitterAvailable;
-
         log.debug("dispose {}", isActive);
-        if (isActive.compareAndSet(true, false)) {
-            boolean isConsumerClosed = consumer == null;
+        if (!isActive.compareAndSet(true, false)) {
+            return;
+        }
+
+        boolean isConsumerClosed = consumer == null;
+        if (isConsumerClosed) {
+            return;
+        }
+
+        try {
+            consumer.wakeup();
+            CloseEvent closeEvent = new CloseEvent(receiverOptions.closeTimeout());
+
+            boolean isEventsThread = KafkaSchedulers.isCurrentThreadFromScheduler();
+            if (isEventsThread) {
+                closeEvent.run();
+                return;
+            }
+
+            boolean isEventsEmitterAvailable =
+                !(eventSubmission.isCancelled() || eventEmitter.isDisposed());
+            if (!isEventsEmitterAvailable) {
+                closeEvent.run();
+                return;
+            }
+
+            eventSubmission.next(closeEvent);
+            isConsumerClosed = closeEvent.await();
+        } catch (Exception e) {
+            log.warn("Cancel exception: " + e);
+        } finally {
+            scheduler.dispose();
             try {
-                if (!isConsumerClosed) {
-                    consumer.wakeup();
-                    CloseEvent closeEvent = new CloseEvent(receiverOptions.closeTimeout());
-                    if (async) {
-                        eventSubmission.next(closeEvent);
-                        isConsumerClosed = closeEvent.await();
-                    } else {
-                        closeEvent.run();
-                    }
+                for (Disposable disposable : subscribeDisposables) {
+                    disposable.dispose();
                 }
-            } catch (Exception e) {
-                log.warn("Cancel exception: " + e);
             } finally {
-                eventScheduler.dispose();
-                scheduler.dispose();
-                try {
-                    for (Disposable disposable : subscribeDisposables)
-                        disposable.dispose();
-                } finally {
-                    // If the consumer was not closed within the specified timeout
-                    // try to close again. This is not safe, so ignore exceptions and
-                    // retry.
-                    int maxRetries = 10;
-                    for (int i = 0; i < maxRetries && !isConsumerClosed; i++) {
-                        try {
-                            if (consumer != null)
-                                consumer.close();
-                            isConsumerClosed = true;
-                        } catch (Exception e) {
-                            if (i == maxRetries - 1)
-                                log.warn("Consumer could not be closed", e);
+                // If the consumer was not closed within the specified timeout
+                // try to close again. This is not safe, so ignore exceptions and
+                // retry.
+                int maxRetries = 10;
+                for (int i = 0; i < maxRetries && !isConsumerClosed; i++) {
+                    try {
+                        if (consumer != null) {
+                            consumer.close();
+                        }
+                        isConsumerClosed = true;
+                    } catch (Exception e) {
+                        if (i == maxRetries - 1) {
+                            log.warn("Consumer could not be closed", e);
                         }
                     }
-                    isClosed.set(true);
-                    atmostOnceOffsets = null;
                 }
+                isClosed.set(true);
             }
         }
     }
@@ -533,7 +544,7 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
     }
     private class CloseEvent extends Event {
         private final long closeEndTimeNanos;
-        private final Semaphore semaphore = new Semaphore(0);
+        private final CountDownLatch latch = new CountDownLatch(1);
         CloseEvent(Duration timeout) {
             this.closeEndTimeNanos = System.nanoTime() + timeout.toNanos();
         }
@@ -568,14 +579,14 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
                         }
                     }
                 }
-                semaphore.release();
+                latch.countDown();
             } catch (Exception e) {
                 log.error("Unexpected exception during close", e);
                 fail(e);
             }
         }
         boolean await(long timeoutNanos) throws InterruptedException {
-            return semaphore.tryAcquire(timeoutNanos, TimeUnit.NANOSECONDS);
+            return latch.await(timeoutNanos, TimeUnit.NANOSECONDS);
         }
         boolean await() {
             boolean closed = false;

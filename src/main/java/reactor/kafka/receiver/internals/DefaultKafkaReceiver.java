@@ -44,9 +44,8 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
     public Flux<ReceiverRecord<K, V>> receive() {
         ConsumerFlux<K, V> consumerFlux = createConsumerFlux(AckMode.MANUAL_ACK);
         return consumerFlux
-            .doAfterTerminate(this::dispose)
-            .doOnCancel(this::dispose)
-            .concatMap(Flux::fromIterable, Integer.MAX_VALUE)
+            .doFinally(signal -> dispose())
+            .flatMapIterable(it -> it)
             .map(record -> new ReceiverRecord<>(
                 record,
                 consumerFlux.new CommittableOffset(record)
@@ -58,8 +57,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
     public Flux<Flux<ConsumerRecord<K, V>>> receiveAutoAck() {
         ConsumerFlux<K, V> consumerFlux = createConsumerFlux(AckMode.AUTO_ACK);
         return consumerFlux
-            .doAfterTerminate(this::dispose)
-            .doOnCancel(this::dispose)
+            .doFinally(signal -> dispose())
             .doOnRequest(consumerFlux::handleRequest)
             .map(consumerRecords -> {
                 return Flux.fromIterable(consumerRecords)
@@ -75,8 +73,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
     public Flux<ConsumerRecord<K, V>> receiveAtmostOnce() {
         ConsumerFlux<K, V> consumerFlux = createConsumerFlux(AckMode.ATMOST_ONCE);
         return consumerFlux
-            .doAfterTerminate(this::dispose)
-            .doOnCancel(this::dispose)
+            .doFinally(signal -> dispose())
             .concatMap(records -> {
                 return Flux
                     .fromIterable(records)
@@ -94,8 +91,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
     public Flux<Flux<ConsumerRecord<K, V>>> receiveExactlyOnce(TransactionManager transactionManager) {
         ConsumerFlux<K, V> consumerFlux = createConsumerFlux(AckMode.EXACTLY_ONCE);
         return consumerFlux
-            .doAfterTerminate(this::dispose)
-            .doOnCancel(this::dispose)
+            .doFinally(signal -> dispose())
             .doOnRequest(consumerFlux::handleRequest)
             .map(consumerRecords -> {
                 if (consumerRecords.isEmpty()) {
@@ -107,8 +103,10 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
                 }
 
                 return transactionManager.begin()
-                    .then(Mono.fromRunnable(() -> consumerFlux.awaitingTransaction.getAndSet(true)))
-                    .thenMany(Flux.fromIterable(consumerRecords))
+                    .thenMany(Flux.defer(() -> {
+                        consumerFlux.awaitingTransaction.getAndSet(true);
+                        return Flux.fromIterable(consumerRecords);
+                    }))
                     .concatWith(transactionManager.sendOffsets(offsetBatch.getAndClearOffsets().offsets(), receiverOptions.groupId()))
                     .doAfterTerminate(() -> consumerFlux.awaitingTransaction.set(false));
             })
