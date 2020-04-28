@@ -22,6 +22,8 @@ import org.apache.kafka.common.TopicPartition;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.ReceiverRecord;
 import reactor.kafka.receiver.KafkaReceiver;
@@ -35,6 +37,8 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
 
     ConsumerFlux<K, V> consumerFlux;
 
+    Scheduler scheduler;
+
     public DefaultKafkaReceiver(ConsumerFactory consumerFactory, ReceiverOptions<K, V> receiverOptions) {
         this.consumerFactory = consumerFactory;
         this.receiverOptions = receiverOptions.toImmutable();
@@ -44,6 +48,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
     public Flux<ReceiverRecord<K, V>> receive() {
         ConsumerFlux<K, V> consumerFlux = createConsumerFlux(AckMode.MANUAL_ACK);
         return consumerFlux
+            .publishOn(scheduler)
             .doFinally(signal -> dispose())
             .flatMapIterable(it -> it)
             .map(record -> new ReceiverRecord<>(
@@ -57,6 +62,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
     public Flux<Flux<ConsumerRecord<K, V>>> receiveAutoAck() {
         ConsumerFlux<K, V> consumerFlux = createConsumerFlux(AckMode.AUTO_ACK);
         return consumerFlux
+            .publishOn(scheduler)
             .doFinally(signal -> dispose())
             .doOnRequest(consumerFlux::handleRequest)
             .map(consumerRecords -> {
@@ -73,6 +79,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
     public Flux<ConsumerRecord<K, V>> receiveAtmostOnce() {
         ConsumerFlux<K, V> consumerFlux = createConsumerFlux(AckMode.ATMOST_ONCE);
         return consumerFlux
+            .publishOn(scheduler)
             .doFinally(signal -> dispose())
             .concatMap(records -> {
                 return Flux
@@ -80,7 +87,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
                     .concatMap(r -> {
                         return consumerFlux.commit(r)
                             // TODO remove?
-                            .publishOn(consumerFlux.scheduler)
+                            .publishOn(scheduler)
                             .thenReturn(r);
                     }, Integer.MAX_VALUE);
             }, Integer.MAX_VALUE)
@@ -91,6 +98,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
     public Flux<Flux<ConsumerRecord<K, V>>> receiveExactlyOnce(TransactionManager transactionManager) {
         ConsumerFlux<K, V> consumerFlux = createConsumerFlux(AckMode.EXACTLY_ONCE);
         return consumerFlux
+            .publishOn(scheduler)
             .doFinally(signal -> dispose())
             .doOnRequest(consumerFlux::handleRequest)
             .map(consumerRecords -> {
@@ -123,12 +131,15 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
             throw new IllegalStateException("Multiple subscribers are not supported for KafkaReceiver flux");
         }
 
+        scheduler = Schedulers.single(receiverOptions.schedulerSupplier().get());
+
         return consumerFlux = new ConsumerFlux<>(ackMode, receiverOptions, consumerFactory);
     }
 
     private synchronized void dispose() {
         if (consumerFlux != null) {
             consumerFlux.dispose();
+            scheduler.dispose();
             consumerFlux = null;
         }
     }
