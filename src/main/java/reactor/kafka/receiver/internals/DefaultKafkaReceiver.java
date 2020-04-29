@@ -48,6 +48,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
     public Flux<ReceiverRecord<K, V>> receive() {
         ConsumerFlux<K, V> consumerFlux = createConsumerFlux(AckMode.MANUAL_ACK);
         return consumerFlux
+            .onBackpressureBuffer()
             .publishOn(scheduler)
             .doFinally(signal -> dispose())
             .flatMapIterable(it -> it)
@@ -62,6 +63,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
     public Flux<Flux<ConsumerRecord<K, V>>> receiveAutoAck() {
         ConsumerFlux<K, V> consumerFlux = createConsumerFlux(AckMode.AUTO_ACK);
         return consumerFlux
+            .onBackpressureBuffer()
             .publishOn(scheduler)
             .doFinally(signal -> dispose())
             .doOnRequest(consumerFlux::handleRequest)
@@ -79,6 +81,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
     public Flux<ConsumerRecord<K, V>> receiveAtmostOnce() {
         ConsumerFlux<K, V> consumerFlux = createConsumerFlux(AckMode.ATMOST_ONCE);
         return consumerFlux
+            .onBackpressureBuffer()
             .publishOn(scheduler)
             .doFinally(signal -> dispose())
             .concatMap(records -> {
@@ -98,6 +101,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
     public Flux<Flux<ConsumerRecord<K, V>>> receiveExactlyOnce(TransactionManager transactionManager) {
         ConsumerFlux<K, V> consumerFlux = createConsumerFlux(AckMode.EXACTLY_ONCE);
         return consumerFlux
+            .onBackpressureBuffer()
             .publishOn(scheduler)
             .doFinally(signal -> dispose())
             .doOnRequest(consumerFlux::handleRequest)
