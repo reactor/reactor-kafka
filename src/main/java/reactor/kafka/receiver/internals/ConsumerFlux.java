@@ -7,19 +7,16 @@ import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.consumer.RetriableCommitFailedException;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.WakeupException;
+import org.reactivestreams.Subscription;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.CoreSubscriber;
 import reactor.core.Disposable;
-import reactor.core.publisher.EmitterProcessor;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoSink;
 import reactor.core.publisher.Operators;
-import reactor.core.publisher.UnicastProcessor;
 import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
 import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOffset;
 import reactor.kafka.receiver.ReceiverOptions;
@@ -72,13 +69,7 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
 
     final AtomicBoolean isClosed = new AtomicBoolean();
 
-    final List<Disposable> subscribeDisposables = new ArrayList<>();
-
     final AtomicBoolean awaitingTransaction = new AtomicBoolean();
-
-    final EmitterProcessor<ConsumerRecords<K, V>> recordEmitter = EmitterProcessor.create();
-
-    final FluxSink<ConsumerRecords<K, V>> recordSubmission = recordEmitter.sink();
 
     final AtmostOnceOffsets atmostOnceOffsets = new AtmostOnceOffsets();
 
@@ -90,7 +81,7 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
 
     final ConsumerFactory consumerFactory;
 
-    final Scheduler scheduler;
+    final Scheduler eventScheduler;
 
     CommitEvent commitEvent;
 
@@ -98,9 +89,7 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
 
     org.apache.kafka.clients.consumer.Consumer<K, V> consumerProxy;
 
-    UnicastProcessor<Event> eventEmitter;
-
-    FluxSink<Event> eventSubmission;
+    CoreSubscriber<? super ConsumerRecords<K, V>> actual;
 
     ConsumerFlux(
         AckMode ackMode,
@@ -113,26 +102,67 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
 
         pollEvent = new PollEvent();
         commitEvent = new CommitEvent();
-        scheduler = Schedulers.single(receiverOptions.schedulerSupplier().get());
+        eventScheduler = KafkaSchedulers.newEvent(receiverOptions.groupId());
     }
 
     @Override
     public void subscribe(CoreSubscriber<? super ConsumerRecords<K, V>> actual) {
+        log.debug("start");
+
+        if (!isActive.compareAndSet(false, true)) {
+            Operators.error(actual, new IllegalStateException("Multiple subscribers are not supported for KafkaReceiver flux"));
+            return;
+        }
+
+        this.actual = actual;
+
+        awaitingTransaction.set(false);
+        isClosed.set(false);
+
         try {
-            start();
+            consumer = consumerFactory.createConsumer(receiverOptions);
+            eventScheduler.schedule(new SubscribeEvent());
+
+            Duration commitInterval = receiverOptions.commitInterval();
+            if (!commitInterval.isZero()) {
+                switch (ackMode) {
+                    case AUTO_ACK:
+                    case MANUAL_ACK:
+                        eventScheduler.schedulePeriodically(
+                            () -> {
+                                if (commitEvent.isPending.compareAndSet(false, true)) {
+                                    commitEvent.run();
+                                }
+                            },
+                            commitInterval.toMillis(),
+                            commitInterval.toMillis(),
+                            TimeUnit.MILLISECONDS
+                        );
+                        break;
+                }
+            }
+
+            actual.onSubscribe(new Subscription() {
+                @Override
+                public void request(long n) {
+                    if (pollEvent.requestsPending.get() > 0) {
+                        pollEvent.scheduleIfRequired();
+                    }
+                }
+
+                @Override
+                public void cancel() {
+                    // Disposed by DefaultKafkaReceiver
+                    // TODO dispose here
+                }
+            });
+
+            eventScheduler.start();
         } catch (Exception e) {
             log.error("Subscription to event flux failed", e);
             Operators.error(actual, e);
             return;
         }
-
-        recordEmitter
-                .publishOn(scheduler)
-                .doOnRequest(r -> {
-                    if (pollEvent.requestsPending.get() > 0)
-                        pollEvent.scheduleIfRequired();
-                })
-                .subscribe(actual);
     }
 
     private void onPartitionsRevoked(Collection<TopicPartition> partitions) {
@@ -154,64 +184,10 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
         return seekableList;
     }
 
-    private void fail(Throwable e) {
-        log.error("Consumer flux exception", e);
-        recordSubmission.error(e);
-    }
-
     void handleRequest(Long toAdd) {
         if (OperatorUtils.safeAddAndGet(pollEvent.requestsPending, toAdd) > 0) {
             pollEvent.scheduleIfRequired();
         }
-    }
-
-    private void start() {
-        log.debug("start");
-        if (!isActive.compareAndSet(false, true)) {
-            throw new IllegalStateException("Multiple subscribers are not supported for KafkaReceiver flux");
-        }
-
-        awaitingTransaction.set(false);
-
-        eventEmitter = UnicastProcessor.create();
-        eventSubmission = eventEmitter.sink(FluxSink.OverflowStrategy.BUFFER);
-
-        Scheduler eventScheduler = KafkaSchedulers.newEvent(receiverOptions.groupId());
-        this.subscribeDisposables.add(eventScheduler);
-        eventScheduler.start();
-
-        Disposable eventLoopDisposable = eventEmitter
-            .as(flux -> {
-                switch (ackMode) {
-                    case AUTO_ACK:
-                    case MANUAL_ACK:
-                        Duration commitInterval = receiverOptions.commitInterval();
-                        if (commitInterval.isZero()) {
-                            return flux;
-                        }
-
-                        Flux<CommitEvent> periodicCommitFlux = Flux.interval(commitInterval)
-                            .onBackpressureLatest()
-                            .map(i -> commitEvent.periodicEvent());
-
-                        return flux.mergeWith(periodicCommitFlux);
-                    default:
-                        return flux;
-                }
-            })
-            .startWith(new InitEvent())
-            .publishOn(eventScheduler)
-            .doOnNext(event -> {
-                log.trace("doEvent {}", event.getClass());
-                try {
-                    event.run();
-                } catch (Exception e) {
-                    fail(e);
-                }
-            })
-            .subscribe();
-
-        subscribeDisposables.add(eventLoopDisposable);
     }
 
     @Override
@@ -236,48 +212,40 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
                 return;
             }
 
-            boolean isEventsEmitterAvailable =
-                !(eventSubmission.isCancelled() || eventEmitter.isDisposed());
-            if (!isEventsEmitterAvailable) {
+            if (eventScheduler.isDisposed()) {
                 closeEvent.run();
                 return;
             }
 
-            eventSubmission.next(closeEvent);
+            eventScheduler.schedule(closeEvent);
             isConsumerClosed = closeEvent.await();
         } catch (Exception e) {
             log.warn("Cancel exception: " + e);
         } finally {
-            scheduler.dispose();
-            try {
-                for (Disposable disposable : subscribeDisposables) {
-                    disposable.dispose();
-                }
-            } finally {
-                // If the consumer was not closed within the specified timeout
-                // try to close again. This is not safe, so ignore exceptions and
-                // retry.
-                int maxRetries = 10;
-                for (int i = 0; i < maxRetries && !isConsumerClosed; i++) {
-                    try {
-                        if (consumer != null) {
-                            consumer.close();
-                        }
-                        isConsumerClosed = true;
-                    } catch (Exception e) {
-                        if (i == maxRetries - 1) {
-                            log.warn("Consumer could not be closed", e);
-                        }
+            eventScheduler.dispose();
+            // If the consumer was not closed within the specified timeout
+            // try to close again. This is not safe, so ignore exceptions and
+            // retry.
+            int maxRetries = 10;
+            for (int i = 0; i < maxRetries && !isConsumerClosed; i++) {
+                try {
+                    if (consumer != null) {
+                        consumer.close();
+                    }
+                    isConsumerClosed = true;
+                } catch (Exception e) {
+                    if (i == maxRetries - 1) {
+                        log.warn("Consumer could not be closed", e);
                     }
                 }
-                isClosed.set(true);
             }
+            isClosed.set(true);
         }
     }
 
     <T> Mono<T> doOnConsumer(Function<org.apache.kafka.clients.consumer.Consumer<K, V>, ? extends T> function) {
         return Mono.create(monoSink -> {
-            eventSubmission.next(new CustomEvent<T>(function, monoSink));
+            eventScheduler.schedule(new CustomEvent<T>(function, monoSink));
         });
     }
 
@@ -296,18 +264,12 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
         return Mono.empty();
     }
 
-    abstract class Event implements Runnable {
-    }
-
-    class InitEvent extends Event {
+    class SubscribeEvent implements Runnable {
 
         @Override
         public void run() {
+            log.info("SubscribeEvent");
             try {
-                isActive.set(true);
-                isClosed.set(false);
-                consumer = consumerFactory.createConsumer(receiverOptions);
-
                 receiverOptions
                     .subscriber(new ConsumerRebalanceListener() {
                         @Override
@@ -329,13 +291,13 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
             } catch (Exception e) {
                 if (isActive.get()) {
                     log.error("Unexpected exception", e);
-                    fail(e);
+                    actual.onError(e);
                 }
             }
         }
     }
 
-    class PollEvent extends Event {
+    class PollEvent implements Runnable {
 
         private final AtomicInteger pendingCount = new AtomicInteger();
         private final Duration pollTimeout = receiverOptions.pollTimeout();
@@ -360,32 +322,32 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
                     }
 
                     ConsumerRecords<K, V> records = consumer.poll(pollTimeout);
-                    if (records.count() > 0) {
-                        recordSubmission.next(records);
-                    }
                     if (isActive.get()) {
                         int count = ((ackMode == AckMode.AUTO_ACK || ackMode == AckMode.EXACTLY_ONCE) && records.count() > 0) ? 1 : records.count();
                         if (requestsPending.get() == Long.MAX_VALUE || requestsPending.addAndGet(0 - count) > 0 || commitEvent.inProgress.get() > 0)
                             scheduleIfRequired();
                     }
+                    if (records.count() > 0) {
+                        actual.onNext(records);
+                    }
                 }
             } catch (Exception e) {
                 if (isActive.get()) {
                     log.error("Unexpected exception", e);
-                    fail(e);
+                    actual.onError(e);
                 }
             }
         }
 
         void scheduleIfRequired() {
             if (pendingCount.get() <= 0) {
-                eventSubmission.next(this);
+                eventScheduler.schedule(this);
                 pendingCount.incrementAndGet();
             }
         }
     }
 
-    class CommitEvent extends Event {
+    class CommitEvent implements Runnable {
         final CommittableBatch commitBatch = new CommittableBatch();
         private final AtomicBoolean isPending = new AtomicBoolean();
         private final AtomicInteger inProgress = new AtomicInteger();
@@ -393,8 +355,9 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
 
         @Override
         public void run() {
-            if (!isPending.compareAndSet(true, false))
+            if (!isPending.compareAndSet(true, false)) {
                 return;
+            }
             final CommittableBatch.CommitArgs commitArgs = commitBatch.getAndClearOffsets();
             try {
                 if (commitArgs != null) {
@@ -402,13 +365,9 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
                         inProgress.incrementAndGet();
                         switch (ackMode) {
                             case ATMOST_ONCE:
-                                try {
-                                    consumer.commitSync(commitArgs.offsets());
-                                    handleSuccess(commitArgs, commitArgs.offsets());
-                                    atmostOnceOffsets.onCommit(commitArgs.offsets());
-                                } catch (Exception e) {
-                                    handleFailure(commitArgs, e);
-                                }
+                                consumer.commitSync(commitArgs.offsets());
+                                handleSuccess(commitArgs, commitArgs.offsets());
+                                atmostOnceOffsets.onCommit(commitArgs.offsets());
                                 inProgress.decrementAndGet();
                                 break;
                             case EXACTLY_ONCE:
@@ -467,8 +426,9 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
                     for (MonoSink<Void> emitter : callbackEmitters) {
                         emitter.error(exception);
                     }
-                } else
-                    fail(exception);
+                } else {
+                    actual.onError(exception);
+                }
             } else {
                 commitBatch.restoreOffsets(commitArgs, true);
                 log.warn("Commit failed with exception" + exception + ", retries remaining " + (receiverOptions.maxCommitAttempts() - consecutiveCommitFailures.get()));
@@ -477,14 +437,10 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
             }
         }
 
-        CommitEvent periodicEvent() {
-            isPending.set(true);
-            return this;
-        }
-
         void scheduleIfRequired() {
-            if (isActive.get() && isPending.compareAndSet(false, true))
-                eventSubmission.next(this);
+            if (isActive.get() && isPending.compareAndSet(false, true)) {
+                eventScheduler.schedule(this);
+            }
         }
 
         private void waitFor(long endTimeNanos) {
@@ -498,7 +454,7 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
         }
     }
 
-    class CustomEvent<T> extends Event {
+    class CustomEvent<T> implements Runnable {
         private final Function<org.apache.kafka.clients.consumer.Consumer<K, V>, ? extends T> function;
         private final MonoSink<T> monoSink;
         CustomEvent(
@@ -542,7 +498,7 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
             return consumerProxy;
         }
     }
-    private class CloseEvent extends Event {
+    private class CloseEvent implements Runnable {
         private final long closeEndTimeNanos;
         private final CountDownLatch latch = new CountDownLatch(1);
         CloseEvent(Duration timeout) {
@@ -582,7 +538,7 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
                 latch.countDown();
             } catch (Exception e) {
                 log.error("Unexpected exception during close", e);
-                fail(e);
+                actual.onError(e);
             }
         }
         boolean await(long timeoutNanos) throws InterruptedException {

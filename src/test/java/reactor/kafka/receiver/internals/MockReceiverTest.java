@@ -171,9 +171,6 @@ public class MockReceiverTest {
             } catch (Exception e) {
                 assertTrue(e instanceof RejectedExecutionException);
             }
-            if (receiver.consumerFlux != null) {
-                assertTrue("Internals of KafkaReceive must be cleaned up", receiver.consumerFlux.scheduler.isDisposed());
-            }
             assumeTrue("Consumer should be closed if unexpected error occurred", consumer.closed());
         } finally {
             atomicHolder.set(null);
@@ -210,9 +207,6 @@ public class MockReceiverTest {
                 fail("unexpected completion");
             } catch (Exception e) {
                 assertTrue(e instanceof RejectedExecutionException);
-            }
-            if (receiver.consumerFlux != null) {
-                assertTrue("Internals of KafkaReceive must be cleaned up", receiver.consumerFlux.scheduler.isDisposed());
             }
             assumeTrue("Consumer should be closed if unexpected error occurred", consumer.closed());
         } finally {
@@ -1250,13 +1244,11 @@ public class MockReceiverTest {
         DefaultKafkaReceiver<Integer, String> receiver = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions);
         Flux<ReceiverRecord<Integer, String>> inboundFlux = receiver
                 .receive()
-                .concatMap(r -> {
-                    Mono<?> mono = receiver.doOnConsumer(c -> {
+                .delayUntil(r -> {
+                    return receiver.doOnConsumer(c -> {
                         method.accept(c);
                         return true;
                     });
-                    return mono.then(Mono.just(r))
-                               .publishOn(receiver.consumerFlux.scheduler);
                 });
         sendMessages(topic, 0, 10);
         receiveAndVerify(inboundFlux, 10);
@@ -1299,13 +1291,11 @@ public class MockReceiverTest {
         DefaultKafkaReceiver<Integer, String> receiver = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions);
         Flux<ReceiverRecord<Integer, String>> inboundFlux = receiver
                 .receive()
-                .concatMap(r -> {
-                    Mono<?> mono = receiver.doOnConsumer(c -> {
+                .delayUntil(r -> {
+                    return receiver.doOnConsumer(c -> {
                         method.accept(c);
                         return true;
                     });
-                    return mono.then(Mono.just(r))
-                               .publishOn(receiver.consumerFlux.scheduler);
                 });
         StepVerifier.create(inboundFlux)
             .expectError(UnsupportedOperationException.class)
@@ -1403,8 +1393,7 @@ public class MockReceiverTest {
         Flux<ReceiverRecord<Integer, String>> inboundFlux =
                 receiver
                 .receive()
-                .concatMap(r -> onNext.apply(r)
-                                      .publishOn(receiver.consumerFlux.scheduler), 1);
+                .concatMap(onNext, 1);
         receiveAndVerify(inboundFlux, receiveCount);
     }
 
@@ -1435,9 +1424,7 @@ public class MockReceiverTest {
     private void receiveVerifyError(Class<? extends Throwable> exceptionClass,
             Function<ReceiverRecord<Integer, String>, Mono<ReceiverRecord<Integer, String>>> onNext) {
         DefaultKafkaReceiver<Integer, String> receiver = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions);
-        StepVerifier.create(receiver.receive()
-                                    .concatMap(r -> onNext.apply(r)
-                                                          .publishOn(receiver.consumerFlux.scheduler)), 1)
+        StepVerifier.create(receiver.receive().concatMap(onNext), 1)
             .expectErrorMatches(t -> {
                 if (t.getSuppressed().length > 0) {
                     for (Throwable suppressed: t.getSuppressed()) {
