@@ -70,11 +70,6 @@ publishing {
                 }
                 developers {
                     developer {
-                        id = 'rsivaram'
-                        name = 'Rajini Sivaram'
-                        email = 'rsivaram@pivotal.io'
-                    }
-                    developer {
                         id = 'OlegDokuka'
                         name = 'Oleh Dokuka'
                         email = 'oleh.dokuka@icloud.com'
