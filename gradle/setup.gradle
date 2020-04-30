@@ -79,6 +79,11 @@ publishing {
                         name = 'Oleh Dokuka'
                         email = 'oleh.dokuka@icloud.com'
                     }
+                    developer {
+                        id = 'bsideup'
+                        name = 'Sergei Egorov'
+                        email = 'segorov@pivotal.io'
+                    }
                 }
                 issueManagement {
                     system = "GitHub Issues"
