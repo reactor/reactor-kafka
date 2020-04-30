@@ -34,6 +34,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -52,6 +53,9 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.kafka.AbstractKafkaTest;
+import reactor.kafka.receiver.internals.ChaosConsumerFactory;
+import reactor.kafka.receiver.internals.ConsumerFactory;
+import reactor.kafka.receiver.internals.DefaultKafkaReceiver;
 import reactor.kafka.receiver.internals.TestableReceiver;
 import reactor.kafka.sender.KafkaSender;
 import reactor.kafka.sender.SenderRecord;
@@ -59,6 +63,7 @@ import reactor.kafka.sender.SenderResult;
 import reactor.kafka.sender.TransactionManager;
 import reactor.kafka.util.TestUtils;
 import reactor.test.StepVerifier;
+import reactor.util.annotation.Nullable;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -576,10 +581,36 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         Semaphore commitSuccessSemaphore = new Semaphore(0);
         Semaphore commitFailureSemaphore = new Semaphore(0);
         receiverOptions = receiverOptions.commitInterval(Duration.ZERO).commitBatchSize(0);
-        KafkaReceiver<Integer, String> receiver = createReceiver();
+
+        ChaosConsumerFactory chaosConsumerFactory = new ChaosConsumerFactory();
+
+        DefaultKafkaReceiver<Integer, String> receiver = createReceiver(chaosConsumerFactory);
         TestableReceiver testableReceiver = new TestableReceiver(receiver);
-        Flux<? extends ConsumerRecord<Integer, String>> flux = testableReceiver
-            .receiveWithManualCommitFailures(retriableException, failureCount, receiveSemaphore, commitSuccessSemaphore, commitFailureSemaphore);
+        AtomicInteger retryCount = new AtomicInteger();
+        Flux<? extends ConsumerRecord<Integer, String>> flux = receiver.receive()
+            .doOnSubscribe(s -> {
+                if (retriableException)
+                    testableReceiver.injectCommitEventForRetriableException();
+            })
+            .doOnNext(record -> {
+                try {
+                    receiveSemaphore.release();
+                    chaosConsumerFactory.injectCommitError();
+                    Predicate<Throwable> retryPredicate = e -> {
+                        if (retryCount.incrementAndGet() == failureCount)
+                            chaosConsumerFactory.clearCommitError();
+                        return retryCount.get() <= failureCount + 1;
+                    };
+                    record.receiverOffset().commit()
+                        .doOnError(e -> commitFailureSemaphore.release())
+                        .doOnSuccess(i -> commitSuccessSemaphore.release())
+                        .retry(retryPredicate)
+                        .subscribe();
+                } catch (Exception e) {
+                    fail("Unexpected exception: " + e);
+                }
+            })
+            .doOnError(e -> log.error("KafkaFlux exception", e));
 
         subscribe(flux, new CountDownLatch(count));
         sendMessages(1, count);
@@ -628,7 +659,9 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
                                .closeTimeout(Duration.ofMillis(1000))
                                .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
 
-        KafkaReceiver<Integer, String> receiver = createReceiver();
+
+        ChaosConsumerFactory consumerFactory = new ChaosConsumerFactory();
+        DefaultKafkaReceiver<Integer, String> receiver = createReceiver(consumerFactory);
         TestableReceiver testReceiver = new TestableReceiver(receiver);
         Semaphore onNextSemaphore = new Semaphore(0);
         Flux<ReceiverRecord<Integer, String>> flux = receiver.receive()
@@ -638,10 +671,12 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
                   })
                   .doOnNext(record -> {
                       int receiveCount = count(receivedMessages);
-                      if (receiveCount == errorInjectIndex)
-                          testReceiver.injectCommitError();
-                      if (receiveCount >= errorClearIndex)
-                          testReceiver.clearCommitError();
+                      if (receiveCount == errorInjectIndex) {
+                          consumerFactory.injectCommitError();
+                      }
+                      if (receiveCount >= errorClearIndex) {
+                          consumerFactory.clearCommitError();
+                      }
                       record.receiverOffset().acknowledge();
                       onNextSemaphore.release();
                   })
@@ -1146,16 +1181,18 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         return disposable;
     }
 
-    public KafkaReceiver<Integer, String> createReceiver() {
-        receiverOptions = receiverOptions.addAssignListener(this::onPartitionsAssigned)
-                .subscription(Collections.singletonList(topic));
-        return KafkaReceiver.create(receiverOptions);
+    public DefaultKafkaReceiver<Integer, String> createReceiver() {
+        return createReceiver(null);
     }
 
-    public TestableReceiver createTestFlux() {
-        KafkaReceiver<Integer, String> receiver = createReceiver();
-        Flux<ReceiverRecord<Integer, String>> kafkaFlux = receiver.receive();
-        return new TestableReceiver(receiver, kafkaFlux);
+    public DefaultKafkaReceiver<Integer, String> createReceiver(@Nullable ConsumerFactory consumerFactory) {
+        receiverOptions = receiverOptions.addAssignListener(this::onPartitionsAssigned)
+                .subscription(Collections.singletonList(topic));
+        if (consumerFactory != null) {
+            return (DefaultKafkaReceiver<Integer, String>) KafkaReceiver.create(consumerFactory, receiverOptions);
+        } else {
+            return (DefaultKafkaReceiver<Integer, String>) KafkaReceiver.create(receiverOptions);
+        }
     }
 
     private Disposable subscribe(Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux, CountDownLatch... latches) throws Exception {
