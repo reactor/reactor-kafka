@@ -79,9 +79,9 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
 
     final ConsumerFactory consumerFactory;
 
-    final Predicate<Throwable> isRetriableException;
-
     final Scheduler eventScheduler;
+
+    final Predicate<Throwable> isRetriableException;
 
     org.apache.kafka.clients.consumer.Consumer<K, V> consumer;
 
