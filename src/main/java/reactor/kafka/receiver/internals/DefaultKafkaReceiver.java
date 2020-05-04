@@ -152,7 +152,6 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
 
     private synchronized void dispose() {
         if (consumerFlux != null) {
-            consumerFlux.dispose();
             scheduler.dispose();
             consumerFlux = null;
         }

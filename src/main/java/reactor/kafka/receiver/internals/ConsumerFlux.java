@@ -10,7 +10,6 @@ import org.reactivestreams.Subscription;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.CoreSubscriber;
-import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoSink;
@@ -41,7 +40,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
-class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposable {
+class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> {
 
     private static final Logger log = LoggerFactory.getLogger(ConsumerFlux.class.getName());
 
@@ -155,8 +154,7 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
 
                 @Override
                 public void cancel() {
-                    // Disposed by DefaultKafkaReceiver
-                    // TODO dispose here
+                    dispose();
                 }
             });
 
@@ -193,8 +191,7 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
         }
     }
 
-    @Override
-    public void dispose() {
+    private void dispose() {
         log.debug("dispose {}", isActive);
         if (!isActive.compareAndSet(true, false)) {
             return;
@@ -269,6 +266,15 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
         return Mono.empty();
     }
 
+    private void onError(Throwable t) {
+        CoreSubscriber<? super ConsumerRecords<K, V>> actual = this.actual;
+        try {
+            dispose();
+        } finally {
+            actual.onError(t);
+        }
+    }
+
     class SubscribeEvent implements Runnable {
 
         @Override
@@ -296,7 +302,7 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
             } catch (Exception e) {
                 if (isActive.get()) {
                     log.error("Unexpected exception", e);
-                    actual.onError(e);
+                    onError(e);
                 }
             }
         }
@@ -347,7 +353,7 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
             } catch (Exception e) {
                 if (isActive.get()) {
                     log.error("Unexpected exception", e);
-                    actual.onError(e);
+                    onError(e);
                 }
             }
         }
@@ -440,7 +446,7 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
                         emitter.error(exception);
                     }
                 } else {
-                    actual.onError(exception);
+                    onError(exception);
                 }
             } else {
                 commitBatch.restoreOffsets(commitArgs, true);
@@ -547,7 +553,7 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
                 latch.countDown();
             } catch (Exception e) {
                 log.error("Unexpected exception during close", e);
-                actual.onError(e);
+                onError(e);
             }
         }
         boolean await(long timeoutNanos) throws InterruptedException {
