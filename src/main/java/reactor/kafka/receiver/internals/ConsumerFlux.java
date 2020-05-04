@@ -4,7 +4,6 @@ import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
-import org.apache.kafka.clients.consumer.RetriableCommitFailedException;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.WakeupException;
 import org.reactivestreams.Subscription;
@@ -40,6 +39,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposable {
 
@@ -67,10 +67,6 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
 
     final AtomicBoolean isActive = new AtomicBoolean();
 
-    final AtomicBoolean isClosed = new AtomicBoolean();
-
-    final AtomicBoolean awaitingTransaction = new AtomicBoolean();
-
     final AtmostOnceOffsets atmostOnceOffsets = new AtmostOnceOffsets();
 
     final PollEvent pollEvent;
@@ -83,7 +79,9 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
 
     final Scheduler eventScheduler;
 
-    CommitEvent commitEvent;
+    final CommitEvent commitEvent = new CommitEvent();
+
+    final Predicate<Throwable> isRetriableException;
 
     org.apache.kafka.clients.consumer.Consumer<K, V> consumer;
 
@@ -91,17 +89,20 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
 
     CoreSubscriber<? super ConsumerRecords<K, V>> actual;
 
+    AtomicBoolean awaitingTransaction;
+
     ConsumerFlux(
         AckMode ackMode,
         ReceiverOptions<K, V> receiverOptions,
-        ConsumerFactory consumerFactory
+        ConsumerFactory consumerFactory,
+        Predicate<Throwable> isRetriableException
     ) {
         this.ackMode = ackMode;
         this.receiverOptions = receiverOptions;
         this.consumerFactory = consumerFactory;
+        this.isRetriableException = isRetriableException;
 
         pollEvent = new PollEvent();
-        commitEvent = new CommitEvent();
         eventScheduler = KafkaSchedulers.newEvent(receiverOptions.groupId());
     }
 
@@ -116,8 +117,10 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
 
         this.actual = actual;
 
-        awaitingTransaction.set(false);
-        isClosed.set(false);
+        awaitingTransaction = actual.currentContext().getOrDefault(
+            DefaultKafkaReceiver.AWAITING_TRANSACTION_KEY,
+            null
+        );
 
         try {
             consumer = consumerFactory.createConsumer(receiverOptions);
@@ -223,23 +226,25 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
             log.warn("Cancel exception: " + e);
         } finally {
             eventScheduler.dispose();
+
+            if (consumer == null) {
+                return;
+            }
             // If the consumer was not closed within the specified timeout
             // try to close again. This is not safe, so ignore exceptions and
             // retry.
             int maxRetries = 10;
             for (int i = 0; i < maxRetries && !isConsumerClosed; i++) {
                 try {
-                    if (consumer != null) {
-                        consumer.close();
-                    }
-                    isConsumerClosed = true;
+                    consumer.close();
+                    consumer = null;
+                    break;
                 } catch (Exception e) {
                     if (i == maxRetries - 1) {
                         log.warn("Consumer could not be closed", e);
                     }
                 }
             }
-            isClosed.set(true);
         }
     }
 
@@ -313,12 +318,20 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
                     // chosen by reactor.
                     commitEvent.runIfRequired(false);
                     pendingCount.decrementAndGet();
-                    if (requestsPending.get() > 0 && !awaitingTransaction.get()) {
-                        if (partitionsPaused.getAndSet(false))
-                            consumer.resume(consumer.assignment());
+                    if (requestsPending.get() > 0) {
+                        if (awaitingTransaction == null || !awaitingTransaction.get()) {
+                            if (partitionsPaused.getAndSet(false)) {
+                                consumer.resume(consumer.assignment());
+                            }
+                        } else {
+                            if (!partitionsPaused.getAndSet(true)) {
+                                consumer.pause(consumer.assignment());
+                            }
+                        }
                     } else {
-                        if (!partitionsPaused.getAndSet(true))
+                        if (!partitionsPaused.getAndSet(true)) {
                             consumer.pause(consumer.assignment());
+                        }
                     }
 
                     ConsumerRecords<K, V> records = consumer.poll(pollTimeout);
@@ -415,8 +428,8 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
 
         private void handleFailure(CommittableBatch.CommitArgs commitArgs, Exception exception) {
             log.warn("Commit failed", exception);
-            boolean mayRetry = isRetriableException(exception) &&
-                !isClosed.get() &&
+            boolean mayRetry = ConsumerFlux.this.isRetriableException.test(exception) &&
+                consumer != null &&
                 consecutiveCommitFailures.incrementAndGet() < receiverOptions.maxCommitAttempts();
             if (!mayRetry) {
                 List<MonoSink<Void>> callbackEmitters = commitArgs.callbackEmitters();
@@ -447,10 +460,6 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
             while (inProgress.get() > 0 && endTimeNanos - System.nanoTime() > 0) {
                 consumer.poll(Duration.ofMillis(1));
             }
-        }
-
-        protected boolean isRetriableException(Exception exception) { // allow override for testing
-            return exception instanceof RetriableCommitFailedException;
         }
     }
 

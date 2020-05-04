@@ -15,9 +15,12 @@
  */
 package reactor.kafka.receiver.internals;
 
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.RetriableCommitFailedException;
 import org.apache.kafka.common.TopicPartition;
 
 import reactor.core.publisher.Flux;
@@ -28,16 +31,21 @@ import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.ReceiverRecord;
 import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.sender.TransactionManager;
+import reactor.util.context.Context;
 
 public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
+
+    static final String AWAITING_TRANSACTION_KEY = "reactor.kafka.receiver.internals.awaitingTransaction";
 
     private final ConsumerFactory consumerFactory;
 
     private final ReceiverOptions<K, V> receiverOptions;
 
+    private Scheduler scheduler;
+
     ConsumerFlux<K, V> consumerFlux;
 
-    Scheduler scheduler;
+    Predicate<Throwable> isRetriableException = RetriableCommitFailedException.class::isInstance;
 
     public DefaultKafkaReceiver(ConsumerFactory consumerFactory, ReceiverOptions<K, V> receiverOptions) {
         this.consumerFactory = consumerFactory;
@@ -100,7 +108,9 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
     @Override
     public Flux<Flux<ConsumerRecord<K, V>>> receiveExactlyOnce(TransactionManager transactionManager) {
         ConsumerFlux<K, V> consumerFlux = createConsumerFlux(AckMode.EXACTLY_ONCE);
+        AtomicBoolean awaitingTransaction = new AtomicBoolean();
         return consumerFlux
+            .subscriberContext(Context.of(AWAITING_TRANSACTION_KEY, awaitingTransaction))
             .onBackpressureBuffer()
             .publishOn(scheduler)
             .doFinally(signal -> dispose())
@@ -116,11 +126,11 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
 
                 return transactionManager.begin()
                     .thenMany(Flux.defer(() -> {
-                        consumerFlux.awaitingTransaction.getAndSet(true);
+                        awaitingTransaction.getAndSet(true);
                         return Flux.fromIterable(consumerRecords);
                     }))
                     .concatWith(transactionManager.sendOffsets(offsetBatch.getAndClearOffsets().offsets(), receiverOptions.groupId()))
-                    .doAfterTerminate(() -> consumerFlux.awaitingTransaction.set(false));
+                    .doAfterTerminate(() -> awaitingTransaction.set(false));
             })
             .publishOn(transactionManager.scheduler());
     }
@@ -137,7 +147,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
 
         scheduler = Schedulers.single(receiverOptions.schedulerSupplier().get());
 
-        return consumerFlux = new ConsumerFlux<>(ackMode, receiverOptions, consumerFactory);
+        return consumerFlux = new ConsumerFlux<>(ackMode, receiverOptions, consumerFactory, isRetriableException);
     }
 
     private synchronized void dispose() {
