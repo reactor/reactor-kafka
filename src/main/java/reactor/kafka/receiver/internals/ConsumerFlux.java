@@ -69,8 +69,6 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
 
     final AtmostOnceOffsets atmostOnceOffsets = new AtmostOnceOffsets();
 
-    final CommitEvent commitEvent = new CommitEvent();
-
     final PollEvent pollEvent;
 
     final AckMode ackMode;
@@ -80,6 +78,8 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
     final ConsumerFactory consumerFactory;
 
     final Scheduler eventScheduler;
+
+    final CommitEvent commitEvent = new CommitEvent();
 
     final Predicate<Throwable> isRetriableException;
 
