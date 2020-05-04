@@ -65,31 +65,31 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> implements Disposab
         "endOffsets"
     ));
 
-    private final AtomicBoolean isActive = new AtomicBoolean();
+    final AtomicBoolean isActive = new AtomicBoolean();
 
-    private final AtmostOnceOffsets atmostOnceOffsets = new AtmostOnceOffsets();
+    final AtmostOnceOffsets atmostOnceOffsets = new AtmostOnceOffsets();
 
-    private final CommitEvent commitEvent = new CommitEvent();
+    final CommitEvent commitEvent = new CommitEvent();
 
-    private final PollEvent pollEvent;
+    final PollEvent pollEvent;
 
-    private final AckMode ackMode;
+    final AckMode ackMode;
 
-    private final ReceiverOptions<K, V> receiverOptions;
+    final ReceiverOptions<K, V> receiverOptions;
 
-    private final ConsumerFactory consumerFactory;
+    final ConsumerFactory consumerFactory;
 
-    private final Predicate<Throwable> isRetriableException;
+    final Predicate<Throwable> isRetriableException;
 
-    private final Scheduler eventScheduler;
+    final Scheduler eventScheduler;
 
-    private org.apache.kafka.clients.consumer.Consumer<K, V> consumer;
+    org.apache.kafka.clients.consumer.Consumer<K, V> consumer;
 
-    private org.apache.kafka.clients.consumer.Consumer<K, V> consumerProxy;
+    org.apache.kafka.clients.consumer.Consumer<K, V> consumerProxy;
 
-    private CoreSubscriber<? super ConsumerRecords<K, V>> actual;
+    CoreSubscriber<? super ConsumerRecords<K, V>> actual;
 
-    private AtomicBoolean awaitingTransaction;
+    AtomicBoolean awaitingTransaction;
 
     ConsumerFlux(
         AckMode ackMode,
