@@ -10,6 +10,7 @@ import org.reactivestreams.Subscription;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.CoreSubscriber;
+import reactor.core.Exceptions;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoSink;
@@ -270,6 +271,8 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> {
         CoreSubscriber<? super ConsumerRecords<K, V>> actual = this.actual;
         try {
             dispose();
+        } catch (Throwable e) {
+            t = Exceptions.multiple(t, e);
         } finally {
             actual.onError(t);
         }
