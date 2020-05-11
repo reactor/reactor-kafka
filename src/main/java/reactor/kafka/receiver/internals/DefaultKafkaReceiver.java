@@ -44,13 +44,14 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
         this.receiverOptions = receiverOptions.toImmutable();
     }
 
-    private Mono<ConsumerHandler<K, V>> start() {
+    private Mono<ConsumerHandler<K, V>> start(AckMode ackMode) {
         return Mono.fromCallable(() -> {
             return consumerHandler = new ConsumerHandler<>(
                 receiverOptions,
                 consumerFactory.createConsumer(receiverOptions),
                 // Always use the currently set value
-                e -> isRetriableException.test(e)
+                e -> isRetriableException.test(e),
+                ackMode
             );
         });
     }
@@ -58,10 +59,10 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
     @Override
     public Flux<ReceiverRecord<K, V>> receive() {
         return Flux.usingWhen(
-            start(),
+            start(AckMode.MANUAL_ACK),
             handler -> {
                 return handler
-                    .receive(AckMode.MANUAL_ACK)
+                    .receive()
                     .flatMapIterable(it -> it)
                     .map(record -> new ReceiverRecord<>(
                         record,
@@ -76,10 +77,10 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
     @Override
     public Flux<Flux<ConsumerRecord<K, V>>> receiveAutoAck() {
         return Flux.usingWhen(
-            start(),
+            start(AckMode.AUTO_ACK),
             handler -> {
                 return handler
-                    .receive(AckMode.AUTO_ACK)
+                    .receive()
                     .doOnRequest(handler::handleRequest)
                     .map(consumerRecords -> {
                         return Flux.fromIterable(consumerRecords)
@@ -97,10 +98,10 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
     @Override
     public Flux<ConsumerRecord<K, V>> receiveAtmostOnce() {
         return Flux.usingWhen(
-            start(),
+            start(AckMode.ATMOST_ONCE),
             handler -> {
                 return handler
-                    .receive(AckMode.ATMOST_ONCE)
+                    .receive()
                     .concatMap(records -> {
                         return Flux
                             .fromIterable(records)
@@ -120,10 +121,10 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
     @Override
     public Flux<Flux<ConsumerRecord<K, V>>> receiveExactlyOnce(TransactionManager transactionManager) {
         return Flux.usingWhen(
-            start(),
+            start(AckMode.EXACTLY_ONCE),
             handler -> {
                 return handler
-                    .receive(AckMode.EXACTLY_ONCE)
+                    .receive()
                     .doOnRequest(handler::handleRequest)
                     .map(consumerRecords -> {
                         if (consumerRecords.isEmpty()) {

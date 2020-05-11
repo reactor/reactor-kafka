@@ -61,6 +61,8 @@ class ConsumerHandler<K, V> {
 
     private final Scheduler eventScheduler;
 
+    private final AckMode ackMode;
+
     private ConsumerFlux<K, V> consumerFlux;
 
     private Consumer<K, V> consumerProxy;
@@ -68,17 +70,19 @@ class ConsumerHandler<K, V> {
     ConsumerHandler(
         ReceiverOptions<K, V> receiverOptions,
         Consumer<K, V> consumer,
-        Predicate<Throwable> isRetriableException
+        Predicate<Throwable> isRetriableException,
+        AckMode ackMode
     ) {
         this.receiverOptions = receiverOptions;
         this.consumer = consumer;
         this.isRetriableException = isRetriableException;
+        this.ackMode = ackMode;
 
         scheduler = Schedulers.single(receiverOptions.schedulerSupplier().get());
         eventScheduler = KafkaSchedulers.newEvent(receiverOptions.groupId());
     }
 
-    public Flux<ConsumerRecords<K, V>> receive(AckMode ackMode) {
+    public Flux<ConsumerRecords<K, V>> receive() {
         consumerFlux = new ConsumerFlux<>(
             ackMode,
             receiverOptions,
