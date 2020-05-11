@@ -1,7 +1,6 @@
 package reactor.kafka.receiver.internals;
 
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
@@ -12,11 +11,9 @@ import org.slf4j.LoggerFactory;
 import reactor.core.CoreSubscriber;
 import reactor.core.Exceptions;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoSink;
 import reactor.core.publisher.Operators;
 import reactor.core.scheduler.Scheduler;
-import reactor.kafka.receiver.ReceiverOffset;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.ReceiverPartition;
 
@@ -473,68 +470,6 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> {
                 }
             }
             return closed;
-        }
-    }
-
-    class CommittableOffset implements ReceiverOffset {
-
-        private final TopicPartition topicPartition;
-        private final long commitOffset;
-        private final AtomicBoolean acknowledged;
-
-        public CommittableOffset(ConsumerRecord<K, V> record) {
-            this(new TopicPartition(record.topic(), record.partition()), record.offset());
-        }
-
-        public CommittableOffset(TopicPartition topicPartition, long nextOffset) {
-            this.topicPartition = topicPartition;
-            this.commitOffset = nextOffset;
-            this.acknowledged = new AtomicBoolean(false);
-        }
-
-        @Override
-        public Mono<Void> commit() {
-            if (maybeUpdateOffset() > 0)
-                return scheduleCommit();
-            else
-                return Mono.empty();
-        }
-
-        @Override
-        public void acknowledge() {
-            int commitBatchSize = receiverOptions.commitBatchSize();
-            long uncommittedCount = maybeUpdateOffset();
-            if (commitBatchSize > 0 && uncommittedCount >= commitBatchSize)
-                commitEvent.scheduleIfRequired();
-        }
-
-        @Override
-        public TopicPartition topicPartition() {
-            return topicPartition;
-        }
-
-        @Override
-        public long offset() {
-            return commitOffset;
-        }
-
-        private int maybeUpdateOffset() {
-            if (acknowledged.compareAndSet(false, true))
-                return commitEvent.commitBatch.updateOffset(topicPartition, commitOffset);
-            else
-                return commitEvent.commitBatch.batchSize();
-        }
-
-        private Mono<Void> scheduleCommit() {
-            return Mono.create(emitter -> {
-                commitEvent.commitBatch.addCallbackEmitter(emitter);
-                commitEvent.scheduleIfRequired();
-            });
-        }
-
-        @Override
-        public String toString() {
-            return topicPartition + "@" + commitOffset;
         }
     }
 }

@@ -120,7 +120,12 @@ class ConsumerHandler<K, V> {
         long committedOffset = consumerFlux.atmostOnceOffsets.committedOffset(partition);
         consumerFlux.atmostOnceOffsets.onDispatch(partition, offset);
         long commitAheadSize = receiverOptions.atmostOnceCommitAheadSize();
-        ReceiverOffset committable = consumerFlux.new CommittableOffset(partition, offset + commitAheadSize);
+        ReceiverOffset committable = new CommittableOffset<>(
+            partition,
+            offset + commitAheadSize,
+            consumerFlux.commitEvent,
+            receiverOptions.commitBatchSize()
+        );
         if (offset >= committedOffset) {
             return committable.commit();
         } else if (committedOffset - offset >= commitAheadSize / 2) {
@@ -130,11 +135,16 @@ class ConsumerHandler<K, V> {
     }
 
     public void acknowledge(ConsumerRecord<K, V> record) {
-        consumerFlux.new CommittableOffset(record).acknowledge();
+        toCommittableOffset(record).acknowledge();
     }
 
-    public ConsumerFlux<K, V>.CommittableOffset toCommittableOffset(ConsumerRecord<K, V> record) {
-        return consumerFlux.new CommittableOffset(record);
+    public CommittableOffset<K, V> toCommittableOffset(ConsumerRecord<K, V> record) {
+        return new CommittableOffset<>(
+            new TopicPartition(record.topic(), record.partition()),
+            record.offset(),
+            consumerFlux.commitEvent,
+            receiverOptions.commitBatchSize()
+        );
     }
 
     @SuppressWarnings("unchecked")
@@ -157,5 +167,74 @@ class ConsumerHandler<K, V> {
         };
         consumerProxy = (Consumer<K, V>) Proxy.newProxyInstance(Consumer.class.getClassLoader(), interfaces, handler);
         return consumerProxy;
+    }
+
+    private static class CommittableOffset<K, V> implements ReceiverOffset {
+
+        private final TopicPartition topicPartition;
+
+        private final long commitOffset;
+
+        private final ConsumerFlux<K, V>.CommitEvent commitEvent;
+
+        private final int commitBatchSize;
+
+        private final AtomicBoolean acknowledged = new AtomicBoolean(false);
+
+        public CommittableOffset(
+            TopicPartition topicPartition,
+            long nextOffset,
+            ConsumerFlux<K, V>.CommitEvent commitEvent,
+            int commitBatchSize
+        ) {
+            this.topicPartition = topicPartition;
+            this.commitOffset = nextOffset;
+            this.commitEvent = commitEvent;
+            this.commitBatchSize = commitBatchSize;
+        }
+
+        @Override
+        public Mono<Void> commit() {
+            if (maybeUpdateOffset() > 0)
+                return scheduleCommit();
+            else
+                return Mono.empty();
+        }
+
+        @Override
+        public void acknowledge() {
+            long uncommittedCount = maybeUpdateOffset();
+            if (commitBatchSize > 0 && uncommittedCount >= commitBatchSize)
+                commitEvent.scheduleIfRequired();
+        }
+
+        @Override
+        public TopicPartition topicPartition() {
+            return topicPartition;
+        }
+
+        @Override
+        public long offset() {
+            return commitOffset;
+        }
+
+        private int maybeUpdateOffset() {
+            if (acknowledged.compareAndSet(false, true))
+                return commitEvent.commitBatch.updateOffset(topicPartition, commitOffset);
+            else
+                return commitEvent.commitBatch.batchSize();
+        }
+
+        private Mono<Void> scheduleCommit() {
+            return Mono.create(emitter -> {
+                commitEvent.commitBatch.addCallbackEmitter(emitter);
+                commitEvent.scheduleIfRequired();
+            });
+        }
+
+        @Override
+        public String toString() {
+            return topicPartition + "@" + commitOffset;
+        }
     }
 }
