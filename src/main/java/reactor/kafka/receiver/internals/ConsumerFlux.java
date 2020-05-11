@@ -53,12 +53,12 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> {
 
     final Predicate<Throwable> isRetriableException;
 
-    final AtomicBoolean awaitingTransaction;
-
     // TODO make it final
     org.apache.kafka.clients.consumer.Consumer<K, V> consumer;
 
     CoreSubscriber<? super ConsumerRecords<K, V>> actual;
+
+    final AtomicBoolean awaitingTransaction;
 
     ConsumerFlux(
         AckMode ackMode,
