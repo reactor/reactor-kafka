@@ -211,21 +211,6 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> {
         }
     }
 
-    Mono<Void> commit(ConsumerRecord<K, V> r) {
-        long offset = r.offset();
-        TopicPartition partition = new TopicPartition(r.topic(), r.partition());
-        long committedOffset = atmostOnceOffsets.committedOffset(partition);
-        atmostOnceOffsets.onDispatch(partition, offset);
-        long commitAheadSize = receiverOptions.atmostOnceCommitAheadSize();
-        ReceiverOffset committable = new CommittableOffset(partition, offset + commitAheadSize);
-        if (offset >= committedOffset) {
-            return committable.commit();
-        } else if (committedOffset - offset >= commitAheadSize / 2) {
-            committable.commit().subscribe();
-        }
-        return Mono.empty();
-    }
-
     private void onError(Throwable t) {
         CoreSubscriber<? super ConsumerRecords<K, V>> actual = this.actual;
         try {

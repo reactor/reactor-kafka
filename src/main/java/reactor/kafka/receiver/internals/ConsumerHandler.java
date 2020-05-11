@@ -3,12 +3,14 @@ package reactor.kafka.receiver.internals;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.common.TopicPartition;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.kafka.receiver.KafkaReceiver;
+import reactor.kafka.receiver.ReceiverOffset;
 import reactor.kafka.receiver.ReceiverOptions;
 
 import java.lang.reflect.InvocationHandler;
@@ -113,7 +115,18 @@ class ConsumerHandler<K, V> {
     }
 
     public Mono<Void> commit(ConsumerRecord<K, V> record) {
-        return consumerFlux.commit(record);
+        long offset = record.offset();
+        TopicPartition partition = new TopicPartition(record.topic(), record.partition());
+        long committedOffset = consumerFlux.atmostOnceOffsets.committedOffset(partition);
+        consumerFlux.atmostOnceOffsets.onDispatch(partition, offset);
+        long commitAheadSize = receiverOptions.atmostOnceCommitAheadSize();
+        ReceiverOffset committable = consumerFlux.new CommittableOffset(partition, offset + commitAheadSize);
+        if (offset >= committedOffset) {
+            return committable.commit();
+        } else if (committedOffset - offset >= commitAheadSize / 2) {
+            committable.commit().subscribe();
+        }
+        return Mono.empty();
     }
 
     public void acknowledge(ConsumerRecord<K, V> record) {
