@@ -53,17 +53,13 @@ class ConsumerHandler<K, V> {
 
     private final ReceiverOptions<K, V> receiverOptions;
 
-    private final Predicate<Throwable> isRetriableException;
-
     final Scheduler scheduler;
 
     private final Consumer<K, V> consumer;
 
     private final Scheduler eventScheduler;
 
-    private final AckMode ackMode;
-
-    private ConsumerFlux<K, V> consumerFlux;
+    private final ConsumerFlux<K, V> consumerFlux;
 
     private Consumer<K, V> consumerProxy;
 
@@ -75,14 +71,10 @@ class ConsumerHandler<K, V> {
     ) {
         this.receiverOptions = receiverOptions;
         this.consumer = consumer;
-        this.isRetriableException = isRetriableException;
-        this.ackMode = ackMode;
 
         scheduler = Schedulers.single(receiverOptions.schedulerSupplier().get());
         eventScheduler = KafkaSchedulers.newEvent(receiverOptions.groupId());
-    }
 
-    public Flux<ConsumerRecords<K, V>> receive() {
         consumerFlux = new ConsumerFlux<>(
             ackMode,
             receiverOptions,
@@ -91,6 +83,9 @@ class ConsumerHandler<K, V> {
             isRetriableException,
             awaitingTransaction
         );
+    }
+
+    public Flux<ConsumerRecords<K, V>> receive() {
         return consumerFlux
             .onBackpressureBuffer()
             .publishOn(scheduler);
