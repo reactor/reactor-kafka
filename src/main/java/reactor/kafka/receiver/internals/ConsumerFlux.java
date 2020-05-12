@@ -1,7 +1,6 @@
 package reactor.kafka.receiver.internals;
 
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
@@ -12,58 +11,28 @@ import org.slf4j.LoggerFactory;
 import reactor.core.CoreSubscriber;
 import reactor.core.Exceptions;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoSink;
 import reactor.core.publisher.Operators;
 import reactor.core.scheduler.Scheduler;
-import reactor.kafka.receiver.KafkaReceiver;
-import reactor.kafka.receiver.ReceiverOffset;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.ReceiverPartition;
 
-import java.lang.reflect.InvocationHandler;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Proxy;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
-import java.util.function.Function;
 import java.util.function.Predicate;
 
 class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> {
 
     private static final Logger log = LoggerFactory.getLogger(ConsumerFlux.class.getName());
-
-    /** Note: Methods added to this set should also be included in javadoc for {@link KafkaReceiver#doOnConsumer(Function)} */
-    private static final Set<String> DELEGATE_METHODS = new HashSet<>(Arrays.asList(
-        "assignment",
-        "subscription",
-        "seek",
-        "seekToBeginning",
-        "seekToEnd",
-        "position",
-        "committed",
-        "metrics",
-        "partitionsFor",
-        "listTopics",
-        "paused",
-        "pause",
-        "resume",
-        "offsetsForTimes",
-        "beginningOffsets",
-        "endOffsets"
-    ));
 
     final AtomicBoolean isActive = new AtomicBoolean();
 
@@ -75,35 +44,34 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> {
 
     final ReceiverOptions<K, V> receiverOptions;
 
-    final ConsumerFactory consumerFactory;
-
     final Scheduler eventScheduler;
 
     final CommitEvent commitEvent = new CommitEvent();
 
     final Predicate<Throwable> isRetriableException;
 
+    // TODO make it final
     org.apache.kafka.clients.consumer.Consumer<K, V> consumer;
-
-    org.apache.kafka.clients.consumer.Consumer<K, V> consumerProxy;
 
     CoreSubscriber<? super ConsumerRecords<K, V>> actual;
 
-    AtomicBoolean awaitingTransaction;
+    final AtomicBoolean awaitingTransaction;
 
     ConsumerFlux(
         AckMode ackMode,
         ReceiverOptions<K, V> receiverOptions,
-        ConsumerFactory consumerFactory,
-        Predicate<Throwable> isRetriableException
+        Scheduler eventScheduler, org.apache.kafka.clients.consumer.Consumer<K, V> consumer,
+        Predicate<Throwable> isRetriableException,
+        AtomicBoolean awaitingTransaction
     ) {
         this.ackMode = ackMode;
         this.receiverOptions = receiverOptions;
-        this.consumerFactory = consumerFactory;
+        this.eventScheduler = eventScheduler;
+        this.consumer = consumer;
         this.isRetriableException = isRetriableException;
+        this.awaitingTransaction = awaitingTransaction;
 
         pollEvent = new PollEvent();
-        eventScheduler = KafkaSchedulers.newEvent(receiverOptions.groupId());
     }
 
     @Override
@@ -117,13 +85,7 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> {
 
         this.actual = actual;
 
-        awaitingTransaction = actual.currentContext().getOrDefault(
-            DefaultKafkaReceiver.AWAITING_TRANSACTION_KEY,
-            null
-        );
-
         try {
-            consumer = consumerFactory.createConsumer(receiverOptions);
             eventScheduler.schedule(new SubscribeEvent());
 
             Duration commitInterval = receiverOptions.commitInterval();
@@ -246,27 +208,6 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> {
         }
     }
 
-    <T> Mono<T> doOnConsumer(Function<org.apache.kafka.clients.consumer.Consumer<K, V>, ? extends T> function) {
-        return Mono.create(monoSink -> {
-            eventScheduler.schedule(new CustomEvent<T>(function, monoSink));
-        });
-    }
-
-    Mono<Void> commit(ConsumerRecord<K, V> r) {
-        long offset = r.offset();
-        TopicPartition partition = new TopicPartition(r.topic(), r.partition());
-        long committedOffset = atmostOnceOffsets.committedOffset(partition);
-        atmostOnceOffsets.onDispatch(partition, offset);
-        long commitAheadSize = receiverOptions.atmostOnceCommitAheadSize();
-        ReceiverOffset committable = new CommittableOffset(partition, offset + commitAheadSize);
-        if (offset >= committedOffset) {
-            return committable.commit();
-        } else if (committedOffset - offset >= commitAheadSize / 2) {
-            committable.commit().subscribe();
-        }
-        return Mono.empty();
-    }
-
     private void onError(Throwable t) {
         CoreSubscriber<? super ConsumerRecords<K, V>> actual = this.actual;
         try {
@@ -328,7 +269,7 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> {
                     commitEvent.runIfRequired(false);
                     pendingCount.decrementAndGet();
                     if (requestsPending.get() > 0) {
-                        if (awaitingTransaction == null || !awaitingTransaction.get()) {
+                        if (!awaitingTransaction.get()) {
                             if (partitionsPaused.getAndSet(false)) {
                                 consumer.resume(consumer.assignment());
                             }
@@ -472,50 +413,6 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> {
         }
     }
 
-    class CustomEvent<T> implements Runnable {
-        private final Function<org.apache.kafka.clients.consumer.Consumer<K, V>, ? extends T> function;
-        private final MonoSink<T> monoSink;
-        CustomEvent(
-            Function<org.apache.kafka.clients.consumer.Consumer<K, V>, ? extends T> function,
-            MonoSink<T> monoSink
-        ) {
-            this.function = function;
-            this.monoSink = monoSink;
-        }
-        @Override
-        public void run() {
-            if (isActive.get()) {
-                try {
-                    T ret = function.apply(consumerProxy());
-                    monoSink.success(ret);
-                } catch (Throwable e) {
-                    monoSink.error(e);
-                }
-            }
-        }
-
-        @SuppressWarnings("unchecked")
-        private org.apache.kafka.clients.consumer.Consumer<K, V> consumerProxy() {
-            if (consumerProxy == null) {
-                Class<?>[] interfaces = new Class<?>[]{org.apache.kafka.clients.consumer.Consumer.class};
-                InvocationHandler handler = (proxy, method, args) -> {
-                    if (DELEGATE_METHODS.contains(method.getName())) {
-                        try {
-                            return method.invoke(consumer, args);
-                        } catch (InvocationTargetException e) {
-                            throw e.getCause();
-                        }
-                    } else
-                        throw new UnsupportedOperationException("Method is not supported: " + method);
-                };
-                consumerProxy = (org.apache.kafka.clients.consumer.Consumer<K, V>) Proxy.newProxyInstance(
-                    org.apache.kafka.clients.consumer.Consumer.class.getClassLoader(),
-                    interfaces,
-                    handler);
-            }
-            return consumerProxy;
-        }
-    }
     private class CloseEvent implements Runnable {
         private final long closeEndTimeNanos;
         private final CountDownLatch latch = new CountDownLatch(1);
@@ -573,68 +470,6 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> {
                 }
             }
             return closed;
-        }
-    }
-
-    class CommittableOffset implements ReceiverOffset {
-
-        private final TopicPartition topicPartition;
-        private final long commitOffset;
-        private final AtomicBoolean acknowledged;
-
-        public CommittableOffset(ConsumerRecord<K, V> record) {
-            this(new TopicPartition(record.topic(), record.partition()), record.offset());
-        }
-
-        public CommittableOffset(TopicPartition topicPartition, long nextOffset) {
-            this.topicPartition = topicPartition;
-            this.commitOffset = nextOffset;
-            this.acknowledged = new AtomicBoolean(false);
-        }
-
-        @Override
-        public Mono<Void> commit() {
-            if (maybeUpdateOffset() > 0)
-                return scheduleCommit();
-            else
-                return Mono.empty();
-        }
-
-        @Override
-        public void acknowledge() {
-            int commitBatchSize = receiverOptions.commitBatchSize();
-            long uncommittedCount = maybeUpdateOffset();
-            if (commitBatchSize > 0 && uncommittedCount >= commitBatchSize)
-                commitEvent.scheduleIfRequired();
-        }
-
-        @Override
-        public TopicPartition topicPartition() {
-            return topicPartition;
-        }
-
-        @Override
-        public long offset() {
-            return commitOffset;
-        }
-
-        private int maybeUpdateOffset() {
-            if (acknowledged.compareAndSet(false, true))
-                return commitEvent.commitBatch.updateOffset(topicPartition, commitOffset);
-            else
-                return commitEvent.commitBatch.batchSize();
-        }
-
-        private Mono<Void> scheduleCommit() {
-            return Mono.create(emitter -> {
-                commitEvent.commitBatch.addCallbackEmitter(emitter);
-                commitEvent.scheduleIfRequired();
-            });
-        }
-
-        @Override
-        public String toString() {
-            return topicPartition + "@" + commitOffset;
         }
     }
 }

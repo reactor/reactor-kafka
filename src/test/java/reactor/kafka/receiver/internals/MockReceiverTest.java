@@ -1315,25 +1315,6 @@ public class MockReceiverTest {
         DefaultKafkaReceiver<Integer, String> receiver = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions);
         Flux<ReceiverRecord<Integer, String>> inboundFlux = receiver.receive()
                 .doOnNext(r -> r.receiverOffset().acknowledge());
-        try {
-            receiver.receive();
-            fail("Multiple outstanding receives on the same receiver");
-        } catch (IllegalStateException e) {
-            // Expected exception
-        }
-        try {
-            receiver.receiveAtmostOnce();
-            fail("Multiple outstanding receives on the same receiver");
-        } catch (IllegalStateException e) {
-            // Expected exception
-        }
-
-        try {
-            receiver.receiveAutoAck();
-            fail("Multiple outstanding receives on the same receiver");
-        } catch (IllegalStateException e) {
-            // Expected exception
-        }
 
         sendMessages(topic, 0, 10);
         receiveAndVerify(inboundFlux, 10);
