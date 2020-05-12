@@ -70,7 +70,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
                     ))
                     .doOnRequest(handler::handleRequest);
             },
-            this::dispose
+            this::cleanup
         );
     }
 
@@ -91,7 +91,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
                             });
                     });
             },
-            this::dispose
+            this::cleanup
         );
     }
 
@@ -114,7 +114,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
                     }, Integer.MAX_VALUE)
                     .doOnRequest(handler::handleRequest);
             },
-            this::dispose
+            this::cleanup
         );
     }
 
@@ -145,7 +145,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
                     })
                     .publishOn(transactionManager.scheduler());
             },
-            this::dispose
+            this::cleanup
         );
     }
 
@@ -158,7 +158,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
         return consumerHandler.doOnConsumer(function);
     }
 
-    private Mono<Void> dispose(ConsumerHandler<K, V> handler) {
+    private Mono<Void> cleanup(ConsumerHandler<K, V> handler) {
         return handler.close().doFinally(__ -> consumerHandler = null);
     }
 }
