@@ -5,6 +5,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.common.TopicPartition;
 import reactor.core.Disposable;
+import reactor.core.publisher.DirectProcessor;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
@@ -51,6 +52,8 @@ class ConsumerHandler<K, V> {
 
     final AtomicBoolean awaitingTransaction = new AtomicBoolean();
 
+    private final AtmostOnceOffsets atmostOnceOffsets = new AtmostOnceOffsets();
+
     private final ReceiverOptions<K, V> receiverOptions;
 
     final Scheduler scheduler;
@@ -59,7 +62,9 @@ class ConsumerHandler<K, V> {
 
     private final Scheduler eventScheduler;
 
-    private final ConsumerFlux<K, V> consumerFlux;
+    private final ConsumerEventLoop<K, V> consumerEventLoop;
+
+    private final DirectProcessor<ConsumerRecords<K, V>> processor = DirectProcessor.create();
 
     private Consumer<K, V> consumerProxy;
 
@@ -75,24 +80,30 @@ class ConsumerHandler<K, V> {
         scheduler = Schedulers.single(receiverOptions.schedulerSupplier().get());
         eventScheduler = KafkaSchedulers.newEvent(receiverOptions.groupId());
 
-        consumerFlux = new ConsumerFlux<>(
+        consumerEventLoop = new ConsumerEventLoop<>(
             ackMode,
+            atmostOnceOffsets,
             receiverOptions,
             eventScheduler,
             consumer,
             isRetriableException,
+            processor.sink(),
             awaitingTransaction
         );
+        consumerEventLoop.start();
     }
 
     public Flux<ConsumerRecords<K, V>> receive() {
-        return consumerFlux
+        return processor
             .onBackpressureBuffer()
             .publishOn(scheduler);
     }
 
     public Mono<Void> close() {
-        return Mono.fromRunnable(scheduler::dispose);
+        return Mono.fromRunnable(() -> {
+            consumerEventLoop.stop();
+            scheduler.dispose();
+        });
     }
 
     public <T> Mono<T> doOnConsumer(Function<Consumer<K, V>, ? extends T> function) {
@@ -110,19 +121,19 @@ class ConsumerHandler<K, V> {
     }
 
     public void handleRequest(long r) {
-        consumerFlux.handleRequest(r);
+        consumerEventLoop.handleRequest(r);
     }
 
     public Mono<Void> commit(ConsumerRecord<K, V> record) {
         long offset = record.offset();
         TopicPartition partition = new TopicPartition(record.topic(), record.partition());
-        long committedOffset = consumerFlux.atmostOnceOffsets.committedOffset(partition);
-        consumerFlux.atmostOnceOffsets.onDispatch(partition, offset);
+        long committedOffset = atmostOnceOffsets.committedOffset(partition);
+        atmostOnceOffsets.onDispatch(partition, offset);
         long commitAheadSize = receiverOptions.atmostOnceCommitAheadSize();
         ReceiverOffset committable = new CommittableOffset<>(
             partition,
             offset + commitAheadSize,
-            consumerFlux.commitEvent,
+            consumerEventLoop.commitEvent,
             receiverOptions.commitBatchSize()
         );
         if (offset >= committedOffset) {
@@ -141,7 +152,7 @@ class ConsumerHandler<K, V> {
         return new CommittableOffset<>(
             new TopicPartition(record.topic(), record.partition()),
             record.offset(),
-            consumerFlux.commitEvent,
+            consumerEventLoop.commitEvent,
             receiverOptions.commitBatchSize()
         );
     }
@@ -174,7 +185,7 @@ class ConsumerHandler<K, V> {
 
         private final long commitOffset;
 
-        private final ConsumerFlux<K, V>.CommitEvent commitEvent;
+        private final ConsumerEventLoop<K, V>.CommitEvent commitEvent;
 
         private final int commitBatchSize;
 
@@ -183,7 +194,7 @@ class ConsumerHandler<K, V> {
         public CommittableOffset(
             TopicPartition topicPartition,
             long nextOffset,
-            ConsumerFlux<K, V>.CommitEvent commitEvent,
+            ConsumerEventLoop<K, V>.CommitEvent commitEvent,
             int commitBatchSize
         ) {
             this.topicPartition = topicPartition;

@@ -5,14 +5,11 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.WakeupException;
-import org.reactivestreams.Subscription;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import reactor.core.CoreSubscriber;
 import reactor.core.Exceptions;
-import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.MonoSink;
-import reactor.core.publisher.Operators;
 import reactor.core.scheduler.Scheduler;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.ReceiverPartition;
@@ -30,13 +27,17 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
-class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> {
+/**
+ * Since {@link org.apache.kafka.clients.consumer.Consumer} does not support multi-threaded access,
+ * this event loop serializes every action we perform on it.
+ */
+class ConsumerEventLoop<K, V> {
 
-    private static final Logger log = LoggerFactory.getLogger(ConsumerFlux.class.getName());
+    private static final Logger log = LoggerFactory.getLogger(ConsumerEventLoop.class.getName());
 
-    final AtomicBoolean isActive = new AtomicBoolean();
+    final AtomicBoolean isActive = new AtomicBoolean(true);
 
-    final AtmostOnceOffsets atmostOnceOffsets = new AtmostOnceOffsets();
+    final AtmostOnceOffsets atmostOnceOffsets;
 
     final PollEvent pollEvent;
 
@@ -53,80 +54,63 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> {
     // TODO make it final
     org.apache.kafka.clients.consumer.Consumer<K, V> consumer;
 
-    CoreSubscriber<? super ConsumerRecords<K, V>> actual;
+    final FluxSink<ConsumerRecords<K, V>> sink;
 
     final AtomicBoolean awaitingTransaction;
 
-    ConsumerFlux(
+    ConsumerEventLoop(
         AckMode ackMode,
+        AtmostOnceOffsets atmostOnceOffsets,
         ReceiverOptions<K, V> receiverOptions,
-        Scheduler eventScheduler, org.apache.kafka.clients.consumer.Consumer<K, V> consumer,
+        Scheduler eventScheduler,
+        org.apache.kafka.clients.consumer.Consumer<K, V> consumer,
         Predicate<Throwable> isRetriableException,
+        FluxSink<ConsumerRecords<K, V>> sink,
         AtomicBoolean awaitingTransaction
     ) {
         this.ackMode = ackMode;
+        this.atmostOnceOffsets = atmostOnceOffsets;
         this.receiverOptions = receiverOptions;
         this.eventScheduler = eventScheduler;
         this.consumer = consumer;
         this.isRetriableException = isRetriableException;
+        this.sink = sink;
         this.awaitingTransaction = awaitingTransaction;
 
         pollEvent = new PollEvent();
+
+        eventScheduler.schedule(new SubscribeEvent());
+
+        Duration commitInterval = receiverOptions.commitInterval();
+        if (!commitInterval.isZero()) {
+            switch (ackMode) {
+                case AUTO_ACK:
+                case MANUAL_ACK:
+                    eventScheduler.schedulePeriodically(
+                        () -> {
+                            if (commitEvent.isPending.compareAndSet(false, true)) {
+                                commitEvent.run();
+                            }
+                        },
+                        commitInterval.toMillis(),
+                        commitInterval.toMillis(),
+                        TimeUnit.MILLISECONDS
+                    );
+                    break;
+            }
+        }
+
+        sink.onRequest(n -> {
+            if (pollEvent.requestsPending.get() > 0) {
+                pollEvent.scheduleIfRequired();
+            }
+        });
     }
 
-    @Override
-    public void subscribe(CoreSubscriber<? super ConsumerRecords<K, V>> actual) {
+    void start() {
         log.debug("start");
 
-        if (!isActive.compareAndSet(false, true)) {
-            Operators.error(actual, new IllegalStateException("Multiple subscribers are not supported for KafkaReceiver flux"));
-            return;
-        }
-
-        this.actual = actual;
-
-        try {
-            eventScheduler.schedule(new SubscribeEvent());
-
-            Duration commitInterval = receiverOptions.commitInterval();
-            if (!commitInterval.isZero()) {
-                switch (ackMode) {
-                    case AUTO_ACK:
-                    case MANUAL_ACK:
-                        eventScheduler.schedulePeriodically(
-                            () -> {
-                                if (commitEvent.isPending.compareAndSet(false, true)) {
-                                    commitEvent.run();
-                                }
-                            },
-                            commitInterval.toMillis(),
-                            commitInterval.toMillis(),
-                            TimeUnit.MILLISECONDS
-                        );
-                        break;
-                }
-            }
-
-            actual.onSubscribe(new Subscription() {
-                @Override
-                public void request(long n) {
-                    if (pollEvent.requestsPending.get() > 0) {
-                        pollEvent.scheduleIfRequired();
-                    }
-                }
-
-                @Override
-                public void cancel() {
-                    dispose();
-                }
-            });
-
-            eventScheduler.start();
-        } catch (Exception e) {
-            log.error("Subscription to event flux failed", e);
-            Operators.error(actual, e);
-            return;
-        }
+        eventScheduler.start();
     }
 
     private void onPartitionsRevoked(Collection<TopicPartition> partitions) {
@@ -154,7 +138,7 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> {
         }
     }
 
-    private void dispose() {
+    void stop() {
         log.debug("dispose {}", isActive);
         if (!isActive.compareAndSet(true, false)) {
             return;
@@ -209,13 +193,13 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> {
     }
 
     private void onError(Throwable t) {
-        CoreSubscriber<? super ConsumerRecords<K, V>> actual = this.actual;
+        FluxSink<ConsumerRecords<K, V>> sink = this.sink;
         try {
-            dispose();
+            stop();
         } catch (Throwable e) {
             t = Exceptions.multiple(t, e);
         } finally {
-            actual.onError(t);
+            sink.error(t);
         }
     }
 
@@ -239,7 +223,7 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> {
 
                         @Override
                         public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
-                            ConsumerFlux.this.onPartitionsRevoked(partitions);
+                            ConsumerEventLoop.this.onPartitionsRevoked(partitions);
                         }
                     })
                     .accept(consumer);
@@ -291,7 +275,7 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> {
                             scheduleIfRequired();
                     }
                     if (records.count() > 0) {
-                        actual.onNext(records);
+                        sink.next(records);
                     }
                 }
             } catch (Exception e) {
@@ -378,7 +362,7 @@ class ConsumerFlux<K, V> extends Flux<ConsumerRecords<K, V>> {
 
         private void handleFailure(CommittableBatch.CommitArgs commitArgs, Exception exception) {
             log.warn("Commit failed", exception);
-            boolean mayRetry = ConsumerFlux.this.isRetriableException.test(exception) &&
+            boolean mayRetry = ConsumerEventLoop.this.isRetriableException.test(exception) &&
                 consumer != null &&
                 consecutiveCommitFailures.incrementAndGet() < receiverOptions.maxCommitAttempts();
             if (!mayRetry) {
