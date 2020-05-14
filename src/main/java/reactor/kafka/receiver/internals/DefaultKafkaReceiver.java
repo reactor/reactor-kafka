@@ -67,8 +67,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
                     .map(record -> new ReceiverRecord<>(
                         record,
                         handler.toCommittableOffset(record)
-                    ))
-                    .doOnRequest(handler::handleRequest);
+                    ));
             },
             this::cleanup
         );
@@ -81,7 +80,6 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
             handler -> {
                 return handler
                     .receive()
-                    .doOnRequest(handler::handleRequest)
                     .map(consumerRecords -> {
                         return Flux.fromIterable(consumerRecords)
                             .doAfterTerminate(() -> {
@@ -111,8 +109,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
                                     .publishOn(handler.scheduler)
                                     .thenReturn(r);
                             }, Integer.MAX_VALUE);
-                    }, Integer.MAX_VALUE)
-                    .doOnRequest(handler::handleRequest);
+                    }, Integer.MAX_VALUE);
             },
             this::cleanup
         );
@@ -125,7 +122,6 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
             handler -> {
                 return handler
                     .receive()
-                    .doOnRequest(handler::handleRequest)
                     .map(consumerRecords -> {
                         if (consumerRecords.isEmpty()) {
                             return Flux.<ConsumerRecord<K, V>>empty();

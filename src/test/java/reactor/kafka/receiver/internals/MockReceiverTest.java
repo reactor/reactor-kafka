@@ -1199,13 +1199,7 @@ public class MockReceiverTest {
         sendMessages(topic, 0, count);
         Step<?> step = StepVerifier.create(flux.take(count), 1);
         for (int i = 0; i < count - 1; i++) {
-            step = step.expectNextCount(1)
-                       .then(() -> {
-                           long pollCount = consumer.pollCount();
-                           TestUtils.sleep(100);
-                           assertEquals(pollCount, consumer.pollCount());
-                       })
-                       .thenRequest(1);
+            step = step.expectNextCount(1).thenRequest(1);
         }
         step.expectNextCount(1).expectComplete().verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
     }

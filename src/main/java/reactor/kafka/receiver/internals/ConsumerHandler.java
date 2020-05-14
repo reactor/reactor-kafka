@@ -120,10 +120,6 @@ class ConsumerHandler<K, V> {
         });
     }
 
-    public void handleRequest(long r) {
-        consumerEventLoop.handleRequest(r);
-    }
-
     public Mono<Void> commit(ConsumerRecord<K, V> record) {
         long offset = record.offset();
         TopicPartition partition = new TopicPartition(record.topic(), record.partition());
