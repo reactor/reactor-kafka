@@ -100,8 +100,8 @@ class ConsumerEventLoop<K, V> {
             }
         }
 
-        sink.onRequest(n -> {
-            if (pollEvent.requestsPending.get() > 0) {
+        sink.onRequest(toAdd -> {
+            if (OperatorUtils.safeAddAndGet(pollEvent.requestsPending, toAdd) > 0) {
                 pollEvent.scheduleIfRequired();
             }
         });
@@ -130,12 +130,6 @@ class ConsumerEventLoop<K, V> {
         for (TopicPartition partition : partitions)
             seekableList.add(new SeekablePartition(consumer, partition));
         return seekableList;
-    }
-
-    void handleRequest(Long toAdd) {
-        if (OperatorUtils.safeAddAndGet(pollEvent.requestsPending, toAdd) > 0) {
-            pollEvent.scheduleIfRequired();
-        }
     }
 
     void stop() {
