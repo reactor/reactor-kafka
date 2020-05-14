@@ -6,7 +6,7 @@ sudo: required
 services:
   - docker
 
-script: ./gradlew check -i
+script: ./gradlew check
 
 after_success:
   - bash <(curl -s https://codecov.io/bash)
