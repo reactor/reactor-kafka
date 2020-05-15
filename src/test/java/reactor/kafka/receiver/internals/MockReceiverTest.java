@@ -1420,7 +1420,7 @@ public class MockReceiverTest {
     }
 
     public void verifyMessages(int count) {
-        Map<TopicPartition, Long> offsets = new ConcurrentHashMap<>(receiveStartOffsets);
+        Map<TopicPartition, Long> offsets = new HashMap<>(receiveStartOffsets);
         for (ConsumerRecord<Integer, String> received : receivedMessages) {
             TopicPartition partition = topicPartition(received);
             long offset = offsets.get(partition);
