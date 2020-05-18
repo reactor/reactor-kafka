@@ -9,7 +9,6 @@ import reactor.core.publisher.DirectProcessor;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
 import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOffset;
 import reactor.kafka.receiver.ReceiverOptions;
@@ -56,8 +55,6 @@ class ConsumerHandler<K, V> {
 
     private final ReceiverOptions<K, V> receiverOptions;
 
-    final Scheduler scheduler;
-
     private final Consumer<K, V> consumer;
 
     private final Scheduler eventScheduler;
@@ -77,7 +74,6 @@ class ConsumerHandler<K, V> {
         this.receiverOptions = receiverOptions;
         this.consumer = consumer;
 
-        scheduler = Schedulers.single(receiverOptions.schedulerSupplier().get());
         eventScheduler = KafkaSchedulers.newEvent(receiverOptions.groupId());
 
         consumerEventLoop = new ConsumerEventLoop<>(
@@ -94,16 +90,11 @@ class ConsumerHandler<K, V> {
     }
 
     public Flux<ConsumerRecords<K, V>> receive() {
-        return processor
-            .onBackpressureBuffer()
-            .publishOn(scheduler);
+        return processor.onBackpressureBuffer();
     }
 
     public Mono<Void> close() {
-        return Mono.fromRunnable(() -> {
-            consumerEventLoop.stop();
-            scheduler.dispose();
-        });
+        return Mono.fromRunnable(consumerEventLoop::stop);
     }
 
     public <T> Mono<T> doOnConsumer(Function<Consumer<K, V>, ? extends T> function) {
