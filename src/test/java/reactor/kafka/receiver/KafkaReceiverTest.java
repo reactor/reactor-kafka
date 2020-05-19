@@ -61,10 +61,12 @@ import reactor.kafka.sender.KafkaSender;
 import reactor.kafka.sender.SenderRecord;
 import reactor.kafka.sender.SenderResult;
 import reactor.kafka.sender.TransactionManager;
+import reactor.kafka.util.ConsumerDelegate;
 import reactor.kafka.util.TestUtils;
 import reactor.test.StepVerifier;
 import reactor.util.annotation.Nullable;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
@@ -831,7 +833,36 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
                     assignSemaphore.release();
                 })
                 .subscription(Collections.singletonList(topic));
-            KafkaReceiver<Integer, String> receiver = KafkaReceiver.create(receiverOptions);
+
+            AtomicBoolean closed = new AtomicBoolean(false);
+
+            KafkaReceiver<Integer, String> receiver = KafkaReceiver.create(
+                new ConsumerFactory() {
+                    @Override
+                    public <K, V> org.apache.kafka.clients.consumer.Consumer<K, V> createConsumer(ReceiverOptions<K, V> config) {
+                        return new ConsumerDelegate<K, V>(super.createConsumer(config)) {
+                            @Override
+                            public void close() {
+                                closed.set(true);
+                                super.close();
+                            }
+
+                            @Override
+                            public void close(long timeout, TimeUnit unit) {
+                                closed.set(true);
+                                super.close(timeout, unit);
+                            }
+
+                            @Override
+                            public void close(Duration timeout) {
+                                closed.set(true);
+                                super.close(timeout);
+                            }
+                        };
+                    }
+                },
+                receiverOptions
+            );
             Flux<ConsumerRecord<Integer, String>> kafkaFlux = receiver
                             .receiveAutoAck()
                             .concatMap(r -> r);
@@ -841,12 +872,9 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
             if (i == 0)
                 waitForCommits(receiver, count);
             disposable.dispose();
-            try {
-                seekablePartitions.iterator().next().seekToBeginning();
-                fail("Consumer not closed");
-            } catch (IllegalStateException e) {
-                // expected exception
-            }
+
+            // will close asynchronously
+            await().atMost(10, TimeUnit.SECONDS).untilTrue(closed);
         }
     }
 

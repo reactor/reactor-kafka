@@ -7,8 +7,8 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.WakeupException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import reactor.core.Exceptions;
 import reactor.core.publisher.FluxSink;
+import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoSink;
 import reactor.core.scheduler.Scheduler;
 import reactor.kafka.receiver.ReceiverOptions;
@@ -19,7 +19,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -107,12 +106,6 @@ class ConsumerEventLoop<K, V> {
         });
     }
 
-    void start() {
-        log.debug("start");
-
-        eventScheduler.start();
-    }
-
     private void onPartitionsRevoked(Collection<TopicPartition> partitions) {
         log.debug("onPartitionsRevoked {}", partitions);
         if (!partitions.isEmpty()) {
@@ -132,69 +125,29 @@ class ConsumerEventLoop<K, V> {
         return seekableList;
     }
 
-    void stop() {
-        log.debug("dispose {}", isActive);
-        if (!isActive.compareAndSet(true, false)) {
-            return;
-        }
-
-        boolean isConsumerClosed = consumer == null;
-        if (isConsumerClosed) {
-            return;
-        }
-
-        try {
-            consumer.wakeup();
-            CloseEvent closeEvent = new CloseEvent(receiverOptions.closeTimeout());
-
-            boolean isEventsThread = KafkaSchedulers.isCurrentThreadFromScheduler();
-            if (isEventsThread) {
-                closeEvent.run();
-                return;
-            }
-
-            if (eventScheduler.isDisposed()) {
-                closeEvent.run();
-                return;
-            }
-
-            eventScheduler.schedule(closeEvent);
-            isConsumerClosed = closeEvent.await();
-        } catch (Exception e) {
-            log.warn("Cancel exception: " + e);
-        } finally {
-            eventScheduler.dispose();
-
-            if (consumer == null) {
-                return;
-            }
-            // If the consumer was not closed within the specified timeout
-            // try to close again. This is not safe, so ignore exceptions and
-            // retry.
-            int maxRetries = 10;
-            for (int i = 0; i < maxRetries && !isConsumerClosed; i++) {
-                try {
-                    consumer.close();
-                    consumer = null;
-                    break;
-                } catch (Exception e) {
-                    if (i == maxRetries - 1) {
-                        log.warn("Consumer could not be closed", e);
-                    }
+    Mono<Void> stop() {
+        return Mono
+            .defer(() -> {
+                log.debug("dispose {}", isActive);
+                if (!isActive.compareAndSet(true, false)) {
+                    return Mono.empty();
                 }
-            }
-        }
-    }
 
-    private void onError(Throwable t) {
-        FluxSink<ConsumerRecords<K, V>> sink = this.sink;
-        try {
-            stop();
-        } catch (Throwable e) {
-            t = Exceptions.multiple(t, e);
-        } finally {
-            sink.error(t);
-        }
+                if (consumer == null) {
+                    return Mono.empty();
+                }
+
+                return Mono.<Void>fromRunnable(new CloseEvent(receiverOptions.closeTimeout()))
+                    .as(flux -> {
+                        return KafkaSchedulers.isCurrentThreadFromScheduler()
+                            ? flux
+                            : flux.subscribeOn(eventScheduler);
+                    });
+            })
+            .onErrorResume(e -> {
+                log.warn("Cancel exception: " + e);
+                return Mono.empty();
+            });
     }
 
     class SubscribeEvent implements Runnable {
@@ -224,7 +177,7 @@ class ConsumerEventLoop<K, V> {
             } catch (Exception e) {
                 if (isActive.get()) {
                     log.error("Unexpected exception", e);
-                    onError(e);
+                    sink.error(e);
                 }
             }
         }
@@ -275,7 +228,7 @@ class ConsumerEventLoop<K, V> {
             } catch (Exception e) {
                 if (isActive.get()) {
                     log.error("Unexpected exception", e);
-                    onError(e);
+                    sink.error(e);
                 }
             }
         }
@@ -368,7 +321,7 @@ class ConsumerEventLoop<K, V> {
                         emitter.error(exception);
                     }
                 } else {
-                    onError(exception);
+                    sink.error(exception);
                 }
             } else {
                 commitBatch.restoreOffsets(commitArgs, true);
@@ -393,7 +346,6 @@ class ConsumerEventLoop<K, V> {
 
     private class CloseEvent implements Runnable {
         private final long closeEndTimeNanos;
-        private final CountDownLatch latch = new CountDownLatch(1);
         CloseEvent(Duration timeout) {
             this.closeEndTimeNanos = System.nanoTime() + timeout.toNanos();
         }
@@ -402,6 +354,7 @@ class ConsumerEventLoop<K, V> {
         public void run() {
             try {
                 if (consumer != null) {
+                    consumer.wakeup();
                     Collection<TopicPartition> manualAssignment = receiverOptions.assignment();
                     if (manualAssignment != null && !manualAssignment.isEmpty())
                         onPartitionsRevoked(manualAssignment);
@@ -421,6 +374,7 @@ class ConsumerEventLoop<K, V> {
                             if (timeoutNanos < 0)
                                 timeoutNanos = 0;
                             consumer.close(timeoutNanos, TimeUnit.NANOSECONDS);
+                            consumer = null;
                             break;
                         } catch (WakeupException e) {
                             if (i == attempts - 1)
@@ -428,26 +382,10 @@ class ConsumerEventLoop<K, V> {
                         }
                     }
                 }
-                latch.countDown();
             } catch (Exception e) {
                 log.error("Unexpected exception during close", e);
-                onError(e);
+                sink.error(e);
             }
-        }
-        boolean await(long timeoutNanos) throws InterruptedException {
-            return latch.await(timeoutNanos, TimeUnit.NANOSECONDS);
-        }
-        boolean await() {
-            boolean closed = false;
-            long remainingNanos;
-            while (!closed && (remainingNanos = closeEndTimeNanos - System.nanoTime()) > 0) {
-                try {
-                    closed = await(remainingNanos);
-                } catch (InterruptedException e) {
-                    // ignore
-                }
-            }
-            return closed;
         }
     }
 }

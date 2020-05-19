@@ -86,7 +86,7 @@ class ConsumerHandler<K, V> {
             processor.sink(),
             awaitingTransaction
         );
-        consumerEventLoop.start();
+        eventScheduler.start();
     }
 
     public Flux<ConsumerRecords<K, V>> receive() {
@@ -94,7 +94,7 @@ class ConsumerHandler<K, V> {
     }
 
     public Mono<Void> close() {
-        return Mono.fromRunnable(consumerEventLoop::stop);
+        return consumerEventLoop.stop().doFinally(__ -> eventScheduler.dispose());
     }
 
     public <T> Mono<T> doOnConsumer(Function<Consumer<K, V>, ? extends T> function) {
