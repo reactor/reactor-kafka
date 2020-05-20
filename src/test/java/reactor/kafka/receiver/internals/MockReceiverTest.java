@@ -69,6 +69,7 @@ import reactor.kafka.util.TestUtils;
 import reactor.test.StepVerifier;
 import reactor.test.StepVerifier.Step;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -137,7 +138,9 @@ public class MockReceiverTest {
         assertEquals(Arrays.asList(consumer), consumerFactory.consumersInUse());
         assertFalse("Consumer closed", consumer.closed());
         c.dispose();
-        assertTrue("Consumer closed", consumer.closed());
+        await().atMost(10, TimeUnit.SECONDS).untilAsserted(() -> {
+            assertTrue("Consumer closed", consumer.closed());
+        });
     }
 
     @Test
@@ -1355,6 +1358,9 @@ public class MockReceiverTest {
                 .expectNextCount(receiveCount)
                 .expectComplete()
                 .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
+        await().atMost(10, TimeUnit.SECONDS).untilAsserted(() -> {
+            assertTrue("Consumer closed", consumer.closed());
+        });
         verifyMessages(receiveCount);
     }
 
@@ -1373,6 +1379,10 @@ public class MockReceiverTest {
                 return exceptionClass.isInstance(t);
             })
             .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
+
+        await().atMost(10, TimeUnit.SECONDS).untilAsserted(() -> {
+            assertTrue("Consumer closed", consumer.closed());
+        });
     }
 
     private void receiveVerifyError(Class<? extends Throwable> exceptionClass) {
