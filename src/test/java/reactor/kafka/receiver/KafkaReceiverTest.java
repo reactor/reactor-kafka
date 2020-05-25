@@ -15,27 +15,6 @@
  */
 package reactor.kafka.receiver;
 
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
-import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
-import java.util.function.Predicate;
-import java.util.regex.Pattern;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -66,7 +45,29 @@ import reactor.kafka.util.TestUtils;
 import reactor.test.StepVerifier;
 import reactor.util.annotation.Nullable;
 
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
+import java.util.function.Predicate;
+import java.util.regex.Pattern;
+
 import static org.awaitility.Awaitility.await;
+import static org.hamcrest.Matchers.is;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
@@ -931,7 +932,6 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         AtomicInteger concurrentPartitionExecutions = new AtomicInteger();
         Map<Integer, String> inProgressMap = new ConcurrentHashMap<>();
 
-        Random random = new Random();
         int maxProcessingMs = 5;
         this.receiveTimeoutMillis = maxProcessingMs * count + 5000;
 
@@ -947,7 +947,6 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
                          }
                          if (inProgressMap.size() > 1)
                              concurrentExecutions.incrementAndGet();
-                         TestUtils.sleep(random.nextInt(maxProcessingMs));
                          onReceive(record);
                          latch.countDown();
                          record.receiverOffset().acknowledge();
@@ -1377,8 +1376,8 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         subscribeDisposables.clear();
     }
 
-    private long committedCount(KafkaReceiver<Integer, String> receiver) {
-        long committed = 0;
+    private int committedCount(KafkaReceiver<Integer, String> receiver) {
+        int committed = 0;
         for (int j = 0; j < partitions; j++) {
             TopicPartition p = new TopicPartition(topic, j);
             OffsetAndMetadata offset = receiver.doOnConsumer(c -> c.committed(p)).block(Duration.ofSeconds(receiveTimeoutMillis));
@@ -1389,7 +1388,10 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     }
 
     private void waitForCommits(KafkaReceiver<Integer, String> receiver, int count) {
-        TestUtils.waitUntil("Commits did not complete, committed=", () -> committedCount(receiver), t -> committedCount(receiver) == count, receiver, Duration.ofSeconds(2));
+        await().alias(count + " commits").until(
+            () -> committedCount(receiver),
+            is(count)
+        );
     }
 
     private KafkaSender<Integer, String> createTransactionalSender() {

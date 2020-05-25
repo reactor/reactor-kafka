@@ -22,7 +22,6 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
@@ -100,9 +99,7 @@ class ConsumerEventLoop<K, V> {
         }
 
         sink.onRequest(toAdd -> {
-            if (OperatorUtils.safeAddAndGet(pollEvent.requestsPending, toAdd) > 0) {
-                pollEvent.scheduleIfRequired();
-            }
+            pollEvent.schedule();
         });
     }
 
@@ -185,11 +182,7 @@ class ConsumerEventLoop<K, V> {
 
     class PollEvent implements Runnable {
 
-        private final AtomicInteger pendingCount = new AtomicInteger();
         private final Duration pollTimeout = receiverOptions.pollTimeout();
-
-        private final AtomicBoolean partitionsPaused = new AtomicBoolean();
-        final AtomicLong requestsPending = new AtomicLong();
 
         @Override
         public void run() {
@@ -198,32 +191,24 @@ class ConsumerEventLoop<K, V> {
                     // Ensure that commits are not queued behind polls since number of poll events is
                     // chosen by reactor.
                     commitEvent.runIfRequired(false);
-                    pendingCount.decrementAndGet();
-                    if (requestsPending.get() > 0) {
+                    if (sink.requestedFromDownstream() > 0) {
                         if (!awaitingTransaction.get()) {
-                            if (partitionsPaused.getAndSet(false)) {
-                                consumer.resume(consumer.assignment());
-                            }
+                            consumer.resume(consumer.assignment());
                         } else {
-                            if (!partitionsPaused.getAndSet(true)) {
-                                consumer.pause(consumer.assignment());
-                            }
+                            consumer.pause(consumer.assignment());
+                            schedule();
                         }
                     } else {
-                        if (!partitionsPaused.getAndSet(true)) {
-                            consumer.pause(consumer.assignment());
-                        }
+                        consumer.pause(consumer.assignment());
                     }
 
                     ConsumerRecords<K, V> records = consumer.poll(pollTimeout);
                     if (isActive.get()) {
-                        int count = ((ackMode == AckMode.AUTO_ACK || ackMode == AckMode.EXACTLY_ONCE) && records.count() > 0) ? 1 : records.count();
-                        if (requestsPending.get() == Long.MAX_VALUE || requestsPending.addAndGet(0 - count) > 0 || commitEvent.inProgress.get() > 0)
-                            scheduleIfRequired();
+                        if (sink.requestedFromDownstream() > 1 || commitEvent.inProgress.get() > 0) {
+                            schedule();
+                        }
                     }
-                    if (records.count() > 0) {
-                        sink.next(records);
-                    }
+                    sink.next(records);
                 }
             } catch (Exception e) {
                 if (isActive.get()) {
@@ -233,11 +218,8 @@ class ConsumerEventLoop<K, V> {
             }
         }
 
-        void scheduleIfRequired() {
-            if (pendingCount.get() <= 0) {
-                eventScheduler.schedule(this);
-                pendingCount.incrementAndGet();
-            }
+        void schedule() {
+            eventScheduler.schedule(this);
         }
     }
 
@@ -276,7 +258,7 @@ class ConsumerEventLoop<K, V> {
                                     else
                                         handleFailure(commitArgs, exception);
                                 });
-                                pollEvent.scheduleIfRequired();
+                                pollEvent.schedule();
                                 break;
                         }
                     } else {
@@ -327,7 +309,7 @@ class ConsumerEventLoop<K, V> {
                 commitBatch.restoreOffsets(commitArgs, true);
                 log.warn("Commit failed with exception" + exception + ", retries remaining " + (receiverOptions.maxCommitAttempts() - consecutiveCommitFailures.get()));
                 isPending.set(true);
-                pollEvent.scheduleIfRequired();
+                pollEvent.schedule();
             }
         }
 

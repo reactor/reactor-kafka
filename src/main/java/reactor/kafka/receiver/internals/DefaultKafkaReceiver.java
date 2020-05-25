@@ -15,22 +15,21 @@
  */
 package reactor.kafka.receiver.internals;
 
-import java.util.function.BiFunction;
-import java.util.function.Function;
-import java.util.function.Predicate;
-
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.RetriableCommitFailedException;
 import org.apache.kafka.common.TopicPartition;
-
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
+import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.ReceiverRecord;
-import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.sender.TransactionManager;
+
+import java.util.function.BiFunction;
+import java.util.function.Function;
+import java.util.function.Predicate;
 
 public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
 
@@ -66,6 +65,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
         return withHandler(AckMode.AUTO_ACK, (scheduler, handler) -> {
             return handler
                 .receive()
+                .filter(it -> !it.isEmpty())
                 .publishOn(scheduler)
                 .map(consumerRecords -> {
                     return Flux.fromIterable(consumerRecords)
@@ -91,7 +91,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
                                 .publishOn(scheduler)
                                 .thenReturn(r);
                         }, Integer.MAX_VALUE);
-                }, Integer.MAX_VALUE);
+                });
         });
     }
 
@@ -100,10 +100,8 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
         return withHandler(AckMode.EXACTLY_ONCE, (scheduler, handler) -> {
             return handler
                 .receive()
+                .filter(it -> !it.isEmpty())
                 .map(consumerRecords -> {
-                    if (consumerRecords.isEmpty()) {
-                        return Flux.<ConsumerRecord<K, V>>empty();
-                    }
                     CommittableBatch offsetBatch = new CommittableBatch();
                     for (ConsumerRecord<K, V> r : consumerRecords) {
                         offsetBatch.updateOffset(new TopicPartition(r.topic(), r.partition()), r.offset());
