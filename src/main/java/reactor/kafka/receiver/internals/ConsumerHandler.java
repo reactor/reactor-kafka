@@ -5,8 +5,10 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.common.TopicPartition;
 import reactor.core.Disposable;
-import reactor.core.publisher.DirectProcessor;
+import reactor.core.publisher.EmitterProcessor;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxProcessor;
+import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.kafka.receiver.KafkaReceiver;
@@ -61,7 +63,7 @@ class ConsumerHandler<K, V> {
 
     private final ConsumerEventLoop<K, V> consumerEventLoop;
 
-    private final DirectProcessor<ConsumerRecords<K, V>> processor = DirectProcessor.create();
+    private final FluxProcessor<ConsumerRecords<K, V>, ConsumerRecords<K, V>> processor = EmitterProcessor.create(1);
 
     private Consumer<K, V> consumerProxy;
 
@@ -83,14 +85,14 @@ class ConsumerHandler<K, V> {
             eventScheduler,
             consumer,
             isRetriableException,
-            processor.sink(),
+            processor.sink(FluxSink.OverflowStrategy.ERROR),
             awaitingTransaction
         );
         eventScheduler.start();
     }
 
     public Flux<ConsumerRecords<K, V>> receive() {
-        return processor.onBackpressureBuffer();
+        return processor;
     }
 
     public Mono<Void> close() {
