@@ -319,27 +319,31 @@ class ConsumerEventLoop<K, V> {
             }
         }
 
-        private void waitFor(long endTimeNanos) {
-            while (inProgress.get() > 0 && endTimeNanos - System.nanoTime() > 0) {
+        private void waitFor(long endTimeMillis) {
+            while (inProgress.get() > 0 && endTimeMillis - System.currentTimeMillis() > 0) {
                 consumer.poll(Duration.ofMillis(1));
             }
         }
     }
 
     private class CloseEvent implements Runnable {
-        private final long closeEndTimeNanos;
+        private final long closeEndTimeMillis;
         CloseEvent(Duration timeout) {
-            this.closeEndTimeNanos = System.nanoTime() + timeout.toNanos();
+            this.closeEndTimeMillis = System.currentTimeMillis() + timeout.toMillis();
         }
 
         @Override
         public void run() {
             try {
                 if (consumer != null) {
-                    consumer.wakeup();
                     Collection<TopicPartition> manualAssignment = receiverOptions.assignment();
                     if (manualAssignment != null && !manualAssignment.isEmpty())
                         onPartitionsRevoked(manualAssignment);
+                    /*
+                     * We loop here in case the consumer has had a recent wakeup call (from user code)
+                     * which will cause a poll() (in waitFor) to be interrupted while we're
+                     * possibly waiting for async commit results.
+                     */
                     int attempts = 3;
                     for (int i = 0; i < attempts; i++) {
                         try {
@@ -349,13 +353,13 @@ class ConsumerEventLoop<K, V> {
                             // For exactly-once, offsets are committed by a producer, consumer may be closed immediately
                             if (ackMode != AckMode.EXACTLY_ONCE) {
                                 commitEvent.runIfRequired(forceCommit);
-                                commitEvent.waitFor(closeEndTimeNanos);
+                                commitEvent.waitFor(closeEndTimeMillis);
                             }
 
-                            long timeoutNanos = closeEndTimeNanos - System.nanoTime();
-                            if (timeoutNanos < 0)
-                                timeoutNanos = 0;
-                            consumer.close(timeoutNanos, TimeUnit.NANOSECONDS);
+                            long timeoutMillis = closeEndTimeMillis - System.currentTimeMillis();
+                            if (timeoutMillis < 0)
+                                timeoutMillis = 0;
+                            consumer.close(Duration.ofMillis(timeoutMillis));
                             consumer = null;
                             break;
                         } catch (WakeupException e) {
