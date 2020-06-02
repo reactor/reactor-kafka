@@ -238,26 +238,30 @@ class ConsumerEventLoop<K, V> {
             try {
                 if (commitArgs != null) {
                     if (!commitArgs.offsets().isEmpty()) {
-                        inProgress.incrementAndGet();
                         switch (ackMode) {
                             case ATMOST_ONCE:
                                 consumer.commitSync(commitArgs.offsets());
                                 handleSuccess(commitArgs, commitArgs.offsets());
                                 atmostOnceOffsets.onCommit(commitArgs.offsets());
-                                inProgress.decrementAndGet();
                                 break;
                             case EXACTLY_ONCE:
                                 // Handled separately using transactional KafkaSender
                                 break;
                             case AUTO_ACK:
                             case MANUAL_ACK:
-                                consumer.commitAsync(commitArgs.offsets(), (offsets, exception) -> {
+                                inProgress.incrementAndGet();
+                                try {
+                                    consumer.commitAsync(commitArgs.offsets(), (offsets, exception) -> {
+                                        inProgress.decrementAndGet();
+                                        if (exception == null)
+                                            handleSuccess(commitArgs, offsets);
+                                        else
+                                            handleFailure(commitArgs, exception);
+                                    });
+                                } catch (Throwable e) {
                                     inProgress.decrementAndGet();
-                                    if (exception == null)
-                                        handleSuccess(commitArgs, offsets);
-                                    else
-                                        handleFailure(commitArgs, exception);
-                                });
+                                    throw e;
+                                }
                                 pollEvent.schedule();
                                 break;
                         }
@@ -267,7 +271,6 @@ class ConsumerEventLoop<K, V> {
                 }
             } catch (Exception e) {
                 log.error("Unexpected exception", e);
-                inProgress.decrementAndGet();
                 handleFailure(commitArgs, e);
             }
         }

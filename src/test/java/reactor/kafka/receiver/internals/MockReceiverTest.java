@@ -15,32 +15,6 @@
  */
 package reactor.kafka.receiver.internals;
 
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Queue;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CopyOnWriteArraySet;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Consumer;
-import java.util.function.Function;
-import java.util.regex.Pattern;
-
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -68,6 +42,32 @@ import reactor.kafka.receiver.ReceiverRecord;
 import reactor.kafka.util.TestUtils;
 import reactor.test.StepVerifier;
 import reactor.test.StepVerifier.Step;
+
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Queue;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.regex.Pattern;
 
 import static org.awaitility.Awaitility.await;
 import static org.junit.Assert.assertEquals;
@@ -596,15 +596,17 @@ public class MockReceiverTest {
         AtomicLong lastCommitted = new AtomicLong(-1);
         sendMessages(topic, 0, 20);
         receiveAndVerify(15, r -> {
-            long offset = r.receiverOffset().offset();
-            if (offset < 10) {
-                r.receiverOffset().acknowledge();
-                if (((offset + 1) % batchSize) == 0)
-                    lastCommitted.set(offset);
-            } else
-                uncommittedMessages.add(r);
-            verifyCommit(r, lastCommitted.get());
-            return Mono.just(r);
+            return Mono.fromCallable(() -> {
+                long offset = r.receiverOffset().offset();
+                if (offset < 10) {
+                    r.receiverOffset().acknowledge();
+                    if (((offset + 1) % batchSize) == 0)
+                        lastCommitted.set(offset);
+                } else
+                    uncommittedMessages.add(r);
+                verifyCommit(r, lastCommitted.get());
+                return r;
+            }).subscribeOn(Schedulers.boundedElastic());
         });
         verifyCommits(groupId, topic, 10);
     }
@@ -623,17 +625,19 @@ public class MockReceiverTest {
         final int delayIndex = 5;
         sendMessages(topic, 0, 20);
         receiveAndVerify(15, r -> {
-            long offset = r.receiverOffset().offset();
-            if (r.receiverOffset().offset() < 10) {
-                r.receiverOffset().acknowledge();
-                if (offset == delayIndex) {
-                    TestUtils.sleep(interval.toMillis());
-                    lastCommitted.set(offset);
-                }
-            } else
-                uncommittedMessages.add(r);
-            verifyCommit(r, lastCommitted.get());
-            return Mono.just(r);
+            return Mono.fromCallable(() -> {
+                long offset = r.receiverOffset().offset();
+                if (r.receiverOffset().offset() < 10) {
+                    r.receiverOffset().acknowledge();
+                    if (offset == delayIndex) {
+                        TestUtils.sleep(interval.toMillis());
+                        lastCommitted.set(offset);
+                    }
+                } else
+                    uncommittedMessages.add(r);
+                verifyCommit(r, lastCommitted.get());
+                return r;
+            }).subscribeOn(Schedulers.boundedElastic());
         });
         verifyCommits(groupId, topic, 10);
     }
@@ -656,19 +660,21 @@ public class MockReceiverTest {
         sendMessages(topic, 0, 20);
         AtomicLong lastCommitted = new AtomicLong(-1);
         receiveAndVerify(15, r -> {
-            long offset = r.receiverOffset().offset();
-            if (offset < 10) {
-                r.receiverOffset().acknowledge();
-                if (offset == delayIndex) {
-                    TestUtils.sleep(interval.toMillis());
-                    lastCommitted.set(offset);
-                }
-                if (((offset + 1) % batchSize) == 0)
-                    lastCommitted.set(offset);
-            } else
-                uncommittedMessages.add(r);
-            verifyCommit(r, lastCommitted.get());
-            return Mono.just(r);
+            return Mono.fromCallable(() -> {
+                long offset = r.receiverOffset().offset();
+                if (offset < 10) {
+                    r.receiverOffset().acknowledge();
+                    if (offset == delayIndex) {
+                        TestUtils.sleep(interval.toMillis());
+                        lastCommitted.set(offset);
+                    }
+                    if (((offset + 1) % batchSize) == 0)
+                        lastCommitted.set(offset);
+                } else
+                    uncommittedMessages.add(r);
+                verifyCommit(r, lastCommitted.get());
+                return r;
+            }).subscribeOn(Schedulers.boundedElastic());
         });
 
         verifyCommits(groupId, topic, 10);
@@ -733,9 +739,9 @@ public class MockReceiverTest {
         Semaphore commitSemaphore = new Semaphore(0);
         Flux<ReceiverRecord<Integer, String>> inboundFlux = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions)
                 .receive()
-                .doOnNext(record -> {
+                .delayUntil(record -> {
                     receivedMessages.add(record);
-                    record.receiverOffset().commit().doOnSuccess(v -> commitSemaphore.release()).subscribe();
+                    return record.receiverOffset().commit().doOnSuccess(v -> commitSemaphore.release());
                 });
         StepVerifier.create(inboundFlux, 1)
                     .consumeNextWith(record -> {
@@ -792,8 +798,8 @@ public class MockReceiverTest {
 
         sendMessages(topic, 0, count + 10);
         receiveAndVerify(10, record -> {
-            StepVerifier.create(record.receiverOffset().commit()).expectComplete().verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
-            return Mono.just(record);
+            return record.receiverOffset().commit()
+                .thenReturn(record);
         });
         verifyCommits(groupId, topic, 10);
     }
