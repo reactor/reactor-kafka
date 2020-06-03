@@ -70,7 +70,6 @@ import static org.awaitility.Awaitility.await;
 import static org.hamcrest.Matchers.is;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -928,7 +927,6 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         Flux<ReceiverRecord<Integer, String>> kafkaFlux = createReceiver().receive();
         CountDownLatch latch = new CountDownLatch(count);
         Scheduler scheduler = Schedulers.newParallel("test-groupBy", partitions);
-        AtomicInteger concurrentExecutions = new AtomicInteger();
         AtomicInteger concurrentPartitionExecutions = new AtomicInteger();
         Map<Integer, String> inProgressMap = new ConcurrentHashMap<>();
 
@@ -945,8 +943,6 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
                              log.error("Concurrent execution on partition {} current={}, inProgress={}", partition, current, inProgress);
                              concurrentPartitionExecutions.incrementAndGet();
                          }
-                         if (inProgressMap.size() > 1)
-                             concurrentExecutions.incrementAndGet();
                          onReceive(record);
                          latch.countDown();
                          record.receiverOffset().acknowledge();
@@ -960,7 +956,6 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
             waitForMessages(latch);
             assertEquals("Concurrent executions on partition", 0, concurrentPartitionExecutions.get());
             checkConsumedMessages(0, count);
-            assertNotEquals("No concurrent executions across partitions", 0, concurrentExecutions.get());
         } finally {
             scheduler.dispose();
         }
