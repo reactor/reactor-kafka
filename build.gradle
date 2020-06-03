@@ -132,6 +132,7 @@ configure(allprojects) { project ->
     testCompile "org.slf4j:slf4j-log4j12:$slf4jVersion"
     testCompile "org.testcontainers:kafka:$testcontainersVersion"
     testCompile 'org.awaitility:awaitility:4.0.2'
+    testCompile 'org.assertj:assertj-core:3.16.1'
   }
 }
 
