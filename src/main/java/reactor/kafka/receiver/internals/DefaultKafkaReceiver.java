@@ -86,11 +86,8 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
                 .concatMap(records -> {
                     return Flux
                         .fromIterable(records)
-                        .concatMap(r -> {
-                            return handler.commit(r)
-                                .publishOn(scheduler)
-                                .thenReturn(r);
-                        }, Integer.MAX_VALUE);
+                        .concatMap(r -> handler.commit(r).thenReturn(r))
+                        .publishOn(scheduler);
                 });
         });
     }
