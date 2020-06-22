@@ -15,6 +15,30 @@
  */
 package reactor.kafka.sender.internals;
 
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.clients.producer.Producer;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.TopicPartition;
+import org.reactivestreams.Publisher;
+import org.reactivestreams.Subscription;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import reactor.core.CoreSubscriber;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxIdentityProcessor;
+import reactor.core.publisher.Mono;
+import reactor.core.publisher.Operators;
+import reactor.core.publisher.Processors;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
+import reactor.kafka.sender.KafkaOutbound;
+import reactor.kafka.sender.KafkaSender;
+import reactor.kafka.sender.SenderOptions;
+import reactor.kafka.sender.SenderRecord;
+import reactor.kafka.sender.SenderResult;
+import reactor.kafka.sender.TransactionManager;
+
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
@@ -27,30 +51,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
-
-import org.apache.kafka.clients.consumer.OffsetAndMetadata;
-import org.apache.kafka.clients.producer.Producer;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
-import org.apache.kafka.common.TopicPartition;
-import org.reactivestreams.Publisher;
-import org.reactivestreams.Subscription;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import reactor.core.CoreSubscriber;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-import reactor.core.publisher.Operators;
-import reactor.core.publisher.UnicastProcessor;
-import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
-import reactor.kafka.sender.KafkaOutbound;
-import reactor.kafka.sender.KafkaSender;
-import reactor.kafka.sender.TransactionManager;
-import reactor.kafka.sender.SenderOptions;
-import reactor.kafka.sender.SenderRecord;
-import reactor.kafka.sender.SenderResult;
 
 /**
  * Reactive producer that sends messages to Kafka topic partitions. The producer is thread-safe
@@ -82,6 +82,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
      * Constructs a reactive Kafka producer with the specified configuration properties. All Kafka
      * producer properties are supported. The underlying Kafka producer is created lazily when required.
      */
+    @SuppressWarnings("deprecation")
     public DefaultKafkaSender(ProducerFactory producerFactory, SenderOptions<K, V> options) {
         this.hasProducer = new AtomicBoolean();
         this.senderOptions = options.toImmutable()
@@ -132,7 +133,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
 
     @Override
     public <T> Flux<Flux<SenderResult<T>>> sendTransactionally(Publisher<? extends Publisher<? extends SenderRecord<K, V, T>>> transactionRecords) {
-        UnicastProcessor<Object> processor = UnicastProcessor.create();
+        FluxIdentityProcessor<Object> processor = Processors.unicast();
         return Flux.from(transactionRecords)
                    .publishOn(senderOptions.scheduler(), false, 1)
                    .concatMapDelayError(records -> transaction(records, processor), false, 1)
@@ -196,7 +197,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
                 .then();
     }
 
-    private <T> Flux<SenderResult<T>> transaction(Publisher<? extends SenderRecord<K, V, T>> transactionRecords, UnicastProcessor<Object> transactionBoundary) {
+    private <T> Flux<SenderResult<T>> transaction(Publisher<? extends SenderRecord<K, V, T>> transactionRecords, FluxIdentityProcessor<Object> transactionBoundary) {
         return transactionManager()
                 .begin()
                 .thenMany(send(transactionRecords))

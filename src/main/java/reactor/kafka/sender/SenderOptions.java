@@ -1,11 +1,5 @@
 package reactor.kafka.sender;
 
-import java.time.Duration;
-import java.util.Map;
-import java.util.Properties;
-
-import javax.naming.AuthenticationException;
-
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -16,6 +10,11 @@ import reactor.core.scheduler.Scheduler;
 import reactor.util.annotation.NonNull;
 import reactor.util.annotation.Nullable;
 
+import javax.naming.AuthenticationException;
+import java.time.Duration;
+import java.util.Map;
+import java.util.Properties;
+
 public interface SenderOptions<K, V> {
 
     /**
@@ -24,7 +23,9 @@ public interface SenderOptions<K, V> {
      */
     @NonNull
     static <K, V> SenderOptions<K, V> create() {
-        return new MutableSenderOptions<>();
+        @SuppressWarnings("deprecation")
+        SenderOptions<K, V> options = new MutableSenderOptions<>();
+        return options;
     }
 
     /**
@@ -34,7 +35,9 @@ public interface SenderOptions<K, V> {
      */
     @NonNull
     static <K, V> SenderOptions<K, V> create(@NonNull Map<String, Object> configProperties) {
-        return new MutableSenderOptions<>(configProperties);
+        @SuppressWarnings("deprecation")
+        SenderOptions<K, V> options = new MutableSenderOptions<>(configProperties);
+        return options;
     }
 
     /**
@@ -44,7 +47,9 @@ public interface SenderOptions<K, V> {
      */
     @NonNull
     static <K, V> SenderOptions<K, V> create(@NonNull Properties configProperties) {
-        return new MutableSenderOptions<>(configProperties);
+        @SuppressWarnings("deprecation")
+        SenderOptions<K, V> options = new MutableSenderOptions<>(configProperties);
+        return options;
     }
 
     /**

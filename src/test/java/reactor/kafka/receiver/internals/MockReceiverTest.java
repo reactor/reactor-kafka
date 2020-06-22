@@ -773,7 +773,7 @@ public class MockReceiverTest {
 
         Flux<ReceiverRecord<Integer, String>> inboundFlux = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions)
                 .receive();
-        StepVerifier.create(inboundFlux.publishOn(Schedulers.elastic()), 1)
+        StepVerifier.create(inboundFlux.publishOn(Schedulers.boundedElastic()), 1)
                     .consumeNextWith(record -> {
                         receivedMessages.add(record);
                         record.receiverOffset().commit().block(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
@@ -975,7 +975,7 @@ public class MockReceiverTest {
         CountDownLatch[] latch = new CountDownLatch[partitions];
         for (int i = 0; i < partitions; i++)
             latch[i] = new CountDownLatch(countPerPartition);
-        Scheduler scheduler = Schedulers.newElastic("test-groupBy", 10, true);
+        Scheduler scheduler = Schedulers.newBoundedElastic(100, Integer.MAX_VALUE, "test-groupBy", 10, true);
         Map<String, Set<Integer>> threadMap = new ConcurrentHashMap<>();
 
         receiverOptions = receiverOptions.subscription(Collections.singletonList(topic));
@@ -1233,7 +1233,7 @@ public class MockReceiverTest {
             }
         };
         OffsetCommitCallback commitListener = (offsets, exception) -> { };
-        testDisallowedConsumerMethod(c -> c.poll(0));
+        testDisallowedConsumerMethod(c -> c.poll(Duration.ZERO));
         testDisallowedConsumerMethod(c -> c.close());
         testDisallowedConsumerMethod(c -> c.assign(Collections.singleton(new TopicPartition(topic, 0))));
         testDisallowedConsumerMethod(c -> c.subscribe(Collections.singleton(topic)));
