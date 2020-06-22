@@ -16,6 +16,35 @@
 package reactor.kafka.sender.internals;
 
 
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.Producer;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.PartitionInfo;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.InvalidTopicException;
+import org.apache.kafka.common.errors.LeaderNotAvailableException;
+import org.apache.kafka.common.errors.ProducerFencedException;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
+import reactor.kafka.mock.Message;
+import reactor.kafka.mock.MockCluster;
+import reactor.kafka.mock.MockProducer;
+import reactor.kafka.mock.MockProducer.Pool;
+import reactor.kafka.sender.KafkaOutbound;
+import reactor.kafka.sender.KafkaSender;
+import reactor.kafka.sender.SenderOptions;
+import reactor.kafka.sender.SenderRecord;
+import reactor.kafka.sender.SenderResult;
+import reactor.kafka.util.TestUtils;
+import reactor.test.StepVerifier;
+
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -35,36 +64,6 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static reactor.kafka.AbstractKafkaTest.DEFAULT_TEST_TIMEOUT;
-
-import org.apache.kafka.clients.producer.KafkaProducer;
-import org.apache.kafka.clients.producer.Producer;
-import org.apache.kafka.clients.producer.ProducerConfig;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
-import org.apache.kafka.common.PartitionInfo;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.errors.InvalidTopicException;
-import org.apache.kafka.common.errors.LeaderNotAvailableException;
-import org.apache.kafka.common.errors.ProducerFencedException;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
-import reactor.kafka.mock.Message;
-import reactor.kafka.mock.MockCluster;
-import reactor.kafka.mock.MockProducer;
-import reactor.kafka.mock.MockProducer.Pool;
-import reactor.kafka.sender.KafkaOutbound;
-import reactor.kafka.sender.KafkaSender;
-import reactor.kafka.sender.SenderOptions;
-import reactor.kafka.sender.SenderRecord;
-import reactor.kafka.sender.SenderResult;
-import reactor.kafka.util.TestUtils;
-import reactor.test.StepVerifier;
 
 /**
  * Kafka sender tests using mock Kafka producers.
@@ -842,7 +841,7 @@ public class MockSenderTest {
                     metadata = new RecordMetadata(partition, 0, partitionResponses.size(), 0, (Long) 0L, 0, 0);
                 else
                     e = new InvalidTopicException("Topic not found: " + topic);
-                partitionResponses.add(new DefaultKafkaSender.Response<Integer>(metadata, e, correlation));
+                partitionResponses.add(new Response<>(metadata, e, correlation));
             }
             return this;
         }
