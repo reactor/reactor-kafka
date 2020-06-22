@@ -15,6 +15,31 @@
  */
 package reactor.kafka.sender;
 
+import org.apache.kafka.clients.consumer.Consumer;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.errors.ProducerFencedException;
+import org.apache.kafka.common.serialization.Serializer;
+import org.apache.kafka.common.serialization.StringSerializer;
+import org.junit.After;
+import org.junit.AssumptionViolatedException;
+import org.junit.Before;
+import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import reactor.core.Exceptions;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Sinks;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
+import reactor.kafka.AbstractKafkaTest;
+import reactor.kafka.receiver.ReceiverOptions;
+import reactor.kafka.receiver.internals.ConsumerFactory;
+import reactor.kafka.util.TestUtils;
+import reactor.test.StepVerifier;
+
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -36,33 +61,6 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
-
-import org.apache.kafka.clients.consumer.Consumer;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.producer.ProducerConfig;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
-import org.apache.kafka.common.errors.ProducerFencedException;
-import org.apache.kafka.common.serialization.Serializer;
-import org.apache.kafka.common.serialization.StringSerializer;
-import org.junit.After;
-import org.junit.AssumptionViolatedException;
-import org.junit.Before;
-import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import reactor.core.Exceptions;
-import reactor.core.publisher.EmitterProcessor;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.FluxSink;
-import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
-import reactor.kafka.AbstractKafkaTest;
-import reactor.kafka.receiver.ReceiverOptions;
-import reactor.kafka.receiver.internals.ConsumerFactory;
-import reactor.kafka.util.TestUtils;
-import reactor.test.StepVerifier;
 
 /**
  * Kafka sender integration tests using embedded Kafka brokers and producers.
@@ -243,15 +241,15 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         recreateSender(senderOptions.stopOnError(false).producerProperty(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, FirstTimeFailingStringSerializer.class.getName()));
 
         Semaphore errorSemaphore = new Semaphore(0);
-        EmitterProcessor<ProducerRecord<Integer, String>> processor = EmitterProcessor.create();
-        kafkaSender.send(processor.map(producerRecord -> SenderRecord.create(producerRecord, null)))
+        Sinks.StandaloneFluxSink<ProducerRecord<Integer, String>> multicast = Sinks.multicast();
+        kafkaSender.send(multicast.asFlux().map(producerRecord -> SenderRecord.create(producerRecord, null)))
             .doOnError(t -> errorSemaphore.release())
             .subscribe();
 
-        FluxSink<ProducerRecord<Integer, String>> sink = processor.sink();
-        sink.next(recordToFail);
-        sink.next(recordToSucceed);
-        sink.complete();
+        multicast
+            .next(recordToFail)
+            .next(recordToSucceed)
+            .complete();
 
         waitForMessages(consumer, 1, true);
         assertTrue("Error callback not invoked", errorSemaphore.tryAcquire(requestTimeoutMillis, TimeUnit.MILLISECONDS));
@@ -397,8 +395,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
     @Test
     public void sendResponseEmitter() throws Exception {
         int count = 5000;
-        EmitterProcessor<Integer> emitter = EmitterProcessor.create();
-        FluxSink<Integer> sink = emitter.sink();
+        Sinks.StandaloneFluxSink<Integer> sink = Sinks.multicast();
         List<List<Integer>> successfulSends = new ArrayList<>();
         Set<Integer> failedSends = new HashSet<>();
         Semaphore done = new Semaphore(0);
@@ -411,7 +408,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                 .stopOnError(false)
                 .scheduler(scheduler);
         recreateSender(senderOptions);
-        kafkaSender.send(emitter.map(i -> SenderRecord.<Integer, String, Integer>create(new ProducerRecord<Integer, String>(topic, i % partitions, i, "Message " + i), i)))
+        kafkaSender.send(sink.asFlux().map(i -> SenderRecord.<Integer, String, Integer>create(new ProducerRecord<Integer, String>(topic, i % partitions, i, "Message " + i), i)))
                    .doOnNext(result -> {
                        int messageIdentifier = result.correlationMetadata();
                        RecordMetadata metadata = result.recordMetadata();
@@ -553,7 +550,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         Map<String, Object> consumerProps = consumerProps(groupId);
         Consumer<Integer, String> consumer = ConsumerFactory.INSTANCE.createConsumer(ReceiverOptions.<Integer, String>create(consumerProps));
         consumer.subscribe(Collections.singletonList(topic));
-        consumer.poll(requestTimeoutMillis);
+        consumer.poll(Duration.ofMillis(requestTimeoutMillis));
         return consumer;
     }
 
@@ -561,14 +558,14 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         int receivedCount = 0;
         long endTimeMillis = System.currentTimeMillis() + receiveTimeoutMillis;
         while (receivedCount < expectedCount && System.currentTimeMillis() < endTimeMillis) {
-            ConsumerRecords<Integer, String> records = consumer.poll(1000);
+            ConsumerRecords<Integer, String> records = consumer.poll(Duration.ofSeconds(1));
             records.forEach(record -> onReceive(record));
             receivedCount += records.count();
         }
         if (checkMessageOrder)
             checkConsumedMessages();
         assertEquals(expectedCount, receivedCount);
-        ConsumerRecords<Integer, String> records = consumer.poll(500);
+        ConsumerRecords<Integer, String> records = consumer.poll(Duration.ofMillis(500));
         assertTrue("Unexpected message received: " + records.count(), records.isEmpty());
     }
 

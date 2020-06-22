@@ -1,5 +1,6 @@
 package reactor.kafka.receiver.internals;
 
+import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import reactor.kafka.receiver.ReceiverOptions;
@@ -24,12 +25,15 @@ public class ChaosConsumerFactory extends ConsumerFactory {
         injectCommitError.set(false);
     }
 
+    @SuppressWarnings("unchecked")
     @Override
     public <K, V> org.apache.kafka.clients.consumer.Consumer<K, V> createConsumer(ReceiverOptions<K, V> config) {
         org.apache.kafka.clients.consumer.Consumer<K, V> consumer = ConsumerFactory.INSTANCE.createConsumer(config);
+        @SuppressWarnings("rawtypes")
+        Class[] interfaces = {Consumer.class};
         return (org.apache.kafka.clients.consumer.Consumer<K, V>) Proxy.newProxyInstance(
             consumer.getClass().getClassLoader(),
-            new Class[]{org.apache.kafka.clients.consumer.Consumer.class},
+            interfaces,
             (proxy, method, args) -> {
                 try {
                     if (injectCommitError.get()) {
@@ -39,6 +43,7 @@ public class ChaosConsumerFactory extends ConsumerFactory {
                                 if (!(args[0] instanceof Map)) {
                                     break;
                                 }
+                                @SuppressWarnings("rawtypes")
                                 Map<TopicPartition, OffsetAndMetadata> offsets = new HashMap<>((Map) args[0]);
                                 offsets.put(NON_EXISTENT_PARTITION, new OffsetAndMetadata(1L));
                                 args[0] = offsets;

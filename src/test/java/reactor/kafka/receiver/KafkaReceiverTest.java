@@ -44,6 +44,7 @@ import reactor.kafka.util.ConsumerDelegate;
 import reactor.kafka.util.TestUtils;
 import reactor.test.StepVerifier;
 import reactor.util.annotation.Nullable;
+import reactor.util.retry.Retry;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -606,7 +607,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
                     record.receiverOffset().commit()
                         .doOnError(e -> commitFailureSemaphore.release())
                         .doOnSuccess(i -> commitSuccessSemaphore.release())
-                        .retry(retryPredicate)
+                        .retryWhen(Retry.indefinitely().filter(retryPredicate))
                         .subscribe();
                 } catch (Exception e) {
                     fail("Unexpected exception: " + e);
@@ -847,6 +848,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
                                 super.close();
                             }
 
+                            @SuppressWarnings("deprecation")
                             @Override
                             public void close(long timeout, TimeUnit unit) {
                                 closed.set(true);
@@ -1045,7 +1047,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     @Test
     public void publishFromCustomScheduler() throws Exception {
         String schedulerName = "custom-scheduler";
-        Scheduler scheduler = Schedulers.newElastic(schedulerName);
+        Scheduler scheduler = Schedulers.newSingle(schedulerName);
 
         receiverOptions = receiverOptions
             .schedulerSupplier(() -> scheduler)
@@ -1312,7 +1314,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
             .map(i -> createProducerRecord(i, true))
             .concatMap(record -> kafkaSender.createOutbound().send(Mono.just(record)).then()
                                             .doOnSuccess(metadata -> latch.countDown())
-                                            .retryBackoff(100, Duration.ofMillis(100)))
+                                            .retryWhen(Retry.backoff(100, Duration.ofMillis(100))))
             .subscribe();
         assertTrue("Messages not sent ", latch.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
     }

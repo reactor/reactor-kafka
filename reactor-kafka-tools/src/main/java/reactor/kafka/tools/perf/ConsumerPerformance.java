@@ -31,9 +31,24 @@
  */
 package reactor.kafka.tools.perf;
 
-import static net.sourceforge.argparse4j.impl.Arguments.store;
+import net.sourceforge.argparse4j.ArgumentParsers;
+import net.sourceforge.argparse4j.inf.ArgumentParser;
+import net.sourceforge.argparse4j.inf.ArgumentParserException;
+import net.sourceforge.argparse4j.inf.Namespace;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
+import reactor.core.Disposable;
+import reactor.kafka.receiver.KafkaReceiver;
+import reactor.kafka.receiver.ReceiverOptions;
+import reactor.kafka.receiver.ReceiverPartition;
 
 import java.text.SimpleDateFormat;
+import java.time.Duration;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -43,22 +58,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.serialization.ByteArrayDeserializer;
-
-import net.sourceforge.argparse4j.ArgumentParsers;
-import net.sourceforge.argparse4j.inf.ArgumentParser;
-import net.sourceforge.argparse4j.inf.ArgumentParserException;
-import net.sourceforge.argparse4j.inf.Namespace;
-import reactor.core.Disposable;
-import reactor.kafka.receiver.ReceiverOptions;
-import reactor.kafka.receiver.KafkaReceiver;
-import reactor.kafka.receiver.ReceiverPartition;
+import static net.sourceforge.argparse4j.impl.Arguments.store;
 
 public class ConsumerPerformance {
 
@@ -260,7 +260,7 @@ public class ConsumerPerformance {
                 if (System.currentTimeMillis() - joinStart >= joinTimeout) {
                     throw new RuntimeException("Timed out waiting for initial group join.");
                 }
-                consumer.poll(100);
+                consumer.poll(Duration.ofMillis(100));
             }
             consumer.seekToBeginning(Collections.emptyList());
 
@@ -270,7 +270,7 @@ public class ConsumerPerformance {
             long lastConsumedTime = System.currentTimeMillis();
 
             while (messagesRead < numMessages && System.currentTimeMillis() - lastConsumedTime <= timeout) {
-                ConsumerRecords<byte[], byte[]> records = consumer.poll(100);
+                ConsumerRecords<byte[], byte[]> records = consumer.poll(Duration.ofMillis(100));
                 if (records.count() > 0)
                     lastConsumedTime = System.currentTimeMillis();
                 for (ConsumerRecord<byte[], byte[]> record : records) {

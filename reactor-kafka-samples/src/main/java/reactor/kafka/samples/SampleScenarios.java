@@ -15,6 +15,32 @@
  */
 package reactor.kafka.samples;
 
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.serialization.Deserializer;
+import org.apache.kafka.common.serialization.IntegerDeserializer;
+import org.apache.kafka.common.serialization.IntegerSerializer;
+import org.apache.kafka.common.serialization.Serializer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import reactor.core.Disposable;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
+import reactor.kafka.receiver.KafkaReceiver;
+import reactor.kafka.receiver.ReceiverOffset;
+import reactor.kafka.receiver.ReceiverOptions;
+import reactor.kafka.receiver.ReceiverRecord;
+import reactor.kafka.sender.KafkaSender;
+import reactor.kafka.sender.SenderOptions;
+import reactor.kafka.sender.SenderRecord;
+import reactor.kafka.sender.SenderResult;
+
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -27,34 +53,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
-
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.producer.ProducerConfig;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.serialization.Deserializer;
-import org.apache.kafka.common.serialization.IntegerDeserializer;
-import org.apache.kafka.common.serialization.IntegerSerializer;
-import org.apache.kafka.common.serialization.Serializer;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import reactor.core.Disposable;
-import reactor.core.publisher.EmitterProcessor;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.FluxSink;
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
-import reactor.kafka.receiver.ReceiverOptions;
-import reactor.kafka.receiver.ReceiverRecord;
-import reactor.kafka.receiver.KafkaReceiver;
-import reactor.kafka.receiver.ReceiverOffset;
-import reactor.kafka.sender.KafkaSender;
-import reactor.kafka.sender.SenderOptions;
-import reactor.kafka.sender.SenderRecord;
-import reactor.kafka.sender.SenderResult;
 
 /**
  * Sample flows using Reactive API for Kafka.
@@ -381,14 +379,14 @@ public class SampleScenarios {
         }
         public Flux<?> flux() {
             sender = sender(senderOptions());
-            EmitterProcessor<Person> processor = EmitterProcessor.create();
-            FluxSink<Person> incoming = processor.sink();
+            Sinks.StandaloneFluxSink<Person> sink = Sinks.multicast();
             Flux<?> inFlux = KafkaReceiver.create(receiverOptions(Collections.singleton(sourceTopic)))
                                      .receiveAutoAck()
                                      .concatMap(r -> r)
-                                     .doOnNext(m -> incoming.next(m.value()));
-            Flux<SenderResult<Integer>> stream1 = sender.send(processor.publishOn(scheduler1).map(p -> SenderRecord.create(process1(p, true), p.id())));
-            Flux<SenderResult<Integer>> stream2 = sender.send(processor.publishOn(scheduler2).map(p -> SenderRecord.create(process2(p, true), p.id())));
+                                     .doOnNext(m -> sink.next(m.value()));
+            Flux<Person> persons = sink.asFlux();
+            Flux<SenderResult<Integer>> stream1 = sender.send(persons.publishOn(scheduler1).map(p -> SenderRecord.create(process1(p, true), p.id())));
+            Flux<SenderResult<Integer>> stream2 = sender.send(persons.publishOn(scheduler2).map(p -> SenderRecord.create(process2(p, true), p.id())));
             AtomicReference<Disposable> cancelRef = new AtomicReference<>();
             Consumer<AtomicReference<Disposable>> cancel = cr -> {
                 Disposable c = cr.getAndSet(null);
@@ -438,7 +436,7 @@ public class SampleScenarios {
             this.topic = topic;
         }
         public Flux<?> flux() {
-            Scheduler scheduler = Schedulers.newElastic("sample", 60, true);
+            Scheduler scheduler = Schedulers.newBoundedElastic(60, Integer.MAX_VALUE, "sample", 60, true);
             return KafkaReceiver.create(receiverOptions(Collections.singleton(topic)).commitInterval(Duration.ZERO))
                             .receive()
                             .groupBy(m -> m.receiverOffset().topicPartition())
