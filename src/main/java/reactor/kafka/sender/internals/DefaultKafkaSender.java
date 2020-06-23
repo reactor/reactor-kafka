@@ -113,11 +113,15 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
 
     @Override
     public <T> Flux<SenderResult<T>> send(Publisher<? extends SenderRecord<K, V, T>> records) {
+        return doSend(records);
+    }
+
+    private <T> Flux<SenderResult<T>> doSend(Publisher<? extends ProducerRecord<K, V>> records) {
         return producerMono
             .flatMapMany(producer -> new Flux<SenderResult<T>>() {
                 @Override
                 public void subscribe(CoreSubscriber<? super SenderResult<T>> s) {
-                    Flux<SenderRecord<K, V, T>> senderRecords = Flux.from(records);
+                    Flux<ProducerRecord<K, V>> senderRecords = Flux.from(records);
                     // FIXME replace with Sink
                     senderRecords.subscribe(new SendSubscriber<>(producer, s, senderOptions.stopOnError()));
                 }
@@ -165,23 +169,10 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
             senderOptions.scheduler().dispose();
     }
 
-    private Flux<Object> sendProducerRecords(Publisher<? extends ProducerRecord<K, V>> records) {
-        return producerMono
-            .flatMapMany(producer -> new Flux<Object>() {
-                @Override
-                public void subscribe(CoreSubscriber<? super Object> s) {
-                    // FIXME: replace with Flux.create and pass FluxSink to the SendSubscriber
-                    Flux.from(records).subscribe(new SendSubscriberNoResponse(producer, s, senderOptions.stopOnError()));
-                }
-            })
-            .doOnError(e -> log.trace("Send failed with exception", e))
-            .publishOn(senderOptions.scheduler(), senderOptions.maxInFlight());
-    }
-
     private Mono<Void> transaction(Publisher<? extends ProducerRecord<K, V>> transactionRecords) {
         return transactionManager()
                 .begin()
-                .thenMany(sendProducerRecords(transactionRecords))
+                .thenMany(doSend(transactionRecords))
                 .concatWith(transactionManager().commit())
                 .onErrorResume(e -> transactionManager().abort().then(Mono.error(e)))
                 .publishOn(senderOptions.scheduler())
@@ -227,15 +218,15 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
         COMPLETE
     }
 
-    private abstract class AbstractSendSubscriber<Q, S, C> implements CoreSubscriber<Q> {
-        protected final CoreSubscriber<? super S> actual;
+    private class SendSubscriber<C> implements CoreSubscriber<ProducerRecord<K, V>> {
+        protected final CoreSubscriber<? super SenderResult<C>> actual;
         private final boolean stopOnError;
         private final Producer<K, V> producer;
         private final AtomicInteger inflight = new AtomicInteger();
         private final AtomicReference<Throwable> firstException = new AtomicReference<>();
         private final AtomicReference<SubscriberState> state = new AtomicReference<>(SubscriberState.INIT);
 
-        AbstractSendSubscriber(Producer<K, V> producer, CoreSubscriber<? super S> actual, boolean stopOnError) {
+        SendSubscriber(Producer<K, V> producer, CoreSubscriber<? super SenderResult<C>> actual, boolean stopOnError) {
             this.producer = producer;
             this.stopOnError = stopOnError;
             this.actual = actual;
@@ -248,18 +239,21 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
         }
 
         @Override
-        public void onNext(Q m) {
+        public void onNext(ProducerRecord<K, V> m) {
             if (checkComplete(m))
                 return;
             inflight.incrementAndGet();
             if (Thread.interrupted()) // Clear any interrupts
                 log.trace("Previous operation on this scheduler was interrupted");
 
-            C correlationMetadata = correlationMetadata(m);
+            C correlationMetadata = m instanceof SenderRecord
+                ? ((SenderRecord<K, V, C>) m).correlationMetadata()
+                : null;
+
             try {
                 if (senderOptions.isTransactional())
                     log.trace("Transactional send initiated for producer {} in state {} inflight {}: {}", senderOptions.transactionalId(), state, inflight, m);
-                producer.send(producerRecord(m), (metadata, exception) -> {
+                producer.send(m, (metadata, exception) -> {
                     try {
                         if (senderOptions.isTransactional())
                             log.trace("Transactional send completed for producer {} in state {} inflight {}: {}", senderOptions.transactionalId(), state, inflight, m);
@@ -306,79 +300,28 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
             }
         }
 
-        public void handleMetadata(RecordMetadata metadata, C correlation) {
+        final void handleMetadata(RecordMetadata metadata, C correlation) {
             if (!checkComplete(metadata))
-                handleResponse(metadata, null, correlation);
+                actual.onNext(new Response<>(metadata, null, correlation));
         }
 
-        public void handleError(Exception e, C correlation, boolean abort) {
+        final void handleError(Exception e, C correlation, boolean abort) {
             log.error("Sender failed", e);
             boolean complete = checkComplete(e);
             firstException.compareAndSet(null, e);
             if (!complete) {
-                handleResponse(null, e, correlation);
+                actual.onNext(new Response<>(null, e, correlation));
                 if (abort || senderOptions.fatalException(e))
                     onError(e);
             }
         }
 
-        public <T> boolean checkComplete(T t) {
+        final boolean checkComplete(Object t) {
             boolean complete = state.get() == SubscriberState.COMPLETE;
             if (complete && firstException.get() == null) {
                 Operators.onNextDropped(t, actual.currentContext());
             }
             return complete;
-        }
-
-        protected abstract void handleResponse(RecordMetadata metadata, Exception e, C correlation);
-        protected abstract ProducerRecord<K, V> producerRecord(Q request);
-        protected abstract C correlationMetadata(Q request);
-    }
-
-    private class SendSubscriber<T> extends AbstractSendSubscriber<SenderRecord<K, V, T>, SenderResult<T>, T> {
-
-        SendSubscriber(Producer<K, V> producer, CoreSubscriber<? super SenderResult<T>> actual, boolean stopOnError) {
-            super(producer, actual, stopOnError);
-        }
-
-        @Override
-        protected void handleResponse(RecordMetadata metadata, Exception e, T correlation) {
-            actual.onNext(new Response<T>(metadata, e, correlation));
-        }
-
-        @Override
-        protected T correlationMetadata(SenderRecord<K, V, T> request) {
-            return request.correlationMetadata();
-        }
-
-        @Override
-        protected ProducerRecord<K, V> producerRecord(SenderRecord<K, V, T> request) {
-            return request;
-        }
-    }
-
-    private class SendSubscriberNoResponse extends AbstractSendSubscriber<ProducerRecord<K, V>, Object, Void> {
-
-        SendSubscriberNoResponse(Producer<K, V> producer, CoreSubscriber<? super Object> actual, boolean stopOnError) {
-            super(producer, actual, stopOnError);
-        }
-
-        @Override
-        protected void handleResponse(RecordMetadata metadata, Exception e, Void correlation) {
-            if (metadata != null)
-                actual.onNext(metadata);
-            else
-                actual.onNext(e);
-        }
-
-        @Override
-        protected Void correlationMetadata(ProducerRecord<K, V> request) {
-            return null;
-        }
-
-        @Override
-        protected ProducerRecord<K, V> producerRecord(ProducerRecord<K, V> request) {
-            return request;
         }
     }
 
@@ -392,7 +335,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
 
         @Override
         public KafkaOutbound<K, V> send(Publisher<? extends ProducerRecord<K, V>> records) {
-            return then(sender.sendProducerRecords(records).then());
+            return then(sender.doSend(records).then());
         }
 
         @Override
