@@ -15,11 +15,9 @@
  */
 package reactor.kafka.sender.internals;
 
-import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
-import org.apache.kafka.common.TopicPartition;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscription;
 import org.slf4j.Logger;
@@ -30,7 +28,6 @@ import reactor.core.publisher.FluxIdentityProcessor;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Operators;
 import reactor.core.publisher.Processors;
-import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.kafka.sender.KafkaOutbound;
 import reactor.kafka.sender.KafkaSender;
@@ -44,7 +41,6 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import java.util.Arrays;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -62,7 +58,7 @@ import java.util.function.Function;
  */
 public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
 
-    private static final Logger log = LoggerFactory.getLogger(DefaultKafkaSender.class.getName());
+    static final Logger log = LoggerFactory.getLogger(DefaultKafkaSender.class.getName());
 
     /** Note: Methods added to this set should also be included in javadoc for {@link KafkaSender#doOnProducer(Function)} */
     private static final Set<String> DELEGATE_METHODS = new HashSet<>(Arrays.asList(
@@ -75,7 +71,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
     private final Mono<Producer<K, V>> producerMono;
     private final AtomicBoolean hasProducer;
     private final SenderOptions<K, V> senderOptions;
-    private final DefaultTransactionManager transactionManager;
+    private final TransactionManager transactionManager;
     private Producer<K, V> producerProxy;
 
     /**
@@ -111,7 +107,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
                 });
 
         this.transactionManager = senderOptions.isTransactional()
-            ? new DefaultTransactionManager()
+            ? new DefaultTransactionManager<>(producerMono, senderOptions)
             : null;
     }
 
@@ -435,45 +431,4 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
         }
     }
 
-    private class DefaultTransactionManager implements TransactionManager {
-
-        @Override
-        public <T> Mono<T> begin() {
-            return producerMono.flatMap(p -> Mono.fromRunnable(() -> {
-                p.beginTransaction();
-                log.debug("Begin a new transaction for producer {}", senderOptions.transactionalId());
-            }));
-        }
-
-        @Override
-        public <T> Mono<T> sendOffsets(Map<TopicPartition, OffsetAndMetadata> offsets, String consumerGroupId) {
-            return producerMono.flatMap(producer -> Mono.fromRunnable(() -> {
-                if (!offsets.isEmpty()) {
-                    producer.sendOffsetsToTransaction(offsets, consumerGroupId);
-                    log.trace("Sent offsets to transaction for producer {}, offsets: {}", senderOptions.transactionalId(), offsets);
-                }
-            }));
-        }
-
-        @Override
-        public <T> Mono<T> commit() {
-            return producerMono.flatMap(producer -> Mono.fromRunnable(() -> {
-                producer.commitTransaction();
-                log.debug("Commit current transaction for producer {}", senderOptions.transactionalId());
-            }));
-        }
-
-        @Override
-        public <T> Mono<T> abort() {
-            return producerMono.flatMap(p -> Mono.fromRunnable(() -> {
-                p.abortTransaction();
-                log.debug("Abort current transaction for producer {}", senderOptions.transactionalId());
-            }));
-        }
-
-        @Override
-        public Scheduler scheduler() {
-            return senderOptions.scheduler();
-        }
-    }
 }
