@@ -70,7 +70,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
 
     private final Mono<Producer<K, V>> producerMono;
     private final AtomicBoolean hasProducer;
-    private final SenderOptions<K, V> senderOptions;
+    final SenderOptions<K, V> senderOptions;
     private final TransactionManager transactionManager;
     private Producer<K, V> producerProxy;
 
@@ -116,7 +116,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
         return doSend(records);
     }
 
-    private <T> Flux<SenderResult<T>> doSend(Publisher<? extends ProducerRecord<K, V>> records) {
+    <T> Flux<SenderResult<T>> doSend(Publisher<? extends ProducerRecord<K, V>> records) {
         return producerMono
             .flatMapMany(producer -> new Flux<SenderResult<T>>() {
                 @Override
@@ -167,16 +167,6 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
                     .block();
         if (senderOptions.isTransactional())
             senderOptions.scheduler().dispose();
-    }
-
-    private Mono<Void> transaction(Publisher<? extends ProducerRecord<K, V>> transactionRecords) {
-        return transactionManager()
-                .begin()
-                .thenMany(doSend(transactionRecords))
-                .concatWith(transactionManager().commit())
-                .onErrorResume(e -> transactionManager().abort().then(Mono.error(e)))
-                .publishOn(senderOptions.scheduler())
-                .then();
     }
 
     private <T> Flux<SenderResult<T>> transaction(Publisher<? extends SenderRecord<K, V, T>> transactionRecords, FluxIdentityProcessor<Object> transactionBoundary) {
@@ -322,55 +312,6 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
                 Operators.onNextDropped(t, actual.currentContext());
             }
             return complete;
-        }
-    }
-
-    static class DefaultKafkaOutbound<K, V> implements KafkaOutbound<K, V> {
-
-        final DefaultKafkaSender<K, V> sender;
-
-        DefaultKafkaOutbound(DefaultKafkaSender<K, V> sender) {
-            this.sender = sender;
-        }
-
-        @Override
-        public KafkaOutbound<K, V> send(Publisher<? extends ProducerRecord<K, V>> records) {
-            return then(sender.doSend(records).then());
-        }
-
-        @Override
-        public KafkaOutbound<K, V> sendTransactionally(Publisher<? extends Publisher<? extends ProducerRecord<K, V>>> transactionRecords) {
-            return then(Flux.from(transactionRecords)
-                            .publishOn(sender.senderOptions.scheduler())
-                            .concatMapDelayError(sender::transaction, false, 1));
-        }
-
-        @Override
-        public KafkaOutbound<K, V> then(Publisher<Void> other) {
-            return new KafkaOutboundThen<>(sender, this, other);
-        }
-
-        public Mono<Void> then() {
-            return Mono.empty();
-        }
-    }
-
-    private static class KafkaOutboundThen<K, V> extends DefaultKafkaOutbound<K, V> {
-
-        private final Mono<Void> thenMono;
-
-        KafkaOutboundThen(DefaultKafkaSender<K, V> sender, KafkaOutbound<K, V> kafkaOutbound, Publisher<Void> thenPublisher) {
-            super(sender);
-            Mono<Void> parentMono = kafkaOutbound.then();
-            if (parentMono == Mono.<Void>empty())
-                this.thenMono = Mono.from(thenPublisher);
-            else
-                this.thenMono = parentMono.thenEmpty(thenPublisher);
-        }
-
-        @Override
-        public Mono<Void> then() {
-            return thenMono;
         }
     }
 
