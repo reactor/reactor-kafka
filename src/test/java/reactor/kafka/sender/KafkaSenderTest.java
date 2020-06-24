@@ -17,6 +17,9 @@ package reactor.kafka.sender;
 
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.producer.Callback;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
@@ -37,6 +40,7 @@ import reactor.core.scheduler.Schedulers;
 import reactor.kafka.AbstractKafkaTest;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.internals.ConsumerFactory;
+import reactor.kafka.sender.internals.ProducerFactory;
 import reactor.kafka.util.TestUtils;
 import reactor.test.StepVerifier;
 
@@ -50,6 +54,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -364,27 +369,45 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                                      .maxInFlight(maxConcurrency);
         recreateSender(senderOptions);
 
-        int count = 100;
         AtomicInteger inflight = new AtomicInteger();
         AtomicInteger maxInflight = new AtomicInteger();
-        CountDownLatch latch = new CountDownLatch(count);
-        Flux<SenderRecord<Integer, String, Integer>> source =
-                Flux.range(0, count)
-                    .map(i -> {
-                        int current = inflight.incrementAndGet();
-                        if (current > maxInflight.get())
-                            maxInflight.set(current);
-                        return SenderRecord.create(createProducerRecord(i, true), null);
-                    });
-        kafkaSender.send(source)
-                   .doOnNext(metadata -> {
-                       TestUtils.sleep(100);
-                       latch.countDown();
-                       inflight.decrementAndGet();
-                   })
-                   .subscribe();
+        kafkaSender = KafkaSender.create(
+            new ProducerFactory() {
+                @Override
+                public <K, V> Producer<K, V> createProducer(SenderOptions<K, V> senderOptions) {
+                    return new KafkaProducer<K, V>(
+                        senderOptions.producerProperties(),
+                        senderOptions.keySerializer(),
+                        senderOptions.valueSerializer()
+                    ) {
+                        @Override
+                        public synchronized Future<RecordMetadata> send(ProducerRecord<K, V> record, Callback callback) {
+                            // It is okay to do .set here since we're inside a synchronized method
+                            maxInflight.set(Math.max(inflight.incrementAndGet(), maxInflight.get()));
+                            try {
+                                return super.send(record, (metadata, exception) -> {
+                                    inflight.decrementAndGet();
+                                    callback.onCompletion(metadata, exception);
+                                });
+                            } catch (Exception e) {
+                                inflight.decrementAndGet();
+                                throw e;
+                            }
+                        }
+                    };
+                }
+            },
+            senderOptions
+        );
 
-        assertTrue("Missing responses " + latch.getCount(), latch.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
+        int count = 100;
+        kafkaSender
+            .send(
+                Flux.range(0, count)
+                    .map(i -> SenderRecord.create(createProducerRecord(i, true), null))
+            )
+            .blockLast();
+
         assertTrue("Too many messages in flight " + maxInflight, maxInflight.get() <= maxConcurrency);
         waitForMessages(consumer, count, true);
     }
