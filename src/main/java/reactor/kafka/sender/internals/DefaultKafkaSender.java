@@ -19,14 +19,15 @@ import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.reactivestreams.Publisher;
+import org.reactivestreams.Subscription;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import reactor.core.Exceptions;
+import reactor.core.CoreSubscriber;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxIdentityProcessor;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Operators;
 import reactor.core.publisher.Processors;
-import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.kafka.sender.KafkaOutbound;
 import reactor.kafka.sender.KafkaSender;
@@ -43,6 +44,8 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
 /**
@@ -114,43 +117,17 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
     }
 
     <T> Flux<SenderResult<T>> doSend(Publisher<? extends ProducerRecord<K, V>> records) {
-        return producerMono.flatMapMany(producer -> {
-            Scheduler scheduler = senderOptions.scheduler();
-            Function<ProducerRecord<K, V>, Flux<SenderResult<T>>> mapper = record -> Flux.create(sink -> {
-                Callback callback = (metadata, exception) -> {
-                    sink.onCancel(scheduler.schedule(() -> {
-                        sink.next(new Response<>(
-                            metadata,
-                            exception,
-                            record instanceof SenderRecord
-                                ? ((SenderRecord<K, V, T>) record).correlationMetadata()
-                                : null
-                        ));
-                        if (exception != null) {
-                            log.error("Sender failed", exception);
-                            sink.error(exception);
-                        }
-                        sink.complete();
-                    }));
-                };
-
-                try {
-                    producer.send(record, callback);
-                } catch (Exception e) {
-                    callback.onCompletion(null, e);
+        return producerMono
+            .flatMapMany(producer -> new Flux<SenderResult<T>>() {
+                @Override
+                public void subscribe(CoreSubscriber<? super SenderResult<T>> s) {
+                    Flux<ProducerRecord<K, V>> senderRecords = Flux.from(records);
+                    // FIXME replace with Sink
+                    senderRecords.subscribe(new SendSubscriber<>(producer, s, senderOptions.stopOnError()));
                 }
-            });
-            return Flux.from(records).as(flux -> {
-                if (senderOptions.stopOnError()) {
-                    return flux.flatMap(mapper, senderOptions.maxInFlight(), senderOptions.maxInFlight());
-                } else {
-                    return flux
-                        .flatMapDelayError(mapper, senderOptions.maxInFlight(), senderOptions.maxInFlight())
-                        // 1.2.x behavior
-                        .onErrorMap(Exceptions::isMultiple, e -> e.getSuppressed()[0]);
-                }
-            });
-        });
+            })
+            .doOnError(e -> log.trace("Send failed with exception", e))
+            .publishOn(senderOptions.scheduler(), senderOptions.maxInFlight());
     }
 
     @Override
@@ -226,4 +203,121 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
         }
         return producerProxy;
     }
+
+    private enum SubscriberState {
+        INIT,
+        ACTIVE,
+        OUTBOUND_DONE,
+        COMPLETE
+    }
+
+    private class SendSubscriber<C> implements CoreSubscriber<ProducerRecord<K, V>> {
+        protected final CoreSubscriber<? super SenderResult<C>> actual;
+        private final boolean stopOnError;
+        private final Producer<K, V> producer;
+        private final AtomicInteger inflight = new AtomicInteger();
+        private final AtomicReference<Throwable> firstException = new AtomicReference<>();
+        private final AtomicReference<SubscriberState> state = new AtomicReference<>(SubscriberState.INIT);
+
+        SendSubscriber(Producer<K, V> producer, CoreSubscriber<? super SenderResult<C>> actual, boolean stopOnError) {
+            this.producer = producer;
+            this.stopOnError = stopOnError;
+            this.actual = actual;
+        }
+
+        @Override
+        public void onSubscribe(Subscription s) {
+            state.set(SubscriberState.ACTIVE);
+            actual.onSubscribe(s);
+        }
+
+        @Override
+        public void onNext(ProducerRecord<K, V> m) {
+            if (checkComplete(m)) {
+                return;
+            }
+            inflight.incrementAndGet();
+
+            if (senderOptions.isTransactional()) {
+                log.trace("Transactional send initiated for producer {} in state {} inflight {}: {}", senderOptions.transactionalId(), state, inflight, m);
+            }
+            Callback callback = (metadata, exception) -> {
+                try {
+                    if (senderOptions.isTransactional()) {
+                        log.trace("Transactional send completed for producer {} in state {} inflight {}: {}", senderOptions.transactionalId(), state, inflight, m);
+                    }
+
+                    C correlationMetadata = m instanceof SenderRecord
+                        ? ((SenderRecord<K, V, C>) m).correlationMetadata()
+                        : null;
+
+                    if (exception == null) {
+                        if (!checkComplete(metadata)) {
+                            actual.onNext(new Response<>(metadata, null, correlationMetadata));
+                        }
+                    } else {
+                        log.error("Sender failed", exception);
+                        boolean complete = checkComplete(exception);
+                        firstException.compareAndSet(null, exception);
+                        if (!complete) {
+                            actual.onNext(new Response<>(null, exception, correlationMetadata));
+                            if (stopOnError || senderOptions.fatalException(exception)) {
+                                onError(exception);
+                            }
+                        }
+                    }
+                } finally {
+                    if (inflight.decrementAndGet() == 0) {
+                        maybeComplete();
+                    }
+                }
+            };
+            try {
+                producer.send(m, callback);
+            } catch (Exception e) {
+                callback.onCompletion(null, e);
+            }
+        }
+
+        @Override
+        public void onError(Throwable t) {
+            log.trace("Sender failed with exception", t);
+            if (state.compareAndSet(SubscriberState.ACTIVE, SubscriberState.COMPLETE)) {
+                actual.onError(t);
+            } else if (state.compareAndSet(SubscriberState.OUTBOUND_DONE, SubscriberState.COMPLETE)) {
+                actual.onError(t);
+            } else {
+                if (firstException.compareAndSet(null, t) && state.get() == SubscriberState.COMPLETE) {
+                    Operators.onErrorDropped(t, actual.currentContext());
+                }
+            }
+        }
+
+        @Override
+        public void onComplete() {
+            if (state.compareAndSet(SubscriberState.ACTIVE, SubscriberState.OUTBOUND_DONE) && inflight.get() == 0) {
+                maybeComplete();
+            }
+        }
+
+        private void maybeComplete() {
+            if (state.compareAndSet(SubscriberState.OUTBOUND_DONE, SubscriberState.COMPLETE)) {
+                Throwable exception = firstException.get();
+                if (exception != null) {
+                    actual.onError(exception);
+                } else {
+                    actual.onComplete();
+                }
+            }
+        }
+
+        final boolean checkComplete(Object t) {
+            boolean complete = state.get() == SubscriberState.COMPLETE;
+            if (complete && firstException.get() == null) {
+                Operators.onNextDropped(t, actual.currentContext());
+            }
+            return complete;
+        }
+    }
+
 }
