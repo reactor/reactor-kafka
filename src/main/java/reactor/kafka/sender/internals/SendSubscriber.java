@@ -85,9 +85,10 @@ class SendSubscriber<K, V, C> implements CoreSubscriber<ProducerRecord<K, V>> {
                     boolean complete = checkComplete(exception);
                     firstException.compareAndSet(null, exception);
                     if (!complete) {
-                        actual.onNext(new Response<>(null, exception, correlationMetadata));
                         if (senderOptions.stopOnError() || senderOptions.fatalException(exception)) {
                             onError(exception);
+                        } else {
+                            actual.onNext(new Response<>(null, exception, correlationMetadata));
                         }
                     }
                 }

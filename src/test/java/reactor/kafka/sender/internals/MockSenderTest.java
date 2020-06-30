@@ -419,7 +419,6 @@ public class MockSenderTest {
         OutgoingRecords outgoing = outgoingRecords.append("nonexistent", 10);
         StepVerifier.create(sender.send(outgoing.senderRecords()))
                     .recordWith(() -> sendResponses)
-                    .expectNextCount(1)
                     .expectError(InvalidTopicException.class)
                     .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
         assertEquals(maxInflight, outgoing.onNextCount.get());
@@ -541,13 +540,14 @@ public class MockSenderTest {
         AtomicBoolean completed = new AtomicBoolean();
         AtomicInteger exceptionCount = new AtomicInteger();
         sender.send(outgoing.senderRecords())
+              .doOnError(LeaderNotAvailableException.class, e -> exceptionCount.incrementAndGet())
               .retry()
               .doOnNext(r -> {
                   if (r.exception() == null) {
-                      if (exceptionCount.get() == 0)
+                      if (exceptionCount.get() == 0) {
                           cluster.failLeader(new TopicPartition(r.recordMetadata().topic(), r.recordMetadata().partition()));
-                  } else if (r.exception() instanceof LeaderNotAvailableException)
-                      exceptionCount.incrementAndGet();
+                      }
+                  }
               })
               .doOnComplete(() -> completed.set(true))
               .subscribe();

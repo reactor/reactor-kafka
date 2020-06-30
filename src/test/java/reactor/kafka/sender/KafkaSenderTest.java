@@ -560,7 +560,6 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                .blockLast(Duration.ofMillis(receiveTimeoutMillis));
 
         StepVerifier.create(kafkaSender.send(createSenderRecords(count * 2, count, false)))
-                    .expectNextMatches(result -> result.exception() instanceof ProducerFencedException)
                     .expectError(ProducerFencedException.class)
                     .verify(Duration.ofMillis(receiveTimeoutMillis));
 
