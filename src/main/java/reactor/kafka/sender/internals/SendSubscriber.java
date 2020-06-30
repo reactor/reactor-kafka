@@ -24,6 +24,7 @@ import reactor.core.publisher.Operators;
 import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.SenderRecord;
 import reactor.kafka.sender.SenderResult;
+import reactor.util.context.Context;
 
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -51,6 +52,11 @@ class SendSubscriber<K, V, C> implements CoreSubscriber<ProducerRecord<K, V>> {
     }
 
     @Override
+    public Context currentContext() {
+        return actual.currentContext();
+    }
+
+    @Override
     public void onSubscribe(Subscription s) {
         state.set(State.ACTIVE);
         actual.onSubscribe(s);
@@ -58,7 +64,8 @@ class SendSubscriber<K, V, C> implements CoreSubscriber<ProducerRecord<K, V>> {
 
     @Override
     public void onNext(ProducerRecord<K, V> m) {
-        if (checkComplete(m)) {
+        if (state.get() == State.COMPLETE) {
+            Operators.onNextDropped(m, currentContext());
             return;
         }
         inflight.incrementAndGet();
@@ -66,36 +73,32 @@ class SendSubscriber<K, V, C> implements CoreSubscriber<ProducerRecord<K, V>> {
         if (senderOptions.isTransactional()) {
             DefaultKafkaSender.log.trace("Transactional send initiated for producer {} in state {} inflight {}: {}", senderOptions.transactionalId(), state, inflight, m);
         }
+
+        C correlationMetadata = m instanceof SenderRecord
+            ? ((SenderRecord<K, V, C>) m).correlationMetadata()
+            : null;
+
         Callback callback = (metadata, exception) -> {
-            try {
-                if (senderOptions.isTransactional()) {
-                    DefaultKafkaSender.log.trace("Transactional send completed for producer {} in state {} inflight {}: {}", senderOptions.transactionalId(), state, inflight, m);
-                }
+            if (senderOptions.isTransactional()) {
+                DefaultKafkaSender.log.trace("Transactional send completed for producer {} in state {} inflight {}: {}", senderOptions.transactionalId(), state, inflight, m);
+            }
 
-                C correlationMetadata = m instanceof SenderRecord
-                    ? ((SenderRecord<K, V, C>) m).correlationMetadata()
-                    : null;
+            if (state.get() == State.COMPLETE) {
+                return;
+            }
 
-                if (exception == null) {
-                    if (!checkComplete(metadata)) {
-                        actual.onNext(new Response<>(metadata, null, correlationMetadata));
-                    }
-                } else {
-                    DefaultKafkaSender.log.error("Sender failed", exception);
-                    boolean complete = checkComplete(exception);
-                    firstException.compareAndSet(null, exception);
-                    if (!complete) {
-                        if (senderOptions.stopOnError() || senderOptions.fatalException(exception)) {
-                            onError(exception);
-                        } else {
-                            actual.onNext(new Response<>(null, exception, correlationMetadata));
-                        }
-                    }
+            if (exception != null) {
+                DefaultKafkaSender.log.error("Sender failed", exception);
+                firstException.compareAndSet(null, exception);
+                if (senderOptions.stopOnError() || senderOptions.fatalException(exception)) {
+                    onError(exception);
+                    return;
                 }
-            } finally {
-                if (inflight.decrementAndGet() == 0) {
-                    maybeComplete();
-                }
+            }
+
+            actual.onNext(new Response<>(metadata, exception, correlationMetadata));
+            if (inflight.decrementAndGet() == 0) {
+                maybeComplete();
             }
         };
         try {
@@ -108,21 +111,20 @@ class SendSubscriber<K, V, C> implements CoreSubscriber<ProducerRecord<K, V>> {
     @Override
     public void onError(Throwable t) {
         DefaultKafkaSender.log.trace("Sender failed with exception", t);
-        if (state.compareAndSet(State.ACTIVE, State.COMPLETE)) {
-            actual.onError(t);
-        } else if (state.compareAndSet(State.OUTBOUND_DONE, State.COMPLETE)) {
-            actual.onError(t);
-        } else {
-            if (firstException.compareAndSet(null, t) && state.get() == State.COMPLETE) {
-                Operators.onErrorDropped(t, actual.currentContext());
-            }
+        if (state.getAndSet(State.COMPLETE) == State.COMPLETE) {
+            Operators.onErrorDropped(t, currentContext());
+            return;
         }
+
+        actual.onError(t);
     }
 
     @Override
     public void onComplete() {
-        if (state.compareAndSet(State.ACTIVE, State.OUTBOUND_DONE) && inflight.get() == 0) {
-            maybeComplete();
+        if (state.compareAndSet(State.ACTIVE, State.OUTBOUND_DONE)) {
+            if (inflight.get() == 0) {
+                maybeComplete();
+            }
         }
     }
 
@@ -137,11 +139,4 @@ class SendSubscriber<K, V, C> implements CoreSubscriber<ProducerRecord<K, V>> {
         }
     }
 
-    final boolean checkComplete(Object t) {
-        boolean complete = state.get() == State.COMPLETE;
-        if (complete && firstException.get() == null) {
-            Operators.onNextDropped(t, actual.currentContext());
-        }
-        return complete;
-    }
 }
