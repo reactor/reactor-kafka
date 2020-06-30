@@ -23,6 +23,7 @@ import org.slf4j.LoggerFactory;
 import reactor.core.CoreSubscriber;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxIdentityProcessor;
+import reactor.core.publisher.FluxOperator;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Processors;
 import reactor.core.scheduler.Schedulers;
@@ -113,12 +114,10 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
 
     <T> Flux<SenderResult<T>> doSend(Publisher<? extends ProducerRecord<K, V>> records) {
         return producerMono
-            .flatMapMany(producer -> new Flux<SenderResult<T>>() {
+            .flatMapMany(producer -> new FluxOperator<ProducerRecord<K, V>, SenderResult<T>>(Flux.from(records)) {
                 @Override
                 public void subscribe(CoreSubscriber<? super SenderResult<T>> s) {
-                    Flux<ProducerRecord<K, V>> senderRecords = Flux.from(records);
-                    // FIXME replace with Sink
-                    senderRecords.subscribe(new SendSubscriber<>(senderOptions, producer, s));
+                    source.subscribe(new SendSubscriber<>(senderOptions, producer, s));
                 }
             })
             .doOnError(e -> log.trace("Send failed with exception", e))
