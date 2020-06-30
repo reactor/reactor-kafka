@@ -29,12 +29,19 @@ import reactor.util.context.Context;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+/**
+ * This is basically an optimized flatMapDelayError(Function&lt;ProducerRecord,Mono&lt;SenderResult&gt;&gt;), without prefetching
+ * and with an unlimited concurrency (implicitly limited by {@link Producer#send(ProducerRecord)}).
+ *
+ * The requests are passed to the upstream "as is".
+ *
+ */
 class SendSubscriber<K, V, C> implements CoreSubscriber<ProducerRecord<K, V>> {
 
     enum State {
         INIT,
         ACTIVE,
-        OUTBOUND_DONE,
+        INBOUND_DONE,
         COMPLETE
     }
 
@@ -63,24 +70,24 @@ class SendSubscriber<K, V, C> implements CoreSubscriber<ProducerRecord<K, V>> {
     }
 
     @Override
-    public void onNext(ProducerRecord<K, V> m) {
+    public void onNext(ProducerRecord<K, V> record) {
         if (state.get() == State.COMPLETE) {
-            Operators.onNextDropped(m, currentContext());
+            Operators.onNextDropped(record, currentContext());
             return;
         }
         inflight.incrementAndGet();
 
         if (senderOptions.isTransactional()) {
-            DefaultKafkaSender.log.trace("Transactional send initiated for producer {} in state {} inflight {}: {}", senderOptions.transactionalId(), state, inflight, m);
+            DefaultKafkaSender.log.trace("Transactional send initiated for producer {} in state {} inflight {}: {}", senderOptions.transactionalId(), state, inflight, record);
         }
 
-        C correlationMetadata = m instanceof SenderRecord
-            ? ((SenderRecord<K, V, C>) m).correlationMetadata()
+        C correlationMetadata = record instanceof SenderRecord
+            ? ((SenderRecord<K, V, C>) record).correlationMetadata()
             : null;
 
         Callback callback = (metadata, exception) -> {
             if (senderOptions.isTransactional()) {
-                DefaultKafkaSender.log.trace("Transactional send completed for producer {} in state {} inflight {}: {}", senderOptions.transactionalId(), state, inflight, m);
+                DefaultKafkaSender.log.trace("Transactional send completed for producer {} in state {} inflight {}: {}", senderOptions.transactionalId(), state, inflight, record);
             }
 
             if (state.get() == State.COMPLETE) {
@@ -102,7 +109,7 @@ class SendSubscriber<K, V, C> implements CoreSubscriber<ProducerRecord<K, V>> {
             }
         };
         try {
-            producer.send(m, callback);
+            producer.send(record, callback);
         } catch (Exception e) {
             callback.onCompletion(null, e);
         }
@@ -121,7 +128,7 @@ class SendSubscriber<K, V, C> implements CoreSubscriber<ProducerRecord<K, V>> {
 
     @Override
     public void onComplete() {
-        if (state.compareAndSet(State.ACTIVE, State.OUTBOUND_DONE)) {
+        if (state.compareAndSet(State.ACTIVE, State.INBOUND_DONE)) {
             if (inflight.get() == 0) {
                 maybeComplete();
             }
@@ -129,7 +136,7 @@ class SendSubscriber<K, V, C> implements CoreSubscriber<ProducerRecord<K, V>> {
     }
 
     private void maybeComplete() {
-        if (state.compareAndSet(State.OUTBOUND_DONE, State.COMPLETE)) {
+        if (state.compareAndSet(State.INBOUND_DONE, State.COMPLETE)) {
             Throwable exception = firstException.get();
             if (exception != null) {
                 actual.onError(exception);
