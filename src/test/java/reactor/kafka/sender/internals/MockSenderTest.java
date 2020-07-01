@@ -720,10 +720,16 @@ public class MockSenderTest {
         resetSender();
         OutgoingRecords outgoing = outgoingRecords.append(topic, 10);
         Flux<SenderResult<Integer>> result = sender.send(outgoing.senderRecords())
-                .concatMap(r -> sender.doOnProducer(p -> {
-                    method.accept(p);
-                    return true;
-                }).then(Mono.just(r)));
+                .delayUntil(r -> {
+                    return sender
+                        .doOnProducer(p -> {
+                            method.accept(p);
+                            return true;
+                        })
+                        // Some methods of MockProducer are using single-threaded executor (e.g. `partitionsFor`)
+                        // which is also used for emitting values. To avoid the deadlock, we use a separate `Scheduler`
+                        .subscribeOn(Schedulers.boundedElastic());
+                });
         StepVerifier.create(result)
                     .expectNextCount(10)
                     .expectComplete()

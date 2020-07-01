@@ -286,6 +286,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
      */
     @Test
     public void sendResponseBlock() throws Exception {
+        recreateSender(senderOptions.scheduler(Schedulers.boundedElastic()));
         int count = 20;
         Semaphore blocker = new Semaphore(0);
         CountDownLatch sendLatch = new CountDownLatch(count);
