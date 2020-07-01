@@ -15,6 +15,21 @@
  */
 package reactor.kafka.mock;
 
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.clients.producer.Callback;
+import org.apache.kafka.clients.producer.Producer;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.Metric;
+import org.apache.kafka.common.MetricName;
+import org.apache.kafka.common.PartitionInfo;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.InvalidTopicException;
+import org.apache.kafka.common.errors.LeaderNotAvailableException;
+import org.apache.kafka.common.errors.ProducerFencedException;
+import reactor.kafka.sender.SenderOptions;
+import reactor.kafka.sender.internals.ProducerFactory;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -31,27 +46,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.assertTrue;
 
-import org.apache.kafka.clients.consumer.OffsetAndMetadata;
-import org.apache.kafka.clients.producer.Callback;
-import org.apache.kafka.clients.producer.Producer;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
-import org.apache.kafka.common.Metric;
-import org.apache.kafka.common.MetricName;
-import org.apache.kafka.common.PartitionInfo;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.errors.InvalidTopicException;
-import org.apache.kafka.common.errors.LeaderNotAvailableException;
-import org.apache.kafka.common.errors.ProducerFencedException;
-
-import reactor.kafka.sender.SenderOptions;
-import reactor.kafka.sender.internals.ProducerFactory;
-
 public class MockProducer implements Producer<Integer, String> {
 
     private final ScheduledExecutorService executor;
     private final MockCluster cluster;
     private final AtomicInteger inFlightCount;
+    public final AtomicInteger sendCount = new AtomicInteger();
     private SenderOptions<Integer, String> senderOptions;
     private long sendDelayMs;
     private boolean closed;
@@ -104,6 +104,7 @@ public class MockProducer implements Producer<Integer, String> {
             if (inFlightCheckEnabled)
                 throw new IllegalStateException("Max inflight limit reached: " + inFlightCount);
         }
+        sendCount.incrementAndGet();
         return executor.schedule(() -> doSend(record, callback), sendDelayMs, TimeUnit.MILLISECONDS);
     }
 

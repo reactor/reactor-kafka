@@ -150,7 +150,6 @@ public class MockSenderTest {
         StepVerifier.create(sender.createOutbound().send(outgoing.producerRecords()).then())
                     .expectError(InvalidTopicException.class)
                     .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
-        assertEquals(maxInflight, outgoing.onNextCount.get());
     }
 
     /**
@@ -355,7 +354,7 @@ public class MockSenderTest {
         StepVerifier.create(chain.then())
                     .expectError(InvalidTopicException.class)
                     .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
-        assertEquals(maxInflight, outgoingRecords.onNextCount.get());
+        assertEquals(maxInflight, producer.sendCount.get());
     }
 
     /**
@@ -421,7 +420,6 @@ public class MockSenderTest {
                     .recordWith(() -> sendResponses)
                     .expectError(InvalidTopicException.class)
                     .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
-        assertEquals(maxInflight, outgoing.onNextCount.get());
     }
 
     /**
