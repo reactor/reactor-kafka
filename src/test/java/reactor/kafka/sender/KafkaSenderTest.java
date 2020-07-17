@@ -633,11 +633,11 @@ public class KafkaSenderTest extends AbstractKafkaTest {
 
     public static final class FirstTimeFailingStringSerializer extends StringSerializer implements Serializer<String> {
 
-        private static final AtomicBoolean FIRST_TIME = new AtomicBoolean(true);
+        private final AtomicBoolean firstTime = new AtomicBoolean(true);
 
         @Override
         public byte[] serialize(String topic, String data) {
-            if (FIRST_TIME.compareAndSet(true, false)) {
+            if (firstTime.compareAndSet(true, false)) {
                 throw new IllegalArgumentException("The first time this Serializer is used will fail");
             }
             return super.serialize(topic, data);
