@@ -26,6 +26,7 @@ import reactor.core.publisher.FluxIdentityProcessor;
 import reactor.core.publisher.FluxOperator;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Processors;
+import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.kafka.sender.KafkaOutbound;
 import reactor.kafka.sender.KafkaSender;
@@ -40,6 +41,7 @@ import java.lang.reflect.Proxy;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
@@ -64,6 +66,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
             "flush"
         ));
 
+    private final Scheduler scheduler;
     private final Mono<Producer<K, V>> producerMono;
     private final AtomicBoolean hasProducer;
     final SenderOptions<K, V> senderOptions;
@@ -76,6 +79,14 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
      */
     @SuppressWarnings("deprecation")
     public DefaultKafkaSender(ProducerFactory producerFactory, SenderOptions<K, V> options) {
+        this.scheduler = Schedulers.newSingle(new ThreadFactory() {
+            @Override
+            public Thread newThread(Runnable r) {
+                Thread thread = new Thread(r);
+                thread.setName("reactor-kafka-sender-" + System.identityHashCode(this));
+                return thread;
+            }
+        });
         this.hasProducer = new AtomicBoolean();
         this.senderOptions = options.toImmutable()
                                     .scheduler(options.isTransactional()
@@ -114,11 +125,16 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
 
     <T> Flux<SenderResult<T>> doSend(Publisher<? extends ProducerRecord<K, V>> records) {
         return producerMono
-            .flatMapMany(producer -> new FluxOperator<ProducerRecord<K, V>, SenderResult<T>>(Flux.from(records)) {
-                @Override
-                public void subscribe(CoreSubscriber<? super SenderResult<T>> s) {
-                    source.subscribe(new SendSubscriber<>(senderOptions, producer, s));
-                }
+            .flatMapMany(producer -> {
+                return Flux.from(records)
+                    // Producer#send is blocking
+                    .publishOn(scheduler)
+                    .as(flux -> new FluxOperator<ProducerRecord<K, V>, SenderResult<T>>(flux) {
+                        @Override
+                        public void subscribe(CoreSubscriber<? super SenderResult<T>> s) {
+                            source.subscribe(new SendSubscriber<>(senderOptions, producer, s));
+                        }
+                    });
             })
             .doOnError(e -> log.trace("Send failed with exception", e))
             .publishOn(senderOptions.scheduler(), senderOptions.maxInFlight());
@@ -155,6 +171,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
 
     @Override
     public void close() {
+        scheduler.dispose();
         if (!hasProducer.getAndSet(false)) {
             return;
         }

@@ -15,13 +15,6 @@
  */
 package reactor.kafka.sender;
 
-import java.time.Duration;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Properties;
-import java.util.stream.Collectors;
-
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -29,6 +22,13 @@ import org.apache.kafka.common.serialization.Serializer;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.concurrent.Queues;
+
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Properties;
+import java.util.stream.Collectors;
 
 /**
  * Configuration properties for reactive Kafka {@link KafkaSender} and its underlying Kafka
@@ -67,7 +67,7 @@ class MutableSenderOptions<K, V> implements SenderOptions<K, V> {
         this.properties = new HashMap<>(properties);
 
         closeTimeout = Duration.ofMillis(Long.MAX_VALUE);
-        scheduler = Schedulers.single();
+        scheduler = Schedulers.immediate();
         maxInFlight = Queues.SMALL_BUFFER_SIZE;
         stopOnError = true;
     }
