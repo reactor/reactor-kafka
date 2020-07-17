@@ -19,10 +19,12 @@ package reactor.kafka.receiver;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
+import org.assertj.core.api.Assertions;
 import org.junit.After;
-import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,10 +56,10 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -66,9 +68,11 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 import static org.awaitility.Awaitility.await;
-import static org.hamcrest.Matchers.is;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -83,28 +87,12 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
 
     private static final Logger log = LoggerFactory.getLogger(KafkaReceiverTest.class.getName());
 
-    private KafkaSender<Integer, String> kafkaSender;
-    private Set<KafkaSender<Integer, String>> kafkaSenders;
-
-    private Scheduler consumerScheduler;
-    private Semaphore assignSemaphore = new Semaphore(0);
-    private List<Disposable> subscribeDisposables = new ArrayList<>();
-
-    @Before
-    public void setUp() throws Exception {
-        kafkaSender = KafkaSender.create(senderOptions);
-        kafkaSenders = new HashSet<>();
-        kafkaSenders.add(kafkaSender);
-        consumerScheduler = Schedulers.newParallel("test-consumer");
-    }
+    private final Semaphore assignSemaphore = new Semaphore(0);
+    private final List<Disposable> subscribeDisposables = new ArrayList<>();
 
     @After
     public void tearDown() {
         cancelSubscriptions(true);
-        for (KafkaSender<Integer, String> sender : kafkaSenders)
-            sender.close();
-        consumerScheduler.dispose();
-        Schedulers.shutdownNow();
     }
 
     @Test
@@ -135,8 +123,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
             record.headers().add("header2", value.getBytes());
             senderRecords.add(record);
         }
-        kafkaSender.send(Flux.fromIterable(senderRecords))
-                   .blockLast(Duration.ofSeconds(receiveTimeoutMillis));
+        sendMessages(senderRecords.stream());
         waitForMessages(latch);
         assertEquals(count, receiverRecords.size());
         for (int i = 0; i < count; i++) {
@@ -217,7 +204,13 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         StepVerifier.create(kafkaFlux)
                 .then(() -> assignSemaphore.acquireUninterruptibly())
                 .expectNoEvent(Duration.ofMillis(100))
-                .then(() -> sendMessages(count, count))
+                .then(() -> {
+                    try {
+                        sendMessages(count, count);
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                })
                 .expectNextCount(count)
                 .thenCancel()
                 .verify(Duration.ofSeconds(receiveTimeoutMillis));
@@ -333,7 +326,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         shutdownKafkaBroker();
         Thread.sleep(3000);
         startKafkaBroker();
-        sendMessagesSync(0, 100);
+        sendMessages(0, 100);
         waitForMessages(latch);
         checkConsumedMessages(0, 100);
         waitForCommits(receiver, 100);
@@ -706,7 +699,6 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     @Test
     public void transferMessages() throws Exception {
         int count = 10;
-        CountDownLatch sendLatch0 = new CountDownLatch(count);
         CountDownLatch sendLatch1 = new CountDownLatch(count);
         CountDownLatch receiveLatch0 = new CountDownLatch(count);
         CountDownLatch receiveLatch1 = new CountDownLatch(count);
@@ -732,7 +724,11 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
             )
             .receive()
             .doOnNext(cr -> receiveLatch0.countDown())
-            .publishOn(consumerScheduler);
+            // .publishOn(consumerScheduler)
+            ;
+
+        KafkaSender<Integer, String> kafkaSender = KafkaSender.create(senderOptions);
+        subscribeDisposables.add(kafkaSender::close);
         Disposable disposable0 = kafkaSender
             .send(flux0.map(cr -> SenderRecord.create(topic, 1, null, cr.key(), cr.value(), cr.receiverOffset())))
             .concatMap(sendResult ->
@@ -747,13 +743,11 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         subscribeDisposables.add(disposable0);
 
         // Send messages to partition 0
-        kafkaSender.send(Flux.range(0, count)
-                             .map(i -> SenderRecord.create(topic, 0, null, i, "Message " + i, null))
-                             .doOnNext(r -> sendLatch0.countDown()))
-                   .subscribe();
-
-        if (!sendLatch0.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS))
-            fail(sendLatch0.getCount() + " messages not sent to partition 0");
+        sendMessages(
+            IntStream.range(0, count).mapToObj(i -> {
+                return SenderRecord.create(topic, 0, null, i, "Message " + i, null);
+            })
+        );
         waitForMessages(receiveLatch0);
         if (!sendLatch1.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS))
             fail(sendLatch1.getCount() + " messages not sent to partition 1");
@@ -814,11 +808,11 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
 
         CountDownLatch receiveLatch = new CountDownLatch(sendBatchSize * 2);
         subscribe(kafkaFlux, receiveLatch);
-        sendMessagesSync(0, sendBatchSize);
+        sendMessages(0, sendBatchSize);
         shutdownKafkaBroker();
         TestUtils.sleep(5000);
         startKafkaBroker();
-        sendMessagesSync(sendBatchSize, sendBatchSize);
+        sendMessages(sendBatchSize, sendBatchSize);
         waitForMessages(receiveLatch);
         checkConsumedMessages();
     }
@@ -899,7 +893,6 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
                     .addRevokeListener(p -> log.info("Revoked {} {} {}", Thread.currentThread().getName(), id, p))
                     .subscription(Collections.singletonList(topic));
             kafkaFlux[i] = KafkaReceiver.create(receiverOptions).receive()
-                    .publishOn(consumerScheduler)
                     .doOnNext(record -> {
                         onReceive(record);
                         latch.countDown();
@@ -1145,7 +1138,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         String destTopic = createNewTopic();
 
         int count = 10;
-        kafkaSender.createOutbound().send(createProducerRecords(count)).then().block(Duration.ofSeconds(receiveTimeoutMillis));
+        sendMessages(createProducerRecords(count).toStream());
 
         String sourceConsumerGroupId = "source_consumer";
         receiverOptions = receiverOptions.consumerProperty(ConsumerConfig.ISOLATION_LEVEL_CONFIG, "read_committed")
@@ -1228,7 +1221,6 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
                                 latch.countDown();
                         })
                         .doOnError(e -> log.error("KafkaFlux exception", e))
-                        .publishOn(consumerScheduler)
                         .subscribe();
         subscribeDisposables.add(disposable);
         waitFoPartitionAssignment();
@@ -1299,24 +1291,18 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         }
     }
 
-    private void sendMessages(int startIndex, int count) {
-        Disposable disposable = kafkaSender.createOutbound()
-                                           .send(Flux.range(startIndex, count)
-                                                     .map(i -> createProducerRecord(i, true)))
-                                           .then()
-                                           .subscribe();
-        subscribeDisposables.add(disposable);
+    private void sendMessages(int startIndex, int count) throws Exception {
+        sendMessages(IntStream.range(0, count).mapToObj(i -> createProducerRecord(startIndex + i, true)));
     }
 
-    private void sendMessagesSync(int startIndex, int count) throws Exception {
-        CountDownLatch latch = new CountDownLatch(count);
-        Flux.range(startIndex, count)
-            .map(i -> createProducerRecord(i, true))
-            .concatMap(record -> kafkaSender.createOutbound().send(Mono.just(record)).then()
-                                            .doOnSuccess(metadata -> latch.countDown())
-                                            .retryWhen(Retry.backoff(100, Duration.ofMillis(100))))
-            .subscribe();
-        assertTrue("Messages not sent ", latch.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
+    private void sendMessages(Stream<? extends ProducerRecord<Integer, String>> records) throws Exception {
+        try (KafkaProducer<Integer, String> producer = new KafkaProducer<>(producerProps())) {
+            List<Future<?>> futures = records.map(producer::send).collect(Collectors.toList());
+
+            for (Future<?> future : futures) {
+                future.get(5, TimeUnit.SECONDS);
+            }
+        }
     }
 
     private void onPartitionsAssigned(Collection<ReceiverPartition> partitions) {
@@ -1374,21 +1360,22 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     }
 
     private int committedCount(KafkaReceiver<Integer, String> receiver) {
-        int committed = 0;
-        for (int j = 0; j < partitions; j++) {
-            TopicPartition p = new TopicPartition(topic, j);
-            OffsetAndMetadata offset = receiver.doOnConsumer(c -> c.committed(p)).block(Duration.ofSeconds(receiveTimeoutMillis));
-            if (offset != null && offset.offset() > 0)
-                committed += offset.offset();
-        }
-        return committed;
+        return receiver.doOnConsumer(c -> {
+            int committed = 0;
+            for (int j = 0; j < partitions; j++) {
+                TopicPartition p = new TopicPartition(topic, j);
+                OffsetAndMetadata offset = c.committed(p);
+                if (offset != null && offset.offset() > 0)
+                    committed += offset.offset();
+            }
+            return committed;
+        }).block(Duration.ofSeconds(receiveTimeoutMillis));
     }
 
     private void waitForCommits(KafkaReceiver<Integer, String> receiver, int count) {
-        await().alias(count + " commits").until(
-            () -> committedCount(receiver),
-            is(count)
-        );
+        await().alias(count + " commits").untilAsserted(() -> {
+            Assertions.assertThat(committedCount(receiver)).isEqualTo(count);
+        });
     }
 
     private KafkaSender<Integer, String> createTransactionalSender() {
