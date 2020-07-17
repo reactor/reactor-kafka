@@ -723,9 +723,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
                 .assignment(Collections.singletonList(new TopicPartition(topic, 0)))
             )
             .receive()
-            .doOnNext(cr -> receiveLatch0.countDown())
-            // .publishOn(consumerScheduler)
-            ;
+            .doOnNext(cr -> receiveLatch0.countDown());
 
         KafkaSender<Integer, String> kafkaSender = KafkaSender.create(senderOptions);
         subscribeDisposables.add(kafkaSender::close);
