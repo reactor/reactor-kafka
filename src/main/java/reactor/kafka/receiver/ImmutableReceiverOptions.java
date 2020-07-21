@@ -91,7 +91,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
         assignTopicPartitions = null;
         subscribePattern = null;
         this.properties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
-        schedulerSupplier = Schedulers::parallel;
+        schedulerSupplier = Schedulers::immediate;
     }
 
     ImmutableReceiverOptions(

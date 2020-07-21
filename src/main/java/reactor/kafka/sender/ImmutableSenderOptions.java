@@ -62,7 +62,7 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
         valueSerializer = null;
 
         closeTimeout = Duration.ofMillis(Long.MAX_VALUE);
-        scheduler = Schedulers.single();
+        scheduler = Schedulers.immediate();
         maxInFlight = Queues.SMALL_BUFFER_SIZE;
         stopOnError = true;
     }
