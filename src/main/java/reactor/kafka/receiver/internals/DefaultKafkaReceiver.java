@@ -41,10 +41,9 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
 
     ConsumerHandler<K, V> consumerHandler;
 
-    @SuppressWarnings("deprecation")
     public DefaultKafkaReceiver(ConsumerFactory consumerFactory, ReceiverOptions<K, V> receiverOptions) {
         this.consumerFactory = consumerFactory;
-        this.receiverOptions = receiverOptions.toImmutable();
+        this.receiverOptions = receiverOptions;
     }
 
     @Override

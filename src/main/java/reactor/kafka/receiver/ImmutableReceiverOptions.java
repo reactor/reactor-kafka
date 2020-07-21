@@ -23,17 +23,23 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Properties;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.serialization.Deserializer;
 import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 
 class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
+
+    private static final Duration DEFAULT_POLL_TIMEOUT = Duration.ofMillis(100);
+    private static final int DEFAULT_MAX_COMMIT_ATTEMPTS = 100;
 
     private final Map<String, Object> properties;
     private final List<Consumer<Collection<ReceiverPartition>>> assignListeners;
@@ -53,24 +59,39 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
     private final Pattern subscribePattern;
     private final Supplier<Scheduler> schedulerSupplier;
 
-    ImmutableReceiverOptions(ReceiverOptions<K, V> options) {
+    ImmutableReceiverOptions() {
+        this(new HashMap<>());
+    }
+
+    ImmutableReceiverOptions(Properties properties) {
         this(
-            options.consumerProperties(),
-            options.assignListeners(),
-            options.revokeListeners(),
-            options.keyDeserializer(),
-            options.valueDeserializer(),
-            options.pollTimeout(),
-            options.closeTimeout(),
-            options.commitInterval(),
-            options.commitBatchSize(),
-            options.atmostOnceCommitAheadSize(),
-            options.maxCommitAttempts(),
-            options.subscriptionTopics(),
-            options.assignment(),
-            options.subscriptionPattern(),
-            options.schedulerSupplier()
+            properties
+                .entrySet()
+                .stream()
+                .collect(Collectors.toMap(
+                    e -> e.getKey().toString(),
+                    Map.Entry::getValue
+                ))
         );
+    }
+
+    ImmutableReceiverOptions(Map<String, Object> properties) {
+        this.properties = new HashMap<>(properties);
+        assignListeners = new ArrayList<>();
+        revokeListeners = new ArrayList<>();
+        keyDeserializer = null;
+        valueDeserializer = null;
+        pollTimeout = DEFAULT_POLL_TIMEOUT;
+        closeTimeout = Duration.ofNanos(Long.MAX_VALUE);
+        commitInterval = Duration.ofMillis(5000); // Kafka default
+        commitBatchSize = 0;
+        atmostOnceCommitAheadSize = 0;
+        maxCommitAttempts = DEFAULT_MAX_COMMIT_ATTEMPTS;
+        subscribeTopics = null;
+        assignTopicPartitions = null;
+        subscribePattern = null;
+        this.properties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
+        schedulerSupplier = Schedulers::immediate;
     }
 
     ImmutableReceiverOptions(
@@ -605,5 +626,48 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
         } else
             optionValue = defaultValue;
         return optionValue;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(
+            properties,
+            assignListeners,
+            revokeListeners,
+            keyDeserializer,
+            valueDeserializer,
+            pollTimeout,
+            closeTimeout,
+            commitInterval,
+            commitBatchSize,
+            atmostOnceCommitAheadSize,
+            maxCommitAttempts,
+            subscribeTopics,
+            assignTopicPartitions,
+            subscribePattern
+        );
+    }
+
+    @Override
+    public boolean equals(Object object) {
+        if (object == this) return true;
+        if (object != null && object.getClass().equals(getClass())) {
+            ImmutableReceiverOptions<K, V> that = (ImmutableReceiverOptions<K, V>) object;
+            return Objects.equals(properties, that.properties)
+                && Objects.equals(assignListeners, that.assignListeners)
+                && Objects.equals(revokeListeners, that.revokeListeners)
+                && Objects.equals(keyDeserializer, that.keyDeserializer)
+                && Objects.equals(valueDeserializer, that.valueDeserializer)
+                && Objects.equals(pollTimeout, that.pollTimeout)
+                && Objects.equals(closeTimeout, that.closeTimeout)
+                && Objects.equals(commitInterval, that.commitInterval)
+                && Objects.equals(commitBatchSize, that.commitBatchSize)
+                && Objects.equals(atmostOnceCommitAheadSize, that.atmostOnceCommitAheadSize)
+                && Objects.equals(maxCommitAttempts, that.maxCommitAttempts)
+                && Objects.equals(subscribeTopics, that.subscribeTopics)
+                && Objects.equals(assignTopicPartitions, that.assignTopicPartitions)
+                && Objects.equals(subscribePattern, that.subscribePattern);
+        }
+        return false;
     }
 }

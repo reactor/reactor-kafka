@@ -28,9 +28,7 @@ public interface ReceiverOptions<K, V> {
      */
     @NonNull
     static <K, V> ReceiverOptions<K, V> create() {
-        @SuppressWarnings("deprecation")
-        ReceiverOptions<K, V> options = new MutableReceiverOptions<>();
-        return options;
+        return new ImmutableReceiverOptions<K, V>();
     }
 
     /**
@@ -39,9 +37,7 @@ public interface ReceiverOptions<K, V> {
      */
     @NonNull
     static <K, V> ReceiverOptions<K, V> create(@NonNull Map<String, Object> configProperties) {
-        @SuppressWarnings("deprecation")
-        ReceiverOptions<K, V> options = new MutableReceiverOptions<>(configProperties);
-        return options;
+        return new ImmutableReceiverOptions<>(configProperties);
     }
 
     /**
@@ -50,9 +46,7 @@ public interface ReceiverOptions<K, V> {
      */
     @NonNull
     static <K, V> ReceiverOptions<K, V> create(@NonNull Properties configProperties) {
-        @SuppressWarnings("deprecation")
-        ReceiverOptions<K, V> options = new MutableReceiverOptions<>(configProperties);
-        return options;
+        return new ImmutableReceiverOptions<>(configProperties);
     }
 
     /**
@@ -389,18 +383,5 @@ public interface ReceiverOptions<K, V> {
             };
         else
             throw new IllegalStateException("No subscriptions have been created");
-    }
-
-    /**
-     * Returns a new immutable instance with the configuration properties of this instance.
-     *
-     * @deprecated will be removed since all operations should be immutable
-     *
-     * @return new immutable options instance
-     */
-    @NonNull
-    @Deprecated
-    default ReceiverOptions<K, V> toImmutable() {
-        return new ImmutableReceiverOptions<>(this);
     }
 }
