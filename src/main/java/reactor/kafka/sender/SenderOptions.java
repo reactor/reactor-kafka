@@ -23,9 +23,7 @@ public interface SenderOptions<K, V> {
      */
     @NonNull
     static <K, V> SenderOptions<K, V> create() {
-        @SuppressWarnings("deprecation")
-        SenderOptions<K, V> options = new ImmutableSenderOptions<>();
-        return options;
+        return new ImmutableSenderOptions<>();
     }
 
     /**
@@ -35,9 +33,7 @@ public interface SenderOptions<K, V> {
      */
     @NonNull
     static <K, V> SenderOptions<K, V> create(@NonNull Map<String, Object> configProperties) {
-        @SuppressWarnings("deprecation")
-        SenderOptions<K, V> options = new ImmutableSenderOptions<>(configProperties);
-        return options;
+        return new ImmutableSenderOptions<>(configProperties);
     }
 
     /**
@@ -47,9 +43,7 @@ public interface SenderOptions<K, V> {
      */
     @NonNull
     static <K, V> SenderOptions<K, V> create(@NonNull Properties configProperties) {
-        @SuppressWarnings("deprecation")
-        SenderOptions<K, V> options = new ImmutableSenderOptions<>(configProperties);
-        return options;
+        return new ImmutableSenderOptions<>(configProperties);
     }
 
     /**
@@ -205,21 +199,5 @@ public interface SenderOptions<K, V> {
     @NonNull
     default boolean fatalException(@NonNull Throwable t) {
         return t instanceof AuthenticationException || t instanceof ProducerFencedException;
-    }
-
-    /**
-     * Returns a new immutable instance with the configuration properties of this instance.
-     * @deprecated starting from 3.x version will be immutable by default
-     * @return new immutable instance of sender options
-     */
-    @NonNull
-    @Deprecated
-    default SenderOptions<K, V> toImmutable() {
-        if (isTransactional()) {
-            if (!stopOnError())
-                throw new ConfigException("Transactional senders must be created with stopOnError=true");
-        }
-
-        return new ImmutableSenderOptions<>(this);
     }
 }
