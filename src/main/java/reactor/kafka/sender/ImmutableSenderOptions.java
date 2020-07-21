@@ -67,18 +67,6 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
         stopOnError = true;
     }
 
-    ImmutableSenderOptions(SenderOptions<K, V> options) {
-        this(
-            new HashMap<>(options.producerProperties()),
-            options.keySerializer(),
-            options.valueSerializer(),
-            options.closeTimeout(),
-            options.scheduler(),
-            options.maxInFlight(),
-            options.stopOnError()
-        );
-    }
-
     ImmutableSenderOptions(
             Map<String, Object> properties,
             Serializer<K> serializer,

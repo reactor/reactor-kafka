@@ -77,7 +77,6 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
      * Constructs a reactive Kafka producer with the specified configuration properties. All Kafka
      * producer properties are supported. The underlying Kafka producer is created lazily when required.
      */
-    @SuppressWarnings("deprecation")
     public DefaultKafkaSender(ProducerFactory producerFactory, SenderOptions<K, V> options) {
         this.scheduler = Schedulers.newSingle(new ThreadFactory() {
             @Override
@@ -88,8 +87,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
             }
         });
         this.hasProducer = new AtomicBoolean();
-        this.senderOptions = options.toImmutable()
-                                    .scheduler(options.isTransactional()
+        this.senderOptions = options.scheduler(options.isTransactional()
                                         ? Schedulers.newSingle(options.transactionalId())
                                         : options.scheduler()
                                     );

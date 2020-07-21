@@ -94,26 +94,6 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
         schedulerSupplier = Schedulers::parallel;
     }
 
-    ImmutableReceiverOptions(ReceiverOptions<K, V> options) {
-        this(
-            options.consumerProperties(),
-            options.assignListeners(),
-            options.revokeListeners(),
-            options.keyDeserializer(),
-            options.valueDeserializer(),
-            options.pollTimeout(),
-            options.closeTimeout(),
-            options.commitInterval(),
-            options.commitBatchSize(),
-            options.atmostOnceCommitAheadSize(),
-            options.maxCommitAttempts(),
-            options.subscriptionTopics(),
-            options.assignment(),
-            options.subscriptionPattern(),
-            options.schedulerSupplier()
-        );
-    }
-
     ImmutableReceiverOptions(
         Map<String, Object> properties,
         List<Consumer<Collection<ReceiverPartition>>> assignListeners,
