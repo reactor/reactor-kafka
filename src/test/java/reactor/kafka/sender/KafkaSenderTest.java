@@ -444,7 +444,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                    .doOnComplete(() -> done.release())
                    .subscribe();
         for (int i = 0; i < count; i++) {
-            while(sink.emitNext(i) != Sinks.Emission.OK) {
+            while (sink.emitNext(i) != Sinks.Emission.OK) {
                 LockSupport.parkNanos(10);
             }
         }
