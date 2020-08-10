@@ -379,11 +379,11 @@ public class SampleScenarios {
         }
         public Flux<?> flux() {
             sender = sender(senderOptions());
-            Sinks.StandaloneFluxSink<Person> sink = Sinks.multicast();
+            Sinks.Many<Person> sink = Sinks.many().multicast().onBackpressureBuffer();
             Flux<?> inFlux = KafkaReceiver.create(receiverOptions(Collections.singleton(sourceTopic)))
                                      .receiveAutoAck()
                                      .concatMap(r -> r)
-                                     .doOnNext(m -> sink.next(m.value()));
+                                     .doOnNext(m -> sink.emitNext(m.value()));
             Flux<Person> persons = sink.asFlux();
             Flux<SenderResult<Integer>> stream1 = sender.send(persons.publishOn(scheduler1).map(p -> SenderRecord.create(process1(p, true), p.id())));
             Flux<SenderResult<Integer>> stream2 = sender.send(persons.publishOn(scheduler2).map(p -> SenderRecord.create(process2(p, true), p.id())));
