@@ -22,10 +22,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.CoreSubscriber;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.FluxIdentityProcessor;
 import reactor.core.publisher.FluxOperator;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.Processors;
+import reactor.core.publisher.UnicastProcessor;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.kafka.sender.KafkaOutbound;
@@ -145,7 +144,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
 
     @Override
     public <T> Flux<Flux<SenderResult<T>>> sendTransactionally(Publisher<? extends Publisher<? extends SenderRecord<K, V, T>>> transactionRecords) {
-        FluxIdentityProcessor<Object> processor = Processors.unicast();
+        UnicastProcessor<Object> processor = UnicastProcessor.create();
         return Flux.from(transactionRecords)
                    .publishOn(senderOptions.scheduler(), false, 1)
                    .concatMapDelayError(records -> transaction(records, processor), false, 1)
@@ -180,7 +179,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
         }
     }
 
-    private <T> Flux<SenderResult<T>> transaction(Publisher<? extends SenderRecord<K, V, T>> transactionRecords, FluxIdentityProcessor<Object> transactionBoundary) {
+    private <T> Flux<SenderResult<T>> transaction(Publisher<? extends SenderRecord<K, V, T>> transactionRecords, UnicastProcessor<Object> transactionBoundary) {
         return transactionManager()
                 .begin()
                 .thenMany(send(transactionRecords))

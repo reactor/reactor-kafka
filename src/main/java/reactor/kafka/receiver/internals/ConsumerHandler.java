@@ -5,11 +5,10 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.common.TopicPartition;
 import reactor.core.Disposable;
+import reactor.core.publisher.EmitterProcessor;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.FluxIdentityProcessor;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.Processors;
 import reactor.core.scheduler.Scheduler;
 import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOffset;
@@ -63,7 +62,8 @@ class ConsumerHandler<K, V> {
 
     private final ConsumerEventLoop<K, V> consumerEventLoop;
 
-    private final FluxIdentityProcessor<ConsumerRecords<K, V>> processor = Processors.more().multicast(1);
+    @SuppressWarnings("deprecation")
+    private final EmitterProcessor<ConsumerRecords<K, V>> processor = EmitterProcessor.create(1);
 
     private Consumer<K, V> consumerProxy;
 
