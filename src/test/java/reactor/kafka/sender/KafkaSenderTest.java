@@ -33,10 +33,9 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.Exceptions;
-import reactor.core.publisher.EmitterProcessor;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.SignalType;
+import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.kafka.AbstractKafkaTest;
@@ -61,6 +60,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
 import java.util.logging.Level;
 
 import static org.junit.Assert.assertEquals;
@@ -249,14 +249,14 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         recreateSender(senderOptions.stopOnError(false).producerProperty(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, FirstTimeFailingStringSerializer.class.getName()));
 
         Semaphore errorSemaphore = new Semaphore(0);
-        EmitterProcessor<ProducerRecord<Integer, String>> processor = EmitterProcessor.create();
-        kafkaSender.send(processor.map(producerRecord -> SenderRecord.create(producerRecord, null)))
+        Sinks.Many<ProducerRecord<Integer, String>> multicast = Sinks.many().multicast().onBackpressureError();
+        kafkaSender.send(multicast.asFlux().map(producerRecord -> SenderRecord.create(producerRecord, null)))
             .doOnError(t -> errorSemaphore.release())
             .subscribe();
 
-        processor.onNext(recordToFail);
-        processor.onNext(recordToSucceed);
-        processor.onComplete();
+        multicast.emitNext(recordToFail);
+        multicast.emitNext(recordToSucceed);
+        multicast.emitComplete();
 
         waitForMessages(consumer, 1, true);
         assertTrue("Error callback not invoked", errorSemaphore.tryAcquire(requestTimeoutMillis, TimeUnit.MILLISECONDS));
@@ -421,8 +421,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
     @Test
     public void sendResponseEmitter() throws Exception {
         int count = 5000;
-        EmitterProcessor<Integer> emitter = EmitterProcessor.create();
-        FluxSink<Integer> sink = emitter.sink();
+        Sinks.Many<Integer> sink = Sinks.many().multicast().onBackpressureBuffer();
         List<List<Integer>> successfulSends = new ArrayList<>();
         Set<Integer> failedSends = new HashSet<>();
         Semaphore done = new Semaphore(0);
@@ -435,7 +434,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                 .stopOnError(false)
                 .scheduler(scheduler);
         recreateSender(senderOptions);
-        Flux<SenderRecord<Integer, String, Integer>> records = emitter
+        Flux<SenderRecord<Integer, String, Integer>> records = sink.asFlux()
             .map(i -> SenderRecord.create(new ProducerRecord<>(topic, i % partitions, i, "Message " + i), i))
             .log("records", Level.INFO, SignalType.REQUEST);
         kafkaSender.send(records)
@@ -450,10 +449,11 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                    .doOnComplete(() -> done.release())
                    .subscribe();
         for (int i = 0; i < count; i++) {
-            sink.next(i);
+            while(sink.emitNext(i) != Sinks.Emission.OK) {
+                LockSupport.parkNanos(10);
+            }
         }
-        sink.complete();
-
+        sink.emitComplete();
         assertTrue("Send not complete", done.tryAcquire(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
         waitForMessages(consumer, count, false);
         assertEquals(0, failedSends.size());

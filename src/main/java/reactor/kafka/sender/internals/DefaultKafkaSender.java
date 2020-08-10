@@ -21,10 +21,11 @@ import org.reactivestreams.Publisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.CoreSubscriber;
+import reactor.core.Exceptions;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxOperator;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.UnicastProcessor;
+import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.kafka.sender.KafkaOutbound;
@@ -144,13 +145,13 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
 
     @Override
     public <T> Flux<Flux<SenderResult<T>>> sendTransactionally(Publisher<? extends Publisher<? extends SenderRecord<K, V, T>>> transactionRecords) {
-        UnicastProcessor<Object> processor = UnicastProcessor.create();
+        Sinks.Many<Object> sink = Sinks.many().unicast().onBackpressureBuffer();
         return Flux.from(transactionRecords)
                    .publishOn(senderOptions.scheduler(), false, 1)
-                   .concatMapDelayError(records -> transaction(records, processor), false, 1)
-                   .window(processor)
-                   .doOnTerminate(processor::onComplete)
-                   .doOnCancel(processor::onComplete);
+                   .concatMapDelayError(records -> transaction(records, sink), false, 1)
+                   .window(sink.asFlux())
+                   .doOnTerminate(sink::emitComplete)
+                   .doOnCancel(sink::emitComplete);
     }
 
     @Override
@@ -179,12 +180,17 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
         }
     }
 
-    private <T> Flux<SenderResult<T>> transaction(Publisher<? extends SenderRecord<K, V, T>> transactionRecords, UnicastProcessor<Object> transactionBoundary) {
+    private <T> Flux<SenderResult<T>> transaction(Publisher<? extends SenderRecord<K, V, T>> transactionRecords, Sinks.Many<Object> transactionBoundary) {
         return transactionManager()
                 .begin()
                 .thenMany(send(transactionRecords))
                 .concatWith(transactionManager().commit())
-                .concatWith(Mono.fromRunnable(() -> transactionBoundary.onNext(this)))
+                .concatWith(Mono.fromRunnable(() -> {
+                    Sinks.Emission emission = transactionBoundary.emitNext(this);
+                    if (emission != Sinks.Emission.OK) {
+                        throw Exceptions.failWithOverflow();
+                    }
+                }))
                 .onErrorResume(e -> transactionManager().abort().then(Mono.error(e)))
                 .publishOn(senderOptions.scheduler());
     }
