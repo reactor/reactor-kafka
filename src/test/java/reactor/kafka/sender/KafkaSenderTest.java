@@ -34,7 +34,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.Exceptions;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.SignalType;
 import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -61,7 +60,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
-import java.util.logging.Level;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -434,10 +432,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                 .stopOnError(false)
                 .scheduler(scheduler);
         recreateSender(senderOptions);
-        Flux<SenderRecord<Integer, String, Integer>> records = sink.asFlux()
-            .map(i -> SenderRecord.create(new ProducerRecord<>(topic, i % partitions, i, "Message " + i), i))
-            .log("records", Level.INFO, SignalType.REQUEST);
-        kafkaSender.send(records)
+        kafkaSender.send(sink.asFlux().map(i -> SenderRecord.<Integer, String, Integer>create(new ProducerRecord<Integer, String>(topic, i % partitions, i, "Message " + i), i)))
                    .doOnNext(result -> {
                        int messageIdentifier = result.correlationMetadata();
                        RecordMetadata metadata = result.recordMetadata();
