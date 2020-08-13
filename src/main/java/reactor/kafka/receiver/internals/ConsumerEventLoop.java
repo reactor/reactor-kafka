@@ -7,10 +7,14 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.WakeupException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import reactor.core.publisher.FluxSink;
+import reactor.core.Disposable;
+import reactor.core.Disposables;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoSink;
+import reactor.core.publisher.Operators;
+import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.ReceiverPartition;
 
@@ -22,6 +26,8 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLongFieldUpdater;
+import java.util.concurrent.locks.LockSupport;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
@@ -48,13 +54,20 @@ class ConsumerEventLoop<K, V> {
     final CommitEvent commitEvent = new CommitEvent();
 
     final Predicate<Throwable> isRetriableException;
+    private final Disposable periodicCommitDisposable;
 
     // TODO make it final
     org.apache.kafka.clients.consumer.Consumer<K, V> consumer;
 
-    final FluxSink<ConsumerRecords<K, V>> sink;
+    final Sinks.Many<ConsumerRecords<K, V>> sink;
 
     final AtomicBoolean awaitingTransaction;
+
+    volatile long requested;
+    static final AtomicLongFieldUpdater<ConsumerEventLoop> REQUESTED = AtomicLongFieldUpdater.newUpdater(
+        ConsumerEventLoop.class,
+        "requested"
+    );
 
     ConsumerEventLoop(
         AckMode ackMode,
@@ -63,7 +76,7 @@ class ConsumerEventLoop<K, V> {
         Scheduler eventScheduler,
         org.apache.kafka.clients.consumer.Consumer<K, V> consumer,
         Predicate<Throwable> isRetriableException,
-        FluxSink<ConsumerRecords<K, V>> sink,
+        Sinks.Many<ConsumerRecords<K, V>> sink,
         AtomicBoolean awaitingTransaction
     ) {
         this.ackMode = ackMode;
@@ -84,23 +97,24 @@ class ConsumerEventLoop<K, V> {
             switch (ackMode) {
                 case AUTO_ACK:
                 case MANUAL_ACK:
-                    eventScheduler.schedulePeriodically(
-                        () -> {
-                            if (commitEvent.isPending.compareAndSet(false, true)) {
-                                commitEvent.run();
-                            }
-                        },
+                    periodicCommitDisposable = Schedulers.parallel().schedulePeriodically(
+                        commitEvent::scheduleIfRequired,
                         commitInterval.toMillis(),
                         commitInterval.toMillis(),
                         TimeUnit.MILLISECONDS
                     );
                     break;
+                default:
+                    periodicCommitDisposable = Disposables.disposed();
             }
+        } else {
+            periodicCommitDisposable = Disposables.disposed();
         }
+    }
 
-        sink.onRequest(toAdd -> {
-            pollEvent.schedule();
-        });
+    void onRequest(long toAdd) {
+        Operators.addCap(REQUESTED, this, toAdd);
+        pollEvent.schedule();
     }
 
     private void onPartitionsRevoked(Collection<TopicPartition> partitions) {
@@ -126,9 +140,12 @@ class ConsumerEventLoop<K, V> {
         return Mono
             .defer(() -> {
                 log.debug("dispose {}", isActive);
+
                 if (!isActive.compareAndSet(true, false)) {
                     return Mono.empty();
                 }
+
+                periodicCommitDisposable.dispose();
 
                 if (consumer == null) {
                     return Mono.empty();
@@ -174,7 +191,9 @@ class ConsumerEventLoop<K, V> {
             } catch (Exception e) {
                 if (isActive.get()) {
                     log.error("Unexpected exception", e);
-                    sink.error(e);
+                    if (sink.emitError(e) != Sinks.Emission.OK) {
+                        throw new IllegalStateException("Could not emit an error");
+                    }
                 }
             }
         }
@@ -191,7 +210,8 @@ class ConsumerEventLoop<K, V> {
                     // Ensure that commits are not queued behind polls since number of poll events is
                     // chosen by reactor.
                     commitEvent.runIfRequired(false);
-                    if (sink.requestedFromDownstream() > 0) {
+                    long r = requested;
+                    if (r > 0) {
                         if (!awaitingTransaction.get()) {
                             consumer.resume(consumer.assignment());
                         } else {
@@ -204,16 +224,22 @@ class ConsumerEventLoop<K, V> {
 
                     ConsumerRecords<K, V> records = consumer.poll(pollTimeout);
                     if (isActive.get()) {
-                        if (sink.requestedFromDownstream() > 1 || commitEvent.inProgress.get() > 0) {
+                        if (r > 1 || commitEvent.inProgress.get() > 0) {
                             schedule();
                         }
                     }
-                    sink.next(records);
+
+                    Operators.produced(REQUESTED, ConsumerEventLoop.this, 1);
+                    while (sink.emitNext(records) == Sinks.Emission.FAIL_OVERFLOW && isActive.get()) {
+                        LockSupport.parkNanos(10);
+                    }
                 }
             } catch (Exception e) {
                 if (isActive.get()) {
                     log.error("Unexpected exception", e);
-                    sink.error(e);
+                    if (sink.emitError(e) != Sinks.Emission.OK) {
+                        throw new IllegalStateException("Could not emit an error");
+                    }
                 }
             }
         }
@@ -306,7 +332,9 @@ class ConsumerEventLoop<K, V> {
                         emitter.error(exception);
                     }
                 } else {
-                    sink.error(exception);
+                    if (sink.emitError(exception) != Sinks.Emission.OK) {
+                        throw new IllegalStateException("Could not emit an error");
+                    }
                 }
             } else {
                 commitBatch.restoreOffsets(commitArgs, true);
@@ -373,7 +401,9 @@ class ConsumerEventLoop<K, V> {
                 }
             } catch (Exception e) {
                 log.error("Unexpected exception during close", e);
-                sink.error(e);
+                if (sink.emitError(e) != Sinks.Emission.OK) {
+                    throw new IllegalStateException("Could not emit an error");
+                }
             }
         }
     }

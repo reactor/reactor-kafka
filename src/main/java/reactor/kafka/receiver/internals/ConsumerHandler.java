@@ -5,10 +5,9 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.common.TopicPartition;
 import reactor.core.Disposable;
-import reactor.core.publisher.EmitterProcessor;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Scheduler;
 import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOffset;
@@ -62,8 +61,7 @@ class ConsumerHandler<K, V> {
 
     private final ConsumerEventLoop<K, V> consumerEventLoop;
 
-    @SuppressWarnings("deprecation")
-    private final EmitterProcessor<ConsumerRecords<K, V>> processor = EmitterProcessor.create(1);
+    private final Sinks.Many<ConsumerRecords<K, V>> sink = Sinks.many().unicast().onBackpressureBuffer();
 
     private Consumer<K, V> consumerProxy;
 
@@ -78,8 +76,6 @@ class ConsumerHandler<K, V> {
 
         eventScheduler = KafkaSchedulers.newEvent(receiverOptions.groupId());
 
-        @SuppressWarnings("deprecation")
-        FluxSink<ConsumerRecords<K, V>> sink = processor.sink(FluxSink.OverflowStrategy.ERROR);
         consumerEventLoop = new ConsumerEventLoop<>(
             ackMode,
             atmostOnceOffsets,
@@ -94,7 +90,7 @@ class ConsumerHandler<K, V> {
     }
 
     public Flux<ConsumerRecords<K, V>> receive() {
-        return processor;
+        return sink.asFlux().doOnRequest(consumerEventLoop::onRequest);
     }
 
     public Mono<Void> close() {
