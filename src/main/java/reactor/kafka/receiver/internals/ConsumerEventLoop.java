@@ -192,7 +192,7 @@ class ConsumerEventLoop<K, V> {
                 if (isActive.get()) {
                     log.error("Unexpected exception", e);
                     if (sink.emitError(e) != Sinks.Emission.OK) {
-                        throw new IllegalStateException("Could not emit an error");
+                        throw new IllegalStateException("Could not emit an error", e);
                     }
                 }
             }
@@ -238,7 +238,7 @@ class ConsumerEventLoop<K, V> {
                 if (isActive.get()) {
                     log.error("Unexpected exception", e);
                     if (sink.emitError(e) != Sinks.Emission.OK) {
-                        throw new IllegalStateException("Could not emit an error");
+                        throw new IllegalStateException("Could not emit an error", e);
                     }
                 }
             }
@@ -333,7 +333,7 @@ class ConsumerEventLoop<K, V> {
                     }
                 } else {
                     if (sink.emitError(exception) != Sinks.Emission.OK) {
-                        throw new IllegalStateException("Could not emit an error");
+                        throw new IllegalStateException("Could not emit an error", exception);
                     }
                 }
             } else {
@@ -402,7 +402,7 @@ class ConsumerEventLoop<K, V> {
             } catch (Exception e) {
                 log.error("Unexpected exception during close", e);
                 if (sink.emitError(e) != Sinks.Emission.OK) {
-                    throw new IllegalStateException("Could not emit an error");
+                    throw new IllegalStateException("Could not emit an error", e);
                 }
             }
         }
