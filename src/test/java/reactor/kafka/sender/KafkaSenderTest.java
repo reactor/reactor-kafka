@@ -35,6 +35,7 @@ import org.slf4j.LoggerFactory;
 import reactor.core.Exceptions;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
+import reactor.core.publisher.Sinks.Emission;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.kafka.AbstractKafkaTest;
@@ -59,8 +60,9 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.LockSupport;
 
+import static org.awaitility.Awaitility.await;
+import static org.hamcrest.Matchers.is;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -444,9 +446,8 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                    .doOnComplete(() -> done.release())
                    .subscribe();
         for (int i = 0; i < count; i++) {
-            while (sink.emitNext(i) != Sinks.Emission.OK) {
-                LockSupport.parkNanos(10);
-            }
+            final int value = i;
+            await().until(() -> sink.tryEmitNext(value), is(Emission.OK));
         }
         sink.emitComplete();
         assertTrue("Send not complete", done.tryAcquire(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
