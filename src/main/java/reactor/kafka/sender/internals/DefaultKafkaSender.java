@@ -21,7 +21,6 @@ import org.reactivestreams.Publisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.CoreSubscriber;
-import reactor.core.Exceptions;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxOperator;
 import reactor.core.publisher.Mono;
@@ -185,12 +184,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
                 .begin()
                 .thenMany(send(transactionRecords))
                 .concatWith(transactionManager().commit())
-                .concatWith(Mono.fromRunnable(() -> {
-                    Sinks.Emission emission = transactionBoundary.emitNext(this);
-                    if (emission != Sinks.Emission.OK) {
-                        throw Exceptions.failWithOverflow();
-                    }
-                }))
+                .concatWith(Mono.fromRunnable(() -> transactionBoundary.emitNext(this)))
                 .onErrorResume(e -> transactionManager().abort().then(Mono.error(e)))
                 .publishOn(senderOptions.scheduler());
     }

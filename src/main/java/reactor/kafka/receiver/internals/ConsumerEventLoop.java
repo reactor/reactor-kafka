@@ -191,9 +191,7 @@ class ConsumerEventLoop<K, V> {
             } catch (Exception e) {
                 if (isActive.get()) {
                     log.error("Unexpected exception", e);
-                    if (sink.emitError(e) != Sinks.Emission.OK) {
-                        throw new IllegalStateException("Could not emit an error", e);
-                    }
+                    sink.emitError(e);
                 }
             }
         }
@@ -230,16 +228,14 @@ class ConsumerEventLoop<K, V> {
                     }
 
                     Operators.produced(REQUESTED, ConsumerEventLoop.this, 1);
-                    while (sink.emitNext(records) == Sinks.Emission.FAIL_OVERFLOW && isActive.get()) {
+                    while (sink.tryEmitNext(records) == Sinks.Emission.FAIL_OVERFLOW && isActive.get()) {
                         LockSupport.parkNanos(10);
                     }
                 }
             } catch (Exception e) {
                 if (isActive.get()) {
                     log.error("Unexpected exception", e);
-                    if (sink.emitError(e) != Sinks.Emission.OK) {
-                        throw new IllegalStateException("Could not emit an error", e);
-                    }
+                    sink.emitError(e);
                 }
             }
         }
@@ -332,9 +328,7 @@ class ConsumerEventLoop<K, V> {
                         emitter.error(exception);
                     }
                 } else {
-                    if (sink.emitError(exception) != Sinks.Emission.OK) {
-                        throw new IllegalStateException("Could not emit an error", exception);
-                    }
+                    sink.emitError(exception);
                 }
             } else {
                 commitBatch.restoreOffsets(commitArgs, true);
@@ -401,9 +395,7 @@ class ConsumerEventLoop<K, V> {
                 }
             } catch (Exception e) {
                 log.error("Unexpected exception during close", e);
-                if (sink.emitError(e) != Sinks.Emission.OK) {
-                    throw new IllegalStateException("Could not emit an error", e);
-                }
+                sink.emitError(e);
             }
         }
     }
