@@ -249,14 +249,14 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         recreateSender(senderOptions.stopOnError(false).producerProperty(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, FirstTimeFailingStringSerializer.class.getName()));
 
         Semaphore errorSemaphore = new Semaphore(0);
-        Sinks.Many<ProducerRecord<Integer, String>> multicast = Sinks.many().multicast().onBackpressureError();
-        kafkaSender.send(multicast.asFlux().map(producerRecord -> SenderRecord.create(producerRecord, null)))
+        Sinks.Many<ProducerRecord<Integer, String>> sink = Sinks.many().unicast().onBackpressureError();
+        kafkaSender.send(sink.asFlux().map(producerRecord -> SenderRecord.create(producerRecord, null)))
             .doOnError(t -> errorSemaphore.release())
             .subscribe();
 
-        multicast.emitNext(recordToFail);
-        multicast.emitNext(recordToSucceed);
-        multicast.emitComplete();
+        sink.emitNext(recordToFail);
+        sink.emitNext(recordToSucceed);
+        sink.emitComplete();
 
         waitForMessages(consumer, 1, true);
         assertTrue("Error callback not invoked", errorSemaphore.tryAcquire(requestTimeoutMillis, TimeUnit.MILLISECONDS));
