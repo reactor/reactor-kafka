@@ -447,7 +447,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                    .subscribe();
         for (int i = 0; i < count; i++) {
             final int value = i;
-            await().until(() -> sink.tryEmitNext(value), is(Emission.OK));
+            await().pollDelay(Duration.ZERO).until(() -> sink.tryEmitNext(value), is(Emission.OK));
         }
         sink.emitComplete();
         assertTrue("Send not complete", done.tryAcquire(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
