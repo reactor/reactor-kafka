@@ -62,7 +62,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.awaitility.Awaitility.await;
-import static org.hamcrest.Matchers.is;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -447,7 +446,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                    .subscribe();
         for (int i = 0; i < count; i++) {
             final int value = i;
-            await().pollDelay(Duration.ZERO).until(() -> sink.tryEmitNext(value), is(Emission.OK));
+            await().pollDelay(Duration.ZERO).until(() -> sink.tryEmitNext(value), Emission::hasSucceeded);
         }
         sink.emitComplete();
         assertTrue("Send not complete", done.tryAcquire(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
