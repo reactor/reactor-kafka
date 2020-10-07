@@ -27,9 +27,9 @@ import org.apache.kafka.common.serialization.Serializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.Disposable;
+import reactor.core.Disposables;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.kafka.receiver.KafkaReceiver;
@@ -52,7 +52,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
 
 /**
  * Sample flows using Reactive API for Kafka.
@@ -379,27 +378,28 @@ public class SampleScenarios {
         }
         public Flux<?> flux() {
             sender = sender(senderOptions());
-            Sinks.Many<Person> sink = Sinks.many().multicast().onBackpressureBuffer();
-            Flux<?> inFlux = KafkaReceiver.create(receiverOptions(Collections.singleton(sourceTopic)))
-                                     .receiveAutoAck()
-                                     .concatMap(r -> r)
-                                     .doOnNext(m -> sink.emitNext(m.value()));
-            Flux<Person> persons = sink.asFlux();
-            Flux<SenderResult<Integer>> stream1 = sender.send(persons.publishOn(scheduler1).map(p -> SenderRecord.create(process1(p, true), p.id())));
-            Flux<SenderResult<Integer>> stream2 = sender.send(persons.publishOn(scheduler2).map(p -> SenderRecord.create(process2(p, true), p.id())));
-            AtomicReference<Disposable> cancelRef = new AtomicReference<>();
-            Consumer<AtomicReference<Disposable>> cancel = cr -> {
-                Disposable c = cr.getAndSet(null);
-                if (c != null)
-                    c.dispose();
-            };
+            AtomicReference<Disposable> cancelRef = new AtomicReference<>(Disposables.disposed());
+
+            Flux<Person> persons = KafkaReceiver.create(receiverOptions(Collections.singleton(sourceTopic)))
+                .receiveAutoAck()
+                .concatMap(r -> r)
+                .map(ConsumerRecord::value)
+                .publish()
+                .autoConnect(2, cancelRef::set);
+
+            Flux<SenderResult<Integer>> stream1 = sender.send(
+                persons
+                    .publishOn(scheduler1)
+                    .map(p -> SenderRecord.create(process1(p, true), p.id()))
+            );
+            Flux<SenderResult<Integer>> stream2 = sender.send(
+                persons
+                    .publishOn(scheduler2)
+                    .map(p -> SenderRecord.create(process2(p, true), p.id()))
+            );
             return Flux.merge(stream1, stream2)
-                       .doOnSubscribe(s -> cancelRef.set(inFlux.subscribe()))
-                       .doOnCancel(() -> {
-                           cancel.accept(cancelRef);
-                           close();
-                       })
-                       .doOnTerminate(() -> close());
+                       .doOnCancel(() -> cancelRef.getAndSet(Disposables.disposed()).dispose())
+                       .doFinally(signalType -> close());
         }
         public ProducerRecord<Integer, Person> process1(Person p, boolean debug) {
             if (debug)
