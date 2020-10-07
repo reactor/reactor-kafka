@@ -247,7 +247,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         disposables.add(flow.flux().subscribe());
         subscribeToDestTopic("group1", destTopic1, received1);
         subscribeToDestTopic("group2", destTopic2, received2);
-        sendMessages(sourceTopic, 20, expected1);
+        sendMessages(sourceTopic, 2000, expected1);
         for (Person p : expected1) {
             Person p2 = new Person(p.id(), p.firstName(), p.lastName());
             p2.email(flow.process2(p, false).value().email());

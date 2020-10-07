@@ -52,6 +52,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.LockSupport;
 import java.util.function.Consumer;
 
 /**
@@ -381,9 +382,13 @@ public class SampleScenarios {
             sender = sender(senderOptions());
             Sinks.Many<Person> sink = Sinks.many().multicast().onBackpressureBuffer();
             Flux<?> inFlux = KafkaReceiver.create(receiverOptions(Collections.singleton(sourceTopic)))
-                                     .receiveAutoAck()
-                                     .concatMap(r -> r)
-                                     .doOnNext(m -> sink.emitNext(m.value()));
+                .receiveAutoAck()
+                .concatMap(r -> r)
+                .doOnNext(m -> {
+                    while (sink.tryEmitNext(m.value()).hasFailed()) {
+                        LockSupport.parkNanos(10);
+                    }
+                });
             Flux<Person> persons = sink.asFlux();
             Flux<SenderResult<Integer>> stream1 = sender.send(persons.publishOn(scheduler1).map(p -> SenderRecord.create(process1(p, true), p.id())));
             Flux<SenderResult<Integer>> stream2 = sender.send(persons.publishOn(scheduler2).map(p -> SenderRecord.create(process2(p, true), p.id())));
