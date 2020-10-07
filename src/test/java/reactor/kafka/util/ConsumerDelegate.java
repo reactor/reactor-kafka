@@ -1,6 +1,7 @@
 package reactor.kafka.util;
 
 import org.apache.kafka.clients.consumer.Consumer;
+import org.apache.kafka.clients.consumer.ConsumerGroupMetadata;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
@@ -68,7 +69,6 @@ public class ConsumerDelegate<K, V> implements Consumer<K, V> {
     }
 
     @Override
-    @Deprecated
     public ConsumerRecords<K, V> poll(long timeout) {
         return delegate.poll(timeout);
     }
@@ -119,6 +119,11 @@ public class ConsumerDelegate<K, V> implements Consumer<K, V> {
     }
 
     @Override
+    public void seek(TopicPartition partition, OffsetAndMetadata offsetAndMetadata) {
+        delegate.seek(partition, offsetAndMetadata);
+    }
+
+    @Override
     public void seekToBeginning(Collection<TopicPartition> partitions) {
         delegate.seekToBeginning(partitions);
     }
@@ -146,6 +151,16 @@ public class ConsumerDelegate<K, V> implements Consumer<K, V> {
     @Override
     public OffsetAndMetadata committed(TopicPartition partition, Duration timeout) {
         return delegate.committed(partition, timeout);
+    }
+
+    @Override
+    public Map<TopicPartition, OffsetAndMetadata> committed(Set<TopicPartition> partitions) {
+        return delegate.committed(partitions);
+    }
+
+    @Override
+    public Map<TopicPartition, OffsetAndMetadata> committed(Set<TopicPartition> partitions, Duration timeout) {
+        return delegate.committed(partitions, timeout);
     }
 
     @Override
@@ -219,12 +234,21 @@ public class ConsumerDelegate<K, V> implements Consumer<K, V> {
     }
 
     @Override
+    public ConsumerGroupMetadata groupMetadata() {
+        return delegate.groupMetadata();
+    }
+
+    @Override
+    public void enforceRebalance() {
+        delegate.enforceRebalance();
+    }
+
+    @Override
     public void close() {
         delegate.close();
     }
 
     @Override
-    @Deprecated
     public void close(long timeout, TimeUnit unit) {
         delegate.close(timeout, unit);
     }
@@ -238,5 +262,4 @@ public class ConsumerDelegate<K, V> implements Consumer<K, V> {
     public void wakeup() {
         delegate.wakeup();
     }
-
 }

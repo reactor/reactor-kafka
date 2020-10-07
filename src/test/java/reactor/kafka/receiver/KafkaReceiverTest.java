@@ -793,7 +793,8 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
             .verify(Duration.ofSeconds(receiveTimeoutMillis));
         assertTrue("Commits did not succeed", commitSemaphore.tryAcquire(count, requestTimeoutMillis * count, TimeUnit.MILLISECONDS));
         assertEquals(0, commitFailures.get());
-        assertEquals(0, revoked.get());
+        // client revokes all assignments after closing consumer
+        assertEquals(4, revoked.get());
     }
 
     @Test
