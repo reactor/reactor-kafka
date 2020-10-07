@@ -162,28 +162,34 @@ The code segment below demonstrates fan-out with the same records processed in m
 streams. Each stream is processed on a different thread and which transforms the input record
 and stores the output in a Kafka topic.
 
-Reactor's https://projectreactor.io/docs/core/release/api/reactor/core/publisher/EmitterProcessor.html[EmitterProcessor]
+Reactor's https://projectreactor.io/docs/core/milestone/api/reactor/core/publisher/Sinks.MulticastSpec.html[Sinks.MulticastSpec]
 is used to broadcast the input records from Kafka to multiple subscribers.
+
+Please note that this sink honors downstream demand by conforming to the lowest demand in case
+of multiple subscribers.
 
 [source,java]
 --------
 
-EmitterProcessor<Person> processor = EmitterProcessor.create();         // <1>
-BlockingSink<Person> incoming = processor.connectSink();                // <2>
+Sinks.Many<Person> sink = Sinks.many().multicast().onBackpressureBuffer();         // <1>
 inputRecords = KafkaReceiver.create(receiverOptions)
                             .receive()
-                            .doOnNext(m -> incoming.emit(m.value()));   // <3>
+                            .doOnNext(m -> {
+                                while (sink.tryEmitNext(m.value()).hasFailed()) {  // <2>
+                                    LockSupport.parkNanos(10);                     // <3>
+                                }
+                            });
 
-outputRecords1 = processor.publishOn(scheduler1).map(p -> process1(p)); // <4>
-outputRecords2 = processor.publishOn(scheduler2).map(p -> process2(p)); // <5>
+outputRecords1 = processor.publishOn(scheduler1).map(p -> process1(p));            // <4>
+outputRecords2 = processor.publishOn(scheduler2).map(p -> process2(p));            // <5>
 
 Flux.merge(sender.send(outputRecords1), sender.send(outputRecords2))
     .doOnSubscribe(s -> inputRecords.subscribe())
-    .subscribe();                                                       // <6>
+    .subscribe();                                                                  // <6>
 --------
-<1> Create publish/subscribe EmitterProcessor for fan-out of Kafka inbound records
-<2> Create BlockingSink to which records are emitted
-<3> Receive from Kafka and emit to BlockingSink
+<1> Create publish/subscribe non-blocking multicast sink for fan-out of Kafka inbound records
+<2> Emit records using sink
+<3> Handle failures by retrying
 <4> Consume records on a scheduler, process and generate output records to send to Kafka
 <5> Add another processor for the same input data on a different scheduler
 <6> Merge the streams and subscribe to start the flow
