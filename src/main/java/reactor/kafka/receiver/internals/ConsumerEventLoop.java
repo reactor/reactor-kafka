@@ -228,9 +228,21 @@ class ConsumerEventLoop<K, V> {
                     }
 
                     Operators.produced(REQUESTED, ConsumerEventLoop.this, 1);
-                    while (sink.tryEmitNext(records) == Sinks.Emission.FAIL_OVERFLOW && isActive.get()) {
-                        LockSupport.parkNanos(10);
-                    }
+                    do {
+                        Sinks.Emission emission = sink.tryEmitNext(records);
+                        if (emission.hasSucceeded()) {
+                            break;
+                        }
+                        switch (emission) {
+                            case FAIL_NON_SERIALIZED:
+                                continue;
+                            case FAIL_OVERFLOW:
+                                LockSupport.parkNanos(10);
+                                continue;
+                            default:
+                                throw new IllegalStateException("Emission failed with " + emission);
+                        }
+                    } while (isActive.get());
                 }
             } catch (Exception e) {
                 if (isActive.get()) {

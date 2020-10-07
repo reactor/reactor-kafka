@@ -62,7 +62,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.awaitility.Awaitility.await;
-import static org.hamcrest.Matchers.is;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -249,14 +248,14 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         recreateSender(senderOptions.stopOnError(false).producerProperty(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, FirstTimeFailingStringSerializer.class.getName()));
 
         Semaphore errorSemaphore = new Semaphore(0);
-        Sinks.Many<ProducerRecord<Integer, String>> multicast = Sinks.many().multicast().onBackpressureError();
-        kafkaSender.send(multicast.asFlux().map(producerRecord -> SenderRecord.create(producerRecord, null)))
+        Sinks.Many<ProducerRecord<Integer, String>> sink = Sinks.many().unicast().onBackpressureError();
+        kafkaSender.send(sink.asFlux().map(producerRecord -> SenderRecord.create(producerRecord, null)))
             .doOnError(t -> errorSemaphore.release())
             .subscribe();
 
-        multicast.emitNext(recordToFail);
-        multicast.emitNext(recordToSucceed);
-        multicast.emitComplete();
+        sink.emitNext(recordToFail);
+        sink.emitNext(recordToSucceed);
+        sink.emitComplete();
 
         waitForMessages(consumer, 1, true);
         assertTrue("Error callback not invoked", errorSemaphore.tryAcquire(requestTimeoutMillis, TimeUnit.MILLISECONDS));
@@ -447,7 +446,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                    .subscribe();
         for (int i = 0; i < count; i++) {
             final int value = i;
-            await().until(() -> sink.tryEmitNext(value), is(Emission.OK));
+            await().pollDelay(Duration.ZERO).until(() -> sink.tryEmitNext(value), Emission::hasSucceeded);
         }
         sink.emitComplete();
         assertTrue("Send not complete", done.tryAcquire(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
