@@ -24,7 +24,9 @@ import reactor.core.CoreSubscriber;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxOperator;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 import reactor.core.publisher.Sinks;
+import reactor.core.publisher.Sinks.EmitFailureHandler;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.kafka.sender.KafkaOutbound;
@@ -53,7 +55,7 @@ import java.util.function.Function;
  * @param <K> outgoing message key type
  * @param <V> outgoing message value type
  */
-public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
+public class DefaultKafkaSender<K, V> implements KafkaSender<K, V>, EmitFailureHandler {
 
     static final Logger log = LoggerFactory.getLogger(DefaultKafkaSender.class.getName());
 
@@ -149,8 +151,8 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
                    .publishOn(senderOptions.scheduler(), false, 1)
                    .concatMapDelayError(records -> transaction(records, sink), false, 1)
                    .window(sink.asFlux())
-                   .doOnTerminate(sink::emitComplete)
-                   .doOnCancel(sink::emitComplete);
+                   .doOnTerminate(() -> sink.emitComplete(EmitFailureHandler.FAIL_FAST))
+                   .doOnCancel(() -> sink.emitComplete(EmitFailureHandler.FAIL_FAST));
     }
 
     @Override
@@ -184,7 +186,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
                 .begin()
                 .thenMany(send(transactionRecords))
                 .concatWith(transactionManager().commit())
-                .concatWith(Mono.fromRunnable(() -> transactionBoundary.emitNext(this)))
+                .concatWith(Mono.fromRunnable(() -> transactionBoundary.emitNext(this, this)))
                 .onErrorResume(e -> transactionManager().abort().then(Mono.error(e)))
                 .publishOn(senderOptions.scheduler());
     }
@@ -210,5 +212,10 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V> {
                 handler);
         }
         return producerProxy;
+    }
+
+    @Override
+    public boolean onEmitFailure(SignalType signalType, Sinks.Emission emission) {
+        return hasProducer.get();
     }
 }

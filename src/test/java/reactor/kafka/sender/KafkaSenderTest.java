@@ -36,6 +36,7 @@ import reactor.core.Exceptions;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 import reactor.core.publisher.Sinks.Emission;
+import reactor.core.publisher.Sinks.EmitFailureHandler;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.kafka.AbstractKafkaTest;
@@ -253,9 +254,9 @@ public class KafkaSenderTest extends AbstractKafkaTest {
             .doOnError(t -> errorSemaphore.release())
             .subscribe();
 
-        sink.emitNext(recordToFail);
-        sink.emitNext(recordToSucceed);
-        sink.emitComplete();
+        sink.emitNext(recordToFail, EmitFailureHandler.FAIL_FAST);
+        sink.emitNext(recordToSucceed, EmitFailureHandler.FAIL_FAST);
+        sink.emitComplete(EmitFailureHandler.FAIL_FAST);
 
         waitForMessages(consumer, 1, true);
         assertTrue("Error callback not invoked", errorSemaphore.tryAcquire(requestTimeoutMillis, TimeUnit.MILLISECONDS));
@@ -448,7 +449,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
             final int value = i;
             await().pollDelay(Duration.ZERO).until(() -> sink.tryEmitNext(value), Emission::hasSucceeded);
         }
-        sink.emitComplete();
+        sink.emitComplete(EmitFailureHandler.FAIL_FAST);
         assertTrue("Send not complete", done.tryAcquire(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
         waitForMessages(consumer, count, false);
         assertEquals(0, failedSends.size());

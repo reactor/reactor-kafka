@@ -12,6 +12,7 @@ import reactor.core.Disposables;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoSink;
 import reactor.core.publisher.Operators;
+import reactor.core.publisher.SignalType;
 import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -27,7 +28,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
-import java.util.concurrent.locks.LockSupport;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
@@ -35,7 +35,7 @@ import java.util.function.Predicate;
  * Since {@link org.apache.kafka.clients.consumer.Consumer} does not support multi-threaded access,
  * this event loop serializes every action we perform on it.
  */
-class ConsumerEventLoop<K, V> {
+class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ConsumerEventLoop.class.getName());
 
@@ -164,6 +164,11 @@ class ConsumerEventLoop<K, V> {
             });
     }
 
+    @Override
+    public boolean onEmitFailure(SignalType signalType, Sinks.Emission emission) {
+        return isActive.get();
+    }
+
     class SubscribeEvent implements Runnable {
 
         @Override
@@ -191,7 +196,7 @@ class ConsumerEventLoop<K, V> {
             } catch (Exception e) {
                 if (isActive.get()) {
                     log.error("Unexpected exception", e);
-                    sink.emitError(e);
+                    sink.emitError(e, ConsumerEventLoop.this);
                 }
             }
         }
@@ -228,26 +233,12 @@ class ConsumerEventLoop<K, V> {
                     }
 
                     Operators.produced(REQUESTED, ConsumerEventLoop.this, 1);
-                    do {
-                        Sinks.Emission emission = sink.tryEmitNext(records);
-                        if (emission.hasSucceeded()) {
-                            break;
-                        }
-                        switch (emission) {
-                            case FAIL_NON_SERIALIZED:
-                                continue;
-                            case FAIL_OVERFLOW:
-                                LockSupport.parkNanos(10);
-                                continue;
-                            default:
-                                throw new IllegalStateException("Emission failed with " + emission);
-                        }
-                    } while (isActive.get());
+                    sink.emitNext(records, ConsumerEventLoop.this);
                 }
             } catch (Exception e) {
                 if (isActive.get()) {
                     log.error("Unexpected exception", e);
-                    sink.emitError(e);
+                    sink.emitError(e, ConsumerEventLoop.this);
                 }
             }
         }
@@ -340,7 +331,7 @@ class ConsumerEventLoop<K, V> {
                         emitter.error(exception);
                     }
                 } else {
-                    sink.emitError(exception);
+                    sink.emitError(exception, ConsumerEventLoop.this);
                 }
             } else {
                 commitBatch.restoreOffsets(commitArgs, true);
@@ -407,7 +398,7 @@ class ConsumerEventLoop<K, V> {
                 }
             } catch (Exception e) {
                 log.error("Unexpected exception during close", e);
-                sink.emitError(e);
+                sink.emitError(e, ConsumerEventLoop.this);
             }
         }
     }
