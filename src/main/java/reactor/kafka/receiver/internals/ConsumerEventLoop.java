@@ -28,6 +28,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
+import java.util.concurrent.locks.LockSupport;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
@@ -166,7 +167,19 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
 
     @Override
     public boolean onEmitFailure(SignalType signalType, Sinks.Emission emission) {
-        return isActive.get();
+        if (!isActive.get()) {
+            return false;
+        }
+
+        switch (emission) {
+            case FAIL_NON_SERIALIZED:
+                return true;
+            case FAIL_OVERFLOW:
+                LockSupport.parkNanos(10);
+                return true;
+            default:
+                return false;
+        }
     }
 
     class SubscribeEvent implements Runnable {
