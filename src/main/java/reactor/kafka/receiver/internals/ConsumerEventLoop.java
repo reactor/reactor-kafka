@@ -167,12 +167,12 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
     }
 
     @Override
-    public boolean onEmitFailure(SignalType signalType, EmitResult EmitResult) {
+    public boolean onEmitFailure(SignalType signalType, EmitResult result) {
         if (!isActive.get()) {
             return false;
         }
 
-        switch (EmitResult) {
+        switch (result) {
             case FAIL_NON_SERIALIZED:
                 return true;
             case FAIL_OVERFLOW:

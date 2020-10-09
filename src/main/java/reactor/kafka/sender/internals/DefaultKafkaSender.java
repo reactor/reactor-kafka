@@ -215,7 +215,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V>, EmitFailureH
     }
 
     @Override
-    public boolean onEmitFailure(SignalType signalType, Sinks.EmitResult emission) {
+    public boolean onEmitFailure(SignalType signalType, Sinks.EmitResult emitResult) {
         return hasProducer.get();
     }
 }
