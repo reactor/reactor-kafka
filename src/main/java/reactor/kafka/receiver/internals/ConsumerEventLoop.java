@@ -14,6 +14,7 @@ import reactor.core.publisher.MonoSink;
 import reactor.core.publisher.Operators;
 import reactor.core.publisher.SignalType;
 import reactor.core.publisher.Sinks;
+import reactor.core.publisher.Sinks.EmitResult;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.kafka.receiver.ReceiverOptions;
@@ -166,12 +167,12 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
     }
 
     @Override
-    public boolean onEmitFailure(SignalType signalType, Sinks.Emission emission) {
+    public boolean onEmitFailure(SignalType signalType, EmitResult EmitResult) {
         if (!isActive.get()) {
             return false;
         }
 
-        switch (emission) {
+        switch (EmitResult) {
             case FAIL_NON_SERIALIZED:
                 return true;
             case FAIL_OVERFLOW:

@@ -35,7 +35,7 @@ import org.slf4j.LoggerFactory;
 import reactor.core.Exceptions;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
-import reactor.core.publisher.Sinks.Emission;
+import reactor.core.publisher.Sinks.EmitResult;
 import reactor.core.publisher.Sinks.EmitFailureHandler;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -447,7 +447,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                    .subscribe();
         for (int i = 0; i < count; i++) {
             final int value = i;
-            await().pollDelay(Duration.ZERO).until(() -> sink.tryEmitNext(value), Emission::hasSucceeded);
+            await().pollDelay(Duration.ZERO).until(() -> sink.tryEmitNext(value), EmitResult::isSuccess);
         }
         sink.emitComplete(EmitFailureHandler.FAIL_FAST);
         assertTrue("Send not complete", done.tryAcquire(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
