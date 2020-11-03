@@ -62,6 +62,7 @@ import reactor.kafka.sender.SenderRecord;
 import reactor.kafka.util.TestUtils;
 
 public abstract class AbstractKafkaTest {
+
     public static final int DEFAULT_TEST_TIMEOUT = 60_000;
 
     private static final KafkaContainer KAFKA = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:5.5.1"))
