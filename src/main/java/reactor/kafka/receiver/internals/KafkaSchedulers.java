@@ -16,11 +16,8 @@
 package reactor.kafka.receiver.internals;
 
 import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
-import reactor.core.Disposable;
-import reactor.core.scheduler.NonBlocking;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.Logger;
@@ -32,111 +29,17 @@ import reactor.util.Loggers;
 class KafkaSchedulers {
     static final Logger log = Loggers.getLogger(Schedulers.class);
 
-    static final void defaultUncaughtException(Thread t, Throwable e) {
+    static void defaultUncaughtException(Thread t, Throwable e) {
         log.error("KafkaScheduler worker in group " + t.getThreadGroup().getName()
                 + " failed with an uncaught exception", e);
     }
 
-    static EventScheduler newEvent(String groupId) {
-        return new EventScheduler(groupId);
+    static Scheduler newEvent(String groupId) {
+        return Schedulers.newSingle(new EventThreadFactory(groupId));
     }
 
-    final static class EventScheduler implements Scheduler {
-
-        final ThreadLocal<Boolean> holder = ThreadLocal.withInitial(() -> false);
-        final Scheduler inner;
-
-        private EventScheduler(String groupId) {
-            this.inner = Schedulers.newSingle(new EventThreadFactory(groupId));
-        }
-
-        @Override
-        public Disposable schedule(Runnable task) {
-            return inner.schedule(decorate(task));
-        }
-
-        @Override
-        public Disposable schedule(Runnable task, long delay, TimeUnit unit) {
-            return inner.schedule(decorate(task), delay, unit);
-        }
-
-        @Override
-        public Disposable schedulePeriodically(Runnable task, long initialDelay, long period, TimeUnit unit) {
-            return inner.schedulePeriodically(decorate(task), initialDelay, period, unit);
-        }
-
-        @Override
-        public long now(TimeUnit unit) {
-            return inner.now(unit);
-        }
-
-        @Override
-        public Worker createWorker() {
-            return new EventWorker(inner.createWorker());
-        }
-
-        @Override
-        public void dispose() {
-            inner.dispose();
-        }
-
-        @Override
-        public boolean isDisposed() {
-            return inner.isDisposed();
-        }
-
-        @Override
-        public void start() {
-            inner.start();
-        }
-
-        boolean isCurrentThreadFromScheduler() {
-            return holder.get();
-        }
-
-        private Runnable decorate(Runnable task) {
-            return () -> {
-                holder.set(true);
-                task.run();
-            };
-        }
-
-        final class EventWorker implements Worker {
-
-            final Worker actual;
-
-            EventWorker(Worker actual) {
-                this.actual = actual;
-            }
-
-            @Override
-            public void dispose() {
-                actual.dispose();
-            }
-
-            @Override
-            public boolean isDisposed() {
-                return actual.isDisposed();
-            }
-
-            @Override
-            public Disposable schedule(Runnable task) {
-                return actual.schedule(decorate(task));
-            }
-
-            @Override
-            public Disposable schedule(Runnable task, long delay, TimeUnit unit) {
-                return actual.schedule(decorate(task), delay, unit);
-            }
-
-            @Override
-            public Disposable schedulePeriodically(Runnable task,
-                    long initialDelay,
-                    long period,
-                    TimeUnit unit) {
-                return actual.schedulePeriodically(decorate(task), initialDelay, period, unit);
-            }
-        }
+    static boolean isCurrentThreadFromScheduler() {
+        return Thread.currentThread() instanceof EventThreadFactory.EmitterThread;
     }
 
     final static class EventThreadFactory implements ThreadFactory {
@@ -158,7 +61,7 @@ class KafkaSchedulers {
             return t;
         }
 
-        static final class EmitterThread extends Thread implements NonBlocking {
+        static final class EmitterThread extends Thread {
 
             EmitterThread(Runnable target, String name) {
                 super(target, name);

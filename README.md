@@ -39,14 +39,14 @@ See [reactor-kafka-samples/src/main/java/reactor/kafka/samples/SampleConsumer.ja
 With Gradle from repo.spring.io:
 ```groovy
     repositories {
-      //maven { url 'https://repo.spring.io/snapshot' }
-      maven { url 'https://repo.spring.io/milestone' }
+      maven { url 'https://repo.spring.io/snapshot' }
+      // maven { url 'https://repo.spring.io/milestone' }
       mavenCentral()
     }
 
     dependencies {
-      //compile "io.projectreactor.kafka:reactor-kafka:1.1.1.BUILD-SNAPSHOT"
-      compile "io.projectreactor.kafka:reactor-kafka:1.1.0.RELEASE"
+      compile "io.projectreactor.kafka:reactor-kafka:1.3.0-SNAPSHOT"
+      // compile "io.projectreactor.kafka:reactor-kafka:1.3.0-RC1"
     }
 ```
 

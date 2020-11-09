@@ -27,14 +27,14 @@ public class KafkaSchedulersTest {
     @Test
     public void checkThatEventSchedulerIdentifiesProducedThreadCorrectly()
             throws InterruptedException {
-        KafkaSchedulers.EventScheduler scheduler = KafkaSchedulers.newEvent("test");
+        Scheduler scheduler = KafkaSchedulers.newEvent("test");
         CountDownLatch latch1 = new CountDownLatch(1);
         AtomicBoolean capture = new AtomicBoolean(true);
 
-        Assert.assertFalse(scheduler.isCurrentThreadFromScheduler());
+        Assert.assertFalse(KafkaSchedulers.isCurrentThreadFromScheduler());
 
         new Thread(() -> {
-            capture.set(scheduler.isCurrentThreadFromScheduler());
+            capture.set(KafkaSchedulers.isCurrentThreadFromScheduler());
             latch1.countDown();
         }).start();
 
@@ -44,7 +44,7 @@ public class KafkaSchedulersTest {
         Assert.assertFalse(capture.get());
 
         scheduler.schedule(() -> {
-            capture.set(scheduler.isCurrentThreadFromScheduler());
+            capture.set(KafkaSchedulers.isCurrentThreadFromScheduler());
             latch2.countDown();
         });
 
@@ -56,16 +56,16 @@ public class KafkaSchedulersTest {
     @Test
     public void checkThatWorkerFromEventSchedulerIdentifiesProducedThreadCorrectly()
             throws InterruptedException {
-        KafkaSchedulers.EventScheduler scheduler = KafkaSchedulers.newEvent("test");
+        Scheduler scheduler = KafkaSchedulers.newEvent("test");
         Scheduler.Worker eventWorker = scheduler.createWorker();
 
         CountDownLatch latch1 = new CountDownLatch(1);
         AtomicBoolean capture = new AtomicBoolean(true);
 
-        Assert.assertFalse(scheduler.isCurrentThreadFromScheduler());
+        Assert.assertFalse(KafkaSchedulers.isCurrentThreadFromScheduler());
 
         new Thread(() -> {
-            capture.set(scheduler.isCurrentThreadFromScheduler());
+            capture.set(KafkaSchedulers.isCurrentThreadFromScheduler());
             latch1.countDown();
         }).start();
 
@@ -75,7 +75,7 @@ public class KafkaSchedulersTest {
         Assert.assertFalse(capture.get());
 
         eventWorker.schedule(() -> {
-            capture.set(scheduler.isCurrentThreadFromScheduler());
+            capture.set(KafkaSchedulers.isCurrentThreadFromScheduler());
             latch2.countDown();
         });
 

@@ -18,31 +18,19 @@ package reactor.kafka.samples;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-import org.junit.After;
-import org.junit.Before;
 import org.junit.Test;
 import reactor.kafka.AbstractKafkaTest;
 
 public class SampleTest extends AbstractKafkaTest {
-
-
-    @Before
-    public void setUp() throws Exception {
-        super.setUp();
-    }
-
-    @After
-    public void tearDown() {
-    }
 
     @Test
     public void sampleTest() throws Exception {
         int count = 10;
         CountDownLatch sendLatch = new CountDownLatch(count);
         CountDownLatch receiveLatch = new CountDownLatch(count);
-        SampleConsumer consumer = new SampleConsumer(embeddedKafka.bootstrapServers());
+        SampleConsumer consumer = new SampleConsumer(bootstrapServers());
         consumer.consumeMessages(topic, receiveLatch);
-        SampleProducer producer = new SampleProducer(embeddedKafka.bootstrapServers());
+        SampleProducer producer = new SampleProducer(bootstrapServers());
         producer.sendMessages(topic, count, sendLatch);
         sendLatch.await(10, TimeUnit.SECONDS);
         receiveLatch.await(10, TimeUnit.SECONDS);

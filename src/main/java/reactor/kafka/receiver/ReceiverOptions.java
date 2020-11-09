@@ -1,15 +1,5 @@
 package reactor.kafka.receiver;
 
-import java.time.Duration;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Properties;
-import java.util.function.Consumer;
-import java.util.function.Supplier;
-import java.util.regex.Pattern;
-
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -20,6 +10,16 @@ import reactor.core.scheduler.Scheduler;
 import reactor.util.annotation.NonNull;
 import reactor.util.annotation.Nullable;
 
+import java.time.Duration;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Properties;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
+import java.util.regex.Pattern;
+
 public interface ReceiverOptions<K, V> {
 
     /**
@@ -28,7 +28,7 @@ public interface ReceiverOptions<K, V> {
      */
     @NonNull
     static <K, V> ReceiverOptions<K, V> create() {
-        return new MutableReceiverOptions<>();
+        return new ImmutableReceiverOptions<K, V>();
     }
 
     /**
@@ -37,7 +37,7 @@ public interface ReceiverOptions<K, V> {
      */
     @NonNull
     static <K, V> ReceiverOptions<K, V> create(@NonNull Map<String, Object> configProperties) {
-        return new MutableReceiverOptions<>(configProperties);
+        return new ImmutableReceiverOptions<>(configProperties);
     }
 
     /**
@@ -46,7 +46,7 @@ public interface ReceiverOptions<K, V> {
      */
     @NonNull
     static <K, V> ReceiverOptions<K, V> create(@NonNull Properties configProperties) {
-        return new MutableReceiverOptions<>(configProperties);
+        return new ImmutableReceiverOptions<>(configProperties);
     }
 
     /**
@@ -383,18 +383,5 @@ public interface ReceiverOptions<K, V> {
             };
         else
             throw new IllegalStateException("No subscriptions have been created");
-    }
-
-    /**
-     * Returns a new immutable instance with the configuration properties of this instance.
-     *
-     * @deprecated will be removed since all operations should be immutable
-     *
-     * @return new immutable options instance
-     */
-    @NonNull
-    @Deprecated
-    default ReceiverOptions<K, V> toImmutable() {
-        return new ImmutableReceiverOptions<>(this);
     }
 }

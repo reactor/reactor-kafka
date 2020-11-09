@@ -16,6 +16,35 @@
 package reactor.kafka.sender.internals;
 
 
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.Producer;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.PartitionInfo;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.InvalidTopicException;
+import org.apache.kafka.common.errors.LeaderNotAvailableException;
+import org.apache.kafka.common.errors.ProducerFencedException;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
+import reactor.kafka.mock.Message;
+import reactor.kafka.mock.MockCluster;
+import reactor.kafka.mock.MockProducer;
+import reactor.kafka.mock.MockProducer.Pool;
+import reactor.kafka.sender.KafkaOutbound;
+import reactor.kafka.sender.KafkaSender;
+import reactor.kafka.sender.SenderOptions;
+import reactor.kafka.sender.SenderRecord;
+import reactor.kafka.sender.SenderResult;
+import reactor.kafka.util.TestUtils;
+import reactor.test.StepVerifier;
+
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -35,36 +64,6 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static reactor.kafka.AbstractKafkaTest.DEFAULT_TEST_TIMEOUT;
-
-import org.apache.kafka.clients.producer.KafkaProducer;
-import org.apache.kafka.clients.producer.Producer;
-import org.apache.kafka.clients.producer.ProducerConfig;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
-import org.apache.kafka.common.PartitionInfo;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.errors.InvalidTopicException;
-import org.apache.kafka.common.errors.LeaderNotAvailableException;
-import org.apache.kafka.common.errors.ProducerFencedException;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
-import reactor.kafka.mock.Message;
-import reactor.kafka.mock.MockCluster;
-import reactor.kafka.mock.MockProducer;
-import reactor.kafka.mock.MockProducer.Pool;
-import reactor.kafka.sender.KafkaOutbound;
-import reactor.kafka.sender.KafkaSender;
-import reactor.kafka.sender.SenderOptions;
-import reactor.kafka.sender.SenderRecord;
-import reactor.kafka.sender.SenderResult;
-import reactor.kafka.util.TestUtils;
-import reactor.test.StepVerifier;
 
 /**
  * Kafka sender tests using mock Kafka producers.
@@ -151,7 +150,6 @@ public class MockSenderTest {
         StepVerifier.create(sender.createOutbound().send(outgoing.producerRecords()).then())
                     .expectError(InvalidTopicException.class)
                     .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
-        assertEquals(maxInflight, outgoing.onNextCount.get());
     }
 
     /**
@@ -356,7 +354,7 @@ public class MockSenderTest {
         StepVerifier.create(chain.then())
                     .expectError(InvalidTopicException.class)
                     .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
-        assertEquals(maxInflight, outgoingRecords.onNextCount.get());
+        assertEquals(maxInflight, producer.sendCount.get());
     }
 
     /**
@@ -420,10 +418,8 @@ public class MockSenderTest {
         OutgoingRecords outgoing = outgoingRecords.append("nonexistent", 10);
         StepVerifier.create(sender.send(outgoing.senderRecords()))
                     .recordWith(() -> sendResponses)
-                    .expectNextCount(1)
                     .expectError(InvalidTopicException.class)
                     .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
-        assertEquals(maxInflight, outgoing.onNextCount.get());
     }
 
     /**
@@ -542,13 +538,14 @@ public class MockSenderTest {
         AtomicBoolean completed = new AtomicBoolean();
         AtomicInteger exceptionCount = new AtomicInteger();
         sender.send(outgoing.senderRecords())
+              .doOnError(LeaderNotAvailableException.class, e -> exceptionCount.incrementAndGet())
               .retry()
               .doOnNext(r -> {
                   if (r.exception() == null) {
-                      if (exceptionCount.get() == 0)
+                      if (exceptionCount.get() == 0) {
                           cluster.failLeader(new TopicPartition(r.recordMetadata().topic(), r.recordMetadata().partition()));
-                  } else if (r.exception() instanceof LeaderNotAvailableException)
-                      exceptionCount.incrementAndGet();
+                      }
+                  }
               })
               .doOnComplete(() -> completed.set(true))
               .subscribe();
@@ -721,10 +718,16 @@ public class MockSenderTest {
         resetSender();
         OutgoingRecords outgoing = outgoingRecords.append(topic, 10);
         Flux<SenderResult<Integer>> result = sender.send(outgoing.senderRecords())
-                .concatMap(r -> sender.doOnProducer(p -> {
-                    method.accept(p);
-                    return true;
-                }).then(Mono.just(r)));
+                .delayUntil(r -> {
+                    return sender
+                        .doOnProducer(p -> {
+                            method.accept(p);
+                            return true;
+                        })
+                        // Some methods of MockProducer are using single-threaded executor (e.g. `partitionsFor`)
+                        // which is also used for emitting values. To avoid the deadlock, we use a separate `Scheduler`
+                        .subscribeOn(Schedulers.boundedElastic());
+                });
         StepVerifier.create(result)
                     .expectNextCount(10)
                     .expectComplete()
@@ -842,7 +845,7 @@ public class MockSenderTest {
                     metadata = new RecordMetadata(partition, 0, partitionResponses.size(), 0, (Long) 0L, 0, 0);
                 else
                     e = new InvalidTopicException("Topic not found: " + topic);
-                partitionResponses.add(new DefaultKafkaSender.Response<Integer>(metadata, e, correlation));
+                partitionResponses.add(new Response<>(metadata, e, correlation));
             }
             return this;
         }

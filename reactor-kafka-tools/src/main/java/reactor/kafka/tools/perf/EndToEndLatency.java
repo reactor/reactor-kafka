@@ -31,8 +31,29 @@
  */
 package reactor.kafka.tools.perf;
 
-import static net.sourceforge.argparse4j.impl.Arguments.store;
+import net.sourceforge.argparse4j.ArgumentParsers;
+import net.sourceforge.argparse4j.inf.ArgumentParser;
+import net.sourceforge.argparse4j.inf.ArgumentParserException;
+import net.sourceforge.argparse4j.inf.Namespace;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
+import reactor.core.Disposable;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.kafka.receiver.KafkaReceiver;
+import reactor.kafka.receiver.ReceiverOptions;
+import reactor.kafka.receiver.ReceiverRecord;
+import reactor.kafka.sender.KafkaSender;
+import reactor.kafka.sender.SenderOptions;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -47,28 +68,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.clients.producer.KafkaProducer;
-import org.apache.kafka.clients.producer.ProducerConfig;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.serialization.ByteArrayDeserializer;
-
-import net.sourceforge.argparse4j.ArgumentParsers;
-import net.sourceforge.argparse4j.inf.ArgumentParser;
-import net.sourceforge.argparse4j.inf.ArgumentParserException;
-import net.sourceforge.argparse4j.inf.Namespace;
-import reactor.core.Disposable;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-import reactor.kafka.receiver.ReceiverOptions;
-import reactor.kafka.receiver.ReceiverRecord;
-import reactor.kafka.receiver.KafkaReceiver;
-import reactor.kafka.sender.KafkaSender;
-import reactor.kafka.sender.SenderOptions;
+import static net.sourceforge.argparse4j.impl.Arguments.store;
 
 public class EndToEndLatency {
 
@@ -305,15 +305,15 @@ public class EndToEndLatency {
         public void initialize() {
             long endTimeMs = System.currentTimeMillis() + 10000;
             while (!isAssigned.get() && System.currentTimeMillis() < endTimeMs)
-                consumer.poll(100);
+                consumer.poll(Duration.ofMillis(100));
             if (!isAssigned.get())
                 throw new IllegalStateException("Timed out waiting for assignment");
             consumer.seekToEnd(Collections.emptyList());
-            consumer.poll(0);
+            consumer.poll(Duration.ZERO);
         }
         public Iterator<ConsumerRecord<byte[], byte[]>> sendAndReceive(String topic, byte[] message, long timeout) throws Exception {
             producer.send(new ProducerRecord<byte[], byte[]>(topic, message)).get();
-            Iterator<ConsumerRecord<byte[], byte[]>> recordIter = consumer.poll(timeout).iterator();
+            Iterator<ConsumerRecord<byte[], byte[]>> recordIter = consumer.poll(Duration.ofMillis(timeout)).iterator();
             return recordIter;
         }
         public void close() {

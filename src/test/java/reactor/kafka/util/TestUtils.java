@@ -28,7 +28,6 @@ import java.util.regex.Pattern;
 
 import static org.junit.Assert.fail;
 
-import org.powermock.api.support.membermodification.MemberModifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,6 +38,7 @@ public class TestUtils {
         try {
             Thread.sleep(millis);
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             throw new RuntimeException(e);
         }
     }
@@ -47,6 +47,7 @@ public class TestUtils {
         try {
             semaphore.acquire();
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             throw new RuntimeException(e);
         }
     }
@@ -77,26 +78,6 @@ public class TestUtils {
                 StackTraceElement[] stackTrace = thread.getStackTrace();
                 log.warn("Stack trace of thread {}: {}", thread.getName(), stackTrace);
             }
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    public static <T> T getField(Object parentObj, String fieldPath) {
-        try {
-            Object obj = parentObj;
-            for (String field : fieldPath.split("\\."))
-                obj = MemberModifier.field(obj.getClass(), field).get(obj);
-            return (T) obj;
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    public static void setField(Object obj, String field, Object value) {
-        try {
-            MemberModifier.field(obj.getClass(), field).set(obj, value);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
         }
     }
 

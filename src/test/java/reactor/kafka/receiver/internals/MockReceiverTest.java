@@ -15,8 +15,34 @@
  */
 package reactor.kafka.receiver.internals;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.OffsetCommitCallback;
+import org.apache.kafka.clients.consumer.RetriableCommitFailedException;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.KafkaException;
+import org.apache.kafka.common.PartitionInfo;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.InvalidOffsetException;
+import org.junit.Before;
+import org.junit.Test;
+import reactor.core.Disposable;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
+import reactor.kafka.mock.MockCluster;
+import reactor.kafka.mock.MockConsumer;
+import reactor.kafka.receiver.KafkaReceiver;
+import reactor.kafka.receiver.ReceiverOffset;
+import reactor.kafka.receiver.ReceiverOptions;
+import reactor.kafka.receiver.ReceiverPartition;
+import reactor.kafka.receiver.ReceiverRecord;
+import reactor.kafka.util.TestUtils;
+import reactor.test.StepVerifier;
+import reactor.test.StepVerifier.Step;
+
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -39,39 +65,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
-import java.util.function.Supplier;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.OffsetCommitCallback;
-import org.apache.kafka.clients.consumer.RetriableCommitFailedException;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.PartitionInfo;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.errors.InvalidOffsetException;
-import org.junit.Before;
-import org.junit.Test;
-import reactor.core.Disposable;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
-import reactor.kafka.mock.MockCluster;
-import reactor.kafka.mock.MockConsumer;
-import reactor.kafka.receiver.KafkaReceiver;
-import reactor.kafka.receiver.ReceiverOffset;
-import reactor.kafka.receiver.ReceiverOptions;
-import reactor.kafka.receiver.ReceiverPartition;
-import reactor.kafka.receiver.ReceiverRecord;
-import reactor.kafka.util.TestUtils;
-import reactor.test.StepVerifier;
-import reactor.test.StepVerifier.Step;
-
+import static org.awaitility.Awaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -140,82 +138,47 @@ public class MockReceiverTest {
         assertEquals(Arrays.asList(consumer), consumerFactory.consumersInUse());
         assertFalse("Consumer closed", consumer.closed());
         c.dispose();
-        assertTrue("Consumer closed", consumer.closed());
+        await().atMost(10, TimeUnit.SECONDS).untilAsserted(() -> {
+            assertTrue("Consumer closed", consumer.closed());
+        });
     }
 
     @Test
     public void testCorrectResourceDisposeOnAccidentErrorDuringStart() throws Exception {
-        Field parallel = Schedulers.class.getDeclaredField("CACHED_PARALLEL");
-        parallel.setAccessible(true);
-        Method cache = Schedulers.class.getDeclaredMethod("cache",
-                AtomicReference.class,
-                String.class,
-                Supplier.class);
-        cache.setAccessible(true);
-        AtomicReference<?> atomicHolder = (AtomicReference<?>) parallel.get(Schedulers.class);
+        sendMessages(topic, 0, 10);
+        receiverOptions = receiverOptions
+            .schedulerSupplier(() -> Schedulers.fromExecutor(r -> {
+                throw new RejectedExecutionException();
+            }))
+            .subscription(Collections.singleton(topic));
+        DefaultKafkaReceiver<Integer, String> receiver =
+                new DefaultKafkaReceiver<>(consumerFactory, receiverOptions);
+        Flux<ReceiverRecord<Integer, String>> flux = receiver.receive();
         try {
-            atomicHolder.set(null);
-            cache.invoke(Schedulers.class, atomicHolder, "parallel",
-                (Supplier<Scheduler>) () -> Schedulers.fromExecutor((r) -> {
-                    throw new RejectedExecutionException();
-                })
-            );
-            sendMessages(topic, 0, 10000);
-            receiverOptions = receiverOptions.subscription(Collections.singleton(topic));
-            DefaultKafkaReceiver<Integer, String> receiver =
-                    new DefaultKafkaReceiver<>(consumerFactory, receiverOptions);
-            Flux<ReceiverRecord<Integer, String>> flux = receiver.receive();
-            try {
-                flux.blockLast(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
-                fail("unexpected completion");
-            } catch (Exception e) {
-                assertTrue(e instanceof RejectedExecutionException);
-            }
-            assertTrue("Internals of KafkaReceive must be cleaned up", receiver.scheduler.isDisposed());
-            assumeTrue("Consumer should be closed if unexpected error occurred", consumer.closed());
-        } finally {
-            atomicHolder.set(null);
-            cache.setAccessible(false);
-            parallel.setAccessible(false);
+            flux.blockLast(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
+            fail("unexpected completion");
+        } catch (Exception e) {
+            assertTrue(e instanceof RejectedExecutionException);
         }
+        assumeTrue("Consumer should be closed if unexpected error occurred", consumer.closed());
     }
 
     @Test
     public void testCorrectResourceDisposeOnAccidentError() throws Exception {
-        Field parallel = Schedulers.class.getDeclaredField("CACHED_PARALLEL");
-        parallel.setAccessible(true);
-        Method cache = Schedulers.class.getDeclaredMethod("cache",
-                AtomicReference.class,
-                String.class,
-                Supplier.class);
-        cache.setAccessible(true);
-        AtomicReference<?> atomicHolder =
-                (AtomicReference<?>) parallel.get(Schedulers.class);
+        sendMessages(topic, 0, 10);
+        receiverOptions = receiverOptions.subscription(Collections.singleton(topic));
+        DefaultKafkaReceiver<Integer, String> receiver =
+                new DefaultKafkaReceiver<>(consumerFactory, receiverOptions);
+        consumer.addCommitException(new KafkaException("Boom"), 1);
+        Flux<ConsumerRecord<Integer, String>> flux = receiver.receiveAtmostOnce();
         try {
-            atomicHolder.set(null);
-            cache.invoke(Schedulers.class, atomicHolder, "parallel",
-                (Supplier<Scheduler>) () -> Schedulers.fromExecutor((r) -> {
-                    throw new RejectedExecutionException();
-                })
-            );
-            sendMessages(topic, 0, 10000);
-            receiverOptions = receiverOptions.subscription(Collections.singleton(topic));
-            DefaultKafkaReceiver<Integer, String> receiver =
-                    new DefaultKafkaReceiver<>(consumerFactory, receiverOptions);
-            Flux<ConsumerRecord<Integer, String>> flux = receiver.receiveAtmostOnce();
-            try {
-                flux.blockLast(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
-                fail("unexpected completion");
-            } catch (Exception e) {
-                assertTrue(e instanceof RejectedExecutionException);
-            }
-            assertTrue("Internals of KafkaReceive must be cleaned up", receiver.scheduler.isDisposed());
-            assumeTrue("Consumer should be closed if unexpected error occurred", consumer.closed());
-        } finally {
-            atomicHolder.set(null);
-            cache.setAccessible(false);
-            parallel.setAccessible(false);
+            flux.blockLast(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
+            fail("unexpected completion");
+        } catch (Exception e) {
+            assertTrue(e instanceof KafkaException);
+            assertEquals("Boom", e.getMessage());
         }
+        assumeTrue("Consumer should be closed if unexpected error occurred", consumer.closed());
     }
 
     /**
@@ -633,15 +596,17 @@ public class MockReceiverTest {
         AtomicLong lastCommitted = new AtomicLong(-1);
         sendMessages(topic, 0, 20);
         receiveAndVerify(15, r -> {
-            long offset = r.receiverOffset().offset();
-            if (offset < 10) {
-                r.receiverOffset().acknowledge();
-                if (((offset + 1) % batchSize) == 0)
-                    lastCommitted.set(offset);
-            } else
-                uncommittedMessages.add(r);
-            verifyCommit(r, lastCommitted.get());
-            return Mono.just(r);
+            return Mono.fromCallable(() -> {
+                long offset = r.receiverOffset().offset();
+                if (offset < 10) {
+                    r.receiverOffset().acknowledge();
+                    if (((offset + 1) % batchSize) == 0)
+                        lastCommitted.set(offset);
+                } else
+                    uncommittedMessages.add(r);
+                verifyCommit(r, lastCommitted.get());
+                return r;
+            }).subscribeOn(Schedulers.boundedElastic());
         });
         verifyCommits(groupId, topic, 10);
     }
@@ -660,17 +625,19 @@ public class MockReceiverTest {
         final int delayIndex = 5;
         sendMessages(topic, 0, 20);
         receiveAndVerify(15, r -> {
-            long offset = r.receiverOffset().offset();
-            if (r.receiverOffset().offset() < 10) {
-                r.receiverOffset().acknowledge();
-                if (offset == delayIndex) {
-                    TestUtils.sleep(interval.toMillis());
-                    lastCommitted.set(offset);
-                }
-            } else
-                uncommittedMessages.add(r);
-            verifyCommit(r, lastCommitted.get());
-            return Mono.just(r);
+            return Mono.fromCallable(() -> {
+                long offset = r.receiverOffset().offset();
+                if (r.receiverOffset().offset() < 10) {
+                    r.receiverOffset().acknowledge();
+                    if (offset == delayIndex) {
+                        TestUtils.sleep(interval.toMillis());
+                        lastCommitted.set(offset);
+                    }
+                } else
+                    uncommittedMessages.add(r);
+                verifyCommit(r, lastCommitted.get());
+                return r;
+            }).subscribeOn(Schedulers.boundedElastic());
         });
         verifyCommits(groupId, topic, 10);
     }
@@ -693,19 +660,21 @@ public class MockReceiverTest {
         sendMessages(topic, 0, 20);
         AtomicLong lastCommitted = new AtomicLong(-1);
         receiveAndVerify(15, r -> {
-            long offset = r.receiverOffset().offset();
-            if (offset < 10) {
-                r.receiverOffset().acknowledge();
-                if (offset == delayIndex) {
-                    TestUtils.sleep(interval.toMillis());
-                    lastCommitted.set(offset);
-                }
-                if (((offset + 1) % batchSize) == 0)
-                    lastCommitted.set(offset);
-            } else
-                uncommittedMessages.add(r);
-            verifyCommit(r, lastCommitted.get());
-            return Mono.just(r);
+            return Mono.fromCallable(() -> {
+                long offset = r.receiverOffset().offset();
+                if (offset < 10) {
+                    r.receiverOffset().acknowledge();
+                    if (offset == delayIndex) {
+                        TestUtils.sleep(interval.toMillis());
+                        lastCommitted.set(offset);
+                    }
+                    if (((offset + 1) % batchSize) == 0)
+                        lastCommitted.set(offset);
+                } else
+                    uncommittedMessages.add(r);
+                verifyCommit(r, lastCommitted.get());
+                return r;
+            }).subscribeOn(Schedulers.boundedElastic());
         });
 
         verifyCommits(groupId, topic, 10);
@@ -770,9 +739,9 @@ public class MockReceiverTest {
         Semaphore commitSemaphore = new Semaphore(0);
         Flux<ReceiverRecord<Integer, String>> inboundFlux = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions)
                 .receive()
-                .doOnNext(record -> {
+                .delayUntil(record -> {
                     receivedMessages.add(record);
-                    record.receiverOffset().commit().doOnSuccess(v -> commitSemaphore.release()).subscribe();
+                    return record.receiverOffset().commit().doOnSuccess(v -> commitSemaphore.release());
                 });
         StepVerifier.create(inboundFlux, 1)
                     .consumeNextWith(record -> {
@@ -804,7 +773,7 @@ public class MockReceiverTest {
 
         Flux<ReceiverRecord<Integer, String>> inboundFlux = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions)
                 .receive();
-        StepVerifier.create(inboundFlux.publishOn(Schedulers.elastic()), 1)
+        StepVerifier.create(inboundFlux.publishOn(Schedulers.boundedElastic()), 1)
                     .consumeNextWith(record -> {
                         receivedMessages.add(record);
                         record.receiverOffset().commit().block(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
@@ -829,8 +798,8 @@ public class MockReceiverTest {
 
         sendMessages(topic, 0, count + 10);
         receiveAndVerify(10, record -> {
-            StepVerifier.create(record.receiverOffset().commit()).expectComplete().verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
-            return Mono.just(record);
+            return record.receiverOffset().commit()
+                .thenReturn(record);
         });
         verifyCommits(groupId, topic, 10);
     }
@@ -1006,7 +975,7 @@ public class MockReceiverTest {
         CountDownLatch[] latch = new CountDownLatch[partitions];
         for (int i = 0; i < partitions; i++)
             latch[i] = new CountDownLatch(countPerPartition);
-        Scheduler scheduler = Schedulers.newElastic("test-groupBy", 10, true);
+        Scheduler scheduler = Schedulers.newBoundedElastic(100, Integer.MAX_VALUE, "test-groupBy", 10, true);
         Map<String, Set<Integer>> threadMap = new ConcurrentHashMap<>();
 
         receiverOptions = receiverOptions.subscription(Collections.singletonList(topic));
@@ -1201,13 +1170,7 @@ public class MockReceiverTest {
         sendMessages(topic, 0, count);
         Step<?> step = StepVerifier.create(flux.take(count), 1);
         for (int i = 0; i < count - 1; i++) {
-            step = step.expectNextCount(1)
-                       .then(() -> {
-                           long pollCount = consumer.pollCount();
-                           TestUtils.sleep(100);
-                           assertEquals(pollCount, consumer.pollCount());
-                       })
-                       .thenRequest(1);
+            step = step.expectNextCount(1).thenRequest(1);
         }
         step.expectNextCount(1).expectComplete().verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
     }
@@ -1246,13 +1209,11 @@ public class MockReceiverTest {
         DefaultKafkaReceiver<Integer, String> receiver = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions);
         Flux<ReceiverRecord<Integer, String>> inboundFlux = receiver
                 .receive()
-                .concatMap(r -> {
-                    Mono<?> mono = receiver.doOnConsumer(c -> {
+                .delayUntil(r -> {
+                    return receiver.doOnConsumer(c -> {
                         method.accept(c);
                         return true;
                     });
-                    return mono.then(Mono.just(r))
-                               .publishOn(receiver.scheduler);
                 });
         sendMessages(topic, 0, 10);
         receiveAndVerify(inboundFlux, 10);
@@ -1272,7 +1233,7 @@ public class MockReceiverTest {
             }
         };
         OffsetCommitCallback commitListener = (offsets, exception) -> { };
-        testDisallowedConsumerMethod(c -> c.poll(0));
+        testDisallowedConsumerMethod(c -> c.poll(Duration.ZERO));
         testDisallowedConsumerMethod(c -> c.close());
         testDisallowedConsumerMethod(c -> c.assign(Collections.singleton(new TopicPartition(topic, 0))));
         testDisallowedConsumerMethod(c -> c.subscribe(Collections.singleton(topic)));
@@ -1295,13 +1256,11 @@ public class MockReceiverTest {
         DefaultKafkaReceiver<Integer, String> receiver = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions);
         Flux<ReceiverRecord<Integer, String>> inboundFlux = receiver
                 .receive()
-                .concatMap(r -> {
-                    Mono<?> mono = receiver.doOnConsumer(c -> {
+                .delayUntil(r -> {
+                    return receiver.doOnConsumer(c -> {
                         method.accept(c);
                         return true;
                     });
-                    return mono.then(Mono.just(r))
-                               .publishOn(receiver.scheduler);
                 });
         StepVerifier.create(inboundFlux)
             .expectError(UnsupportedOperationException.class)
@@ -1321,25 +1280,6 @@ public class MockReceiverTest {
         DefaultKafkaReceiver<Integer, String> receiver = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions);
         Flux<ReceiverRecord<Integer, String>> inboundFlux = receiver.receive()
                 .doOnNext(r -> r.receiverOffset().acknowledge());
-        try {
-            receiver.receive();
-            fail("Multiple outstanding receives on the same receiver");
-        } catch (IllegalStateException e) {
-            // Expected exception
-        }
-        try {
-            receiver.receiveAtmostOnce();
-            fail("Multiple outstanding receives on the same receiver");
-        } catch (IllegalStateException e) {
-            // Expected exception
-        }
-
-        try {
-            receiver.receiveAutoAck();
-            fail("Multiple outstanding receives on the same receiver");
-        } catch (IllegalStateException e) {
-            // Expected exception
-        }
 
         sendMessages(topic, 0, 10);
         receiveAndVerify(inboundFlux, 10);
@@ -1399,8 +1339,7 @@ public class MockReceiverTest {
         Flux<ReceiverRecord<Integer, String>> inboundFlux =
                 receiver
                 .receive()
-                .concatMap(r -> onNext.apply(r)
-                                      .publishOn(receiver.scheduler), 1);
+                .concatMap(onNext, 1);
         receiveAndVerify(inboundFlux, receiveCount);
     }
 
@@ -1425,15 +1364,16 @@ public class MockReceiverTest {
                 .expectNextCount(receiveCount)
                 .expectComplete()
                 .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
+        await().atMost(10, TimeUnit.SECONDS).untilAsserted(() -> {
+            assertTrue("Consumer closed", consumer.closed());
+        });
         verifyMessages(receiveCount);
     }
 
     private void receiveVerifyError(Class<? extends Throwable> exceptionClass,
             Function<ReceiverRecord<Integer, String>, Mono<ReceiverRecord<Integer, String>>> onNext) {
         DefaultKafkaReceiver<Integer, String> receiver = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions);
-        StepVerifier.create(receiver.receive()
-                                    .concatMap(r -> onNext.apply(r)
-                                                          .publishOn(receiver.scheduler)), 1)
+        StepVerifier.create(receiver.receive().concatMap(onNext), 1)
             .expectErrorMatches(t -> {
                 if (t.getSuppressed().length > 0) {
                     for (Throwable suppressed: t.getSuppressed()) {
@@ -1445,6 +1385,10 @@ public class MockReceiverTest {
                 return exceptionClass.isInstance(t);
             })
             .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
+
+        await().atMost(10, TimeUnit.SECONDS).untilAsserted(() -> {
+            assertTrue("Consumer closed", consumer.closed());
+        });
     }
 
     private void receiveVerifyError(Class<? extends Throwable> exceptionClass) {

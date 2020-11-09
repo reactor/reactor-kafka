@@ -1,8 +1,12 @@
 language: java
 jdk:
-  - oraclejdk8
+  - openjdk8
 
 sudo: required
+services:
+  - docker
+
+script: ./gradlew check
 
 after_success:
   - bash <(curl -s https://codecov.io/bash)

@@ -15,6 +15,36 @@
  */
 package reactor.kafka.sender;
 
+import org.apache.kafka.clients.consumer.Consumer;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.producer.Callback;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.Producer;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.errors.ProducerFencedException;
+import org.apache.kafka.common.serialization.Serializer;
+import org.apache.kafka.common.serialization.StringSerializer;
+import org.junit.After;
+import org.junit.AssumptionViolatedException;
+import org.junit.Before;
+import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import reactor.core.Exceptions;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Sinks;
+import reactor.core.publisher.Sinks.Emission;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
+import reactor.kafka.AbstractKafkaTest;
+import reactor.kafka.receiver.ReceiverOptions;
+import reactor.kafka.receiver.internals.ConsumerFactory;
+import reactor.kafka.sender.internals.ProducerFactory;
+import reactor.kafka.util.TestUtils;
+import reactor.test.StepVerifier;
+
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -25,42 +55,19 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
-
-import org.apache.kafka.clients.consumer.Consumer;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.producer.ProducerConfig;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
-import org.apache.kafka.common.errors.ProducerFencedException;
-import org.apache.kafka.common.serialization.Serializer;
-import org.apache.kafka.common.serialization.StringSerializer;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import reactor.core.publisher.EmitterProcessor;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.FluxSink;
-import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
-import reactor.kafka.AbstractKafkaTest;
-import reactor.kafka.receiver.ReceiverOptions;
-import reactor.kafka.receiver.internals.ConsumerFactory;
-import reactor.kafka.util.TestUtils;
-import reactor.test.StepVerifier;
 
 /**
  * Kafka sender integration tests using embedded Kafka brokers and producers.
@@ -75,7 +82,6 @@ public class KafkaSenderTest extends AbstractKafkaTest {
 
     @Before
     public void setUp() throws Exception {
-        super.setUp();
         kafkaSender = KafkaSender.create(senderOptions);
         consumer = createConsumer();
     }
@@ -116,6 +122,8 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                        .then()
                        .doOnError(t -> errorSemaphore.release())
                        .subscribe();
+        } catch (AssumptionViolatedException e) {
+            throw e;
         } catch (Exception e) {
             // ignore
             assertTrue("Invalid exception " + e, e.getClass().getName().contains("CancelException"));
@@ -240,15 +248,14 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         recreateSender(senderOptions.stopOnError(false).producerProperty(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, FirstTimeFailingStringSerializer.class.getName()));
 
         Semaphore errorSemaphore = new Semaphore(0);
-        EmitterProcessor<ProducerRecord<Integer, String>> processor = EmitterProcessor.create();
-        kafkaSender.send(processor.map(producerRecord -> SenderRecord.create(producerRecord, null)))
+        Sinks.Many<ProducerRecord<Integer, String>> sink = Sinks.many().unicast().onBackpressureError();
+        kafkaSender.send(sink.asFlux().map(producerRecord -> SenderRecord.create(producerRecord, null)))
             .doOnError(t -> errorSemaphore.release())
             .subscribe();
 
-        FluxSink<ProducerRecord<Integer, String>> sink = processor.sink();
-        sink.next(recordToFail);
-        sink.next(recordToSucceed);
-        sink.complete();
+        sink.emitNext(recordToFail);
+        sink.emitNext(recordToSucceed);
+        sink.emitComplete();
 
         waitForMessages(consumer, 1, true);
         assertTrue("Error callback not invoked", errorSemaphore.tryAcquire(requestTimeoutMillis, TimeUnit.MILLISECONDS));
@@ -265,6 +272,8 @@ public class KafkaSenderTest extends AbstractKafkaTest {
             kafkaSender.send(createSenderRecordErrorFlux(count, true, false))
                        .doOnError(t -> errorSemaphore.release())
                        .subscribe();
+        } catch (AssumptionViolatedException e) {
+            throw e;
         } catch (Exception e) {
             // ignore
             assertTrue("Invalid exception " + e, e.getClass().getName().contains("CancelException"));
@@ -278,6 +287,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
      */
     @Test
     public void sendResponseBlock() throws Exception {
+        recreateSender(senderOptions.scheduler(Schedulers.boundedElastic()));
         int count = 20;
         Semaphore blocker = new Semaphore(0);
         CountDownLatch sendLatch = new CountDownLatch(count);
@@ -314,8 +324,8 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                     })
                     .onErrorResume(e -> {
                         Thread.interrupted(); // clear any interrupts
-                        embeddedKafka.waitForBrokers();
-                        waitForTopic(topic, partitions, false);
+                        waitForBrokers();
+                        waitForTopic(topic, false);
                         TestUtils.sleep(2000);
                         int next = lastSuccessful.get() + 1;
                         return outboundFlux(next, count - next);
@@ -361,27 +371,45 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                                      .maxInFlight(maxConcurrency);
         recreateSender(senderOptions);
 
-        int count = 100;
         AtomicInteger inflight = new AtomicInteger();
         AtomicInteger maxInflight = new AtomicInteger();
-        CountDownLatch latch = new CountDownLatch(count);
-        Flux<SenderRecord<Integer, String, Integer>> source =
-                Flux.range(0, count)
-                    .map(i -> {
-                        int current = inflight.incrementAndGet();
-                        if (current > maxInflight.get())
-                            maxInflight.set(current);
-                        return SenderRecord.create(createProducerRecord(i, true), null);
-                    });
-        kafkaSender.send(source)
-                   .doOnNext(metadata -> {
-                       TestUtils.sleep(100);
-                       latch.countDown();
-                       inflight.decrementAndGet();
-                   })
-                   .subscribe();
+        kafkaSender = KafkaSender.create(
+            new ProducerFactory() {
+                @Override
+                public <K, V> Producer<K, V> createProducer(SenderOptions<K, V> senderOptions) {
+                    return new KafkaProducer<K, V>(
+                        senderOptions.producerProperties(),
+                        senderOptions.keySerializer(),
+                        senderOptions.valueSerializer()
+                    ) {
+                        @Override
+                        public synchronized Future<RecordMetadata> send(ProducerRecord<K, V> record, Callback callback) {
+                            // It is okay to do .set here since we're inside a synchronized method
+                            maxInflight.set(Math.max(inflight.incrementAndGet(), maxInflight.get()));
+                            try {
+                                return super.send(record, (metadata, exception) -> {
+                                    inflight.decrementAndGet();
+                                    callback.onCompletion(metadata, exception);
+                                });
+                            } catch (Exception e) {
+                                inflight.decrementAndGet();
+                                throw e;
+                            }
+                        }
+                    };
+                }
+            },
+            senderOptions
+        );
 
-        assertTrue("Missing responses " + latch.getCount(), latch.await(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
+        int count = 100;
+        kafkaSender
+            .send(
+                Flux.range(0, count)
+                    .map(i -> SenderRecord.create(createProducerRecord(i, true), null))
+            )
+            .blockLast();
+
         assertTrue("Too many messages in flight " + maxInflight, maxInflight.get() <= maxConcurrency);
         waitForMessages(consumer, count, true);
     }
@@ -392,8 +420,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
     @Test
     public void sendResponseEmitter() throws Exception {
         int count = 5000;
-        EmitterProcessor<Integer> emitter = EmitterProcessor.create();
-        FluxSink<Integer> sink = emitter.sink();
+        Sinks.Many<Integer> sink = Sinks.many().multicast().onBackpressureBuffer();
         List<List<Integer>> successfulSends = new ArrayList<>();
         Set<Integer> failedSends = new HashSet<>();
         Semaphore done = new Semaphore(0);
@@ -406,7 +433,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                 .stopOnError(false)
                 .scheduler(scheduler);
         recreateSender(senderOptions);
-        kafkaSender.send(emitter.map(i -> SenderRecord.<Integer, String, Integer>create(new ProducerRecord<Integer, String>(topic, i % partitions, i, "Message " + i), i)))
+        kafkaSender.send(sink.asFlux().map(i -> SenderRecord.<Integer, String, Integer>create(new ProducerRecord<Integer, String>(topic, i % partitions, i, "Message " + i), i)))
                    .doOnNext(result -> {
                        int messageIdentifier = result.correlationMetadata();
                        RecordMetadata metadata = result.recordMetadata();
@@ -418,10 +445,10 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                    .doOnComplete(() -> done.release())
                    .subscribe();
         for (int i = 0; i < count; i++) {
-            sink.next(i);
+            final int value = i;
+            await().pollDelay(Duration.ZERO).until(() -> sink.tryEmitNext(value), Emission::hasSucceeded);
         }
-        sink.complete();
-
+        sink.emitComplete();
         assertTrue("Send not complete", done.tryAcquire(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
         waitForMessages(consumer, count, false);
         assertEquals(0, failedSends.size());
@@ -444,12 +471,12 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         senderOptions = senderOptions.producerProperty(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true")
                                      .producerProperty(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, "10000");
         recreateSender(senderOptions);
-        kafkaSender.createOutbound().send(createProducerRecords(0, count, true).delayElements(Duration.ofMillis(100)))
+        kafkaSender.createOutbound().send(createProducerRecords(count).delayElements(Duration.ofMillis(100)))
                    .then()
                    .subscribe();
         shutdownKafkaBroker();
         Thread.sleep(200);
-        restartKafkaBroker();
+        startKafkaBroker();
         waitForMessages(consumer, count, true);
         checkConsumedMessages();
     }
@@ -535,7 +562,6 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                .blockLast(Duration.ofMillis(receiveTimeoutMillis));
 
         StepVerifier.create(kafkaSender.send(createSenderRecords(count * 2, count, false)))
-                    .expectNextMatches(result -> result.exception() instanceof ProducerFencedException)
                     .expectError(ProducerFencedException.class)
                     .verify(Duration.ofMillis(receiveTimeoutMillis));
 
@@ -548,7 +574,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         Map<String, Object> consumerProps = consumerProps(groupId);
         Consumer<Integer, String> consumer = ConsumerFactory.INSTANCE.createConsumer(ReceiverOptions.<Integer, String>create(consumerProps));
         consumer.subscribe(Collections.singletonList(topic));
-        consumer.poll(requestTimeoutMillis);
+        consumer.poll(Duration.ofMillis(requestTimeoutMillis));
         return consumer;
     }
 
@@ -556,18 +582,19 @@ public class KafkaSenderTest extends AbstractKafkaTest {
         int receivedCount = 0;
         long endTimeMillis = System.currentTimeMillis() + receiveTimeoutMillis;
         while (receivedCount < expectedCount && System.currentTimeMillis() < endTimeMillis) {
-            ConsumerRecords<Integer, String> records = consumer.poll(1000);
+            ConsumerRecords<Integer, String> records = consumer.poll(Duration.ofSeconds(1));
             records.forEach(record -> onReceive(record));
             receivedCount += records.count();
         }
         if (checkMessageOrder)
             checkConsumedMessages();
         assertEquals(expectedCount, receivedCount);
-        ConsumerRecords<Integer, String> records = consumer.poll(500);
+        ConsumerRecords<Integer, String> records = consumer.poll(Duration.ofMillis(500));
         assertTrue("Unexpected message received: " + records.count(), records.isEmpty());
     }
 
     private Flux<ProducerRecord<Integer, String>> createOutboundErrorFlux(int count, boolean failOnError, boolean hasRetry) {
+        assumeBrokerRestartSupport();
         return Flux.range(0, count)
                    .map(i -> {
                        int failureIndex = 1;
@@ -578,10 +605,13 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                                shutdownKafkaBroker();
                            } else if (i == restartIndex) {
                                Thread.sleep(requestTimeoutMillis);     // wait for previous request to timeout
-                               restartKafkaBroker();
+                               startKafkaBroker();
                            }
-                       } catch (Exception e) {
+                       } catch (InterruptedException e) {
+                           Thread.currentThread().interrupt();
                            throw new RuntimeException(e);
+                       } catch (AssumptionViolatedException e) {
+                           throw Exceptions.bubble(e);
                        }
 
                        boolean expectSuccess = hasRetry || i < failureIndex || (!failOnError && i >= restartIndex);
@@ -605,11 +635,11 @@ public class KafkaSenderTest extends AbstractKafkaTest {
 
     public static final class FirstTimeFailingStringSerializer extends StringSerializer implements Serializer<String> {
 
-        private static final AtomicBoolean FIRST_TIME = new AtomicBoolean(true);
+        private final AtomicBoolean firstTime = new AtomicBoolean(true);
 
         @Override
         public byte[] serialize(String topic, String data) {
-            if (FIRST_TIME.compareAndSet(true, false)) {
+            if (firstTime.compareAndSet(true, false)) {
                 throw new IllegalArgumentException("The first time this Serializer is used will fail");
             }
             return super.serialize(topic, data);

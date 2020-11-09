@@ -28,20 +28,15 @@ import reactor.core.publisher.MonoSink;
 
 class CommittableBatch {
 
-    private final Map<TopicPartition, Long> consumedOffsets;
-    private final Map<TopicPartition, Long> latestOffsets;
+    final Map<TopicPartition, Long> consumedOffsets = new HashMap<>();
+    private final Map<TopicPartition, Long> latestOffsets = new HashMap<>();
     private int batchSize;
-    private List<MonoSink<Void>> callbackEmitters;
-
-    public CommittableBatch() {
-        consumedOffsets = new HashMap<>();
-        latestOffsets = new HashMap<>();
-        callbackEmitters = new ArrayList<>();
-    }
+    private List<MonoSink<Void>> callbackEmitters = new ArrayList<>();
 
     public synchronized int updateOffset(TopicPartition topicPartition, long offset) {
-        if (consumedOffsets.put(topicPartition, offset) != (Long) offset)
+        if (!((Long) offset).equals(consumedOffsets.put(topicPartition, offset))) {
             batchSize++;
+        }
         return batchSize;
     }
 
