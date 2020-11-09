@@ -54,6 +54,7 @@ import org.junit.Rule;
 import org.junit.rules.TestName;
 
 import org.testcontainers.containers.KafkaContainer;
+import org.testcontainers.utility.DockerImageName;
 import reactor.core.publisher.Flux;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.sender.SenderOptions;
@@ -64,11 +65,11 @@ public abstract class AbstractKafkaTest {
 
     public static final int DEFAULT_TEST_TIMEOUT = 60_000;
 
-    private static final KafkaContainer KAFKA = new KafkaContainer()
-            .withNetwork(null)
-            .withEnv("KAFKA_TRANSACTION_STATE_LOG_MIN_ISR", "1")
-            .withEnv("KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR", "1")
-            .withReuse(true);
+    private static final KafkaContainer KAFKA = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:5.5.1"))
+        .withNetwork(null)
+        .withEnv("KAFKA_TRANSACTION_STATE_LOG_MIN_ISR", "1")
+        .withEnv("KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR", "1")
+        .withReuse(true);
 
     protected String topic;
     protected final int partitions = 4;
