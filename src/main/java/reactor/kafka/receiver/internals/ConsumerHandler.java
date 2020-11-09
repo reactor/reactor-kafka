@@ -12,6 +12,7 @@ import reactor.core.scheduler.Scheduler;
 import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOffset;
 import reactor.kafka.receiver.ReceiverOptions;
+import reactor.util.concurrent.Queues;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
@@ -61,7 +62,8 @@ class ConsumerHandler<K, V> {
 
     private final ConsumerEventLoop<K, V> consumerEventLoop;
 
-    private final Sinks.Many<ConsumerRecords<K, V>> sink = Sinks.many().unicast().onBackpressureBuffer();
+    private final Sinks.Many<ConsumerRecords<K, V>> sink =
+        Sinks.many().unicast().onBackpressureBuffer(Queues.<ConsumerRecords<K, V>>get(1).get());
 
     private Consumer<K, V> consumerProxy;
 

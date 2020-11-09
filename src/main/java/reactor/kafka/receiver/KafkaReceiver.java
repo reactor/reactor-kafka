@@ -15,18 +15,17 @@
  */
 package reactor.kafka.receiver;
 
-import java.util.function.Function;
-
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.kafka.receiver.internals.ConsumerFactory;
 import reactor.kafka.receiver.internals.DefaultKafkaReceiver;
 import reactor.kafka.sender.KafkaSender;
 import reactor.kafka.sender.TransactionManager;
+
+import java.util.function.Function;
 
 /**
  * A reactive Kafka receiver for consuming records from topic partitions
@@ -132,8 +131,38 @@ public interface KafkaReceiver<K, V> {
      *        inner Flux and commit offsets within that transaction
      * @return Flux of consumer record batches processed within a transaction
      */
-    Flux<Flux<ConsumerRecord<K, V>>> receiveExactlyOnce(TransactionManager transactionManager);
+    default Flux<Flux<ConsumerRecord<K, V>>> receiveExactlyOnce(TransactionManager transactionManager) {
+        return receiveExactlyOnce(transactionManager, null);
+    }
 
+    /**
+     * Returns a {@link Flux} of consumer record batches that may be used for exactly once
+     * delivery semantics. A new transaction is started for each inner Flux and it is the
+     * responsibility of the consuming application to commit or abort the transaction
+     * using {@link TransactionManager#commit()} or {@link TransactionManager#abort()}
+     * after processing the Flux. The next batch of consumer records will be delivered only
+     * after the previous flux terminates. Offsets of records dispatched on each inner Flux
+     * are committed using the provided <code>transactionManager</code> within the transaction
+     * started for that Flux.
+     * <p>
+     * See @link {@link KafkaSender#transactionManager()} for details on configuring a transactional
+     * sender and the threading model required for transactional/exactly-once semantics.
+     * </p>
+     * Example usage:
+     * <pre>
+     * {@code
+     * receiver.receiveExactlyOnce(transactionManager)
+     *         .concatMap(f -> sender.send(f.map(r -> toSenderRecord(r)).then(transactionManager.commit()))
+     *         .onErrorResume(e -> transactionManager.abort().then(Mono.error(e)));
+     * }
+     * </pre>
+     *
+     * @param transactionManager Transaction manager used to begin new transaction for each
+     *        inner Flux and commit offsets within that transaction
+     * @param prefetch amount of prefetched batches
+     * @return Flux of consumer record batches processed within a transaction
+     */
+    Flux<Flux<ConsumerRecord<K, V>>> receiveExactlyOnce(TransactionManager transactionManager, Integer prefetch);
     /**
      * Invokes the specified function on the Kafka {@link Consumer} associated with this {@link KafkaReceiver}.
      * The function is scheduled when the returned {@link Mono} is subscribed to. The function is

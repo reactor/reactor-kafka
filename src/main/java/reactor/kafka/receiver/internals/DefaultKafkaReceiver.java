@@ -93,26 +93,35 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
     }
 
     @Override
-    public Flux<Flux<ConsumerRecord<K, V>>> receiveExactlyOnce(TransactionManager transactionManager) {
+    public Flux<Flux<ConsumerRecord<K, V>>> receiveExactlyOnce(TransactionManager transactionManager, Integer prefetch) {
         return withHandler(AckMode.EXACTLY_ONCE, (scheduler, handler) -> {
-            return handler
-                .receive()
-                .filter(it -> !it.isEmpty())
-                .map(consumerRecords -> {
-                    CommittableBatch offsetBatch = new CommittableBatch();
-                    for (ConsumerRecord<K, V> r : consumerRecords) {
-                        offsetBatch.updateOffset(new TopicPartition(r.topic(), r.partition()), r.offset());
-                    }
+            Flux<Flux<ConsumerRecord<K, V>>> resultFlux =
+                handler
+                    .receive()
+                    .filter(it -> !it.isEmpty())
+                    .map(consumerRecords -> {
+                        CommittableBatch offsetBatch = new CommittableBatch();
+                        for (ConsumerRecord<K, V> r : consumerRecords) {
+                            offsetBatch
+                                .updateOffset(new TopicPartition(r.topic(),
+                                    r.partition()), r.offset());
+                        }
 
-                    return transactionManager.begin()
-                        .thenMany(Flux.defer(() -> {
-                            handler.awaitingTransaction.getAndSet(true);
-                            return Flux.fromIterable(consumerRecords);
-                        }))
-                        .concatWith(transactionManager.sendOffsets(offsetBatch.getAndClearOffsets().offsets(), receiverOptions.groupId()))
-                        .doAfterTerminate(() -> handler.awaitingTransaction.set(false));
-                })
-                .publishOn(transactionManager.scheduler());
+                        return transactionManager.begin()
+                            .thenMany(Flux.defer(() -> {
+                                handler.awaitingTransaction.getAndSet(true);
+                                return Flux.fromIterable(consumerRecords);
+                            }))
+                            .concatWith(transactionManager
+                                .sendOffsets(offsetBatch
+                                    .getAndClearOffsets()
+                                    .offsets(), receiverOptions
+                                    .groupId()))
+                            .doAfterTerminate(() -> handler.awaitingTransaction
+                                .set(false));
+                    });
+            return prefetch != null ? resultFlux.publishOn(transactionManager.scheduler(), prefetch)
+                : resultFlux.publishOn(transactionManager.scheduler());
         });
     }
 
