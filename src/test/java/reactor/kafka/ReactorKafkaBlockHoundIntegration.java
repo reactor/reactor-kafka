@@ -33,7 +33,9 @@ public class ReactorKafkaBlockHoundIntegration implements BlockHoundIntegration 
             .allowBlockingCallsInside(KafkaProducer.class.getName(), "sendOffsetsToTransaction")
             .allowBlockingCallsInside(KafkaProducer.class.getName(), "abortTransaction")
 
+            .allowBlockingCallsInside(MockProducer.class.getName(), "close")
             .allowBlockingCallsInside(MockProducer.class.getName(), "commitTransaction")
+            .allowBlockingCallsInside(MockProducer.class.getName(), "abortTransaction")
             .blockingMethodCallback(method -> {
                 String message = String.format("[%s] Blocking call! %s", Thread.currentThread(), method);
                 Exception e = new Exception(message);
