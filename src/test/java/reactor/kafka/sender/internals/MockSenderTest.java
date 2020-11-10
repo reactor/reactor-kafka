@@ -210,7 +210,7 @@ public class MockSenderTest {
                 .send(outgoing1.append(topic, 10).senderRecords())
                 .thenEmpty(Mono.fromRunnable(() -> doneSemaphore1.release()))
                 .thenEmpty(sender.send(outgoing1.append(topic, 10).senderRecords()).then())
-                .then(Mono.fromRunnable(() -> waitSemaphore1.acquireUninterruptibly()).publishOn(Schedulers.single()))
+                .then(Mono.fromRunnable(() -> waitSemaphore1.acquireUninterruptibly()).subscribeOn(Schedulers.boundedElastic()))
                 .thenEmpty(sender.send(outgoing1.append(topic, 10).senderRecords()).then());
 
         Semaphore waitSemaphore2 = new Semaphore(0);
@@ -221,7 +221,7 @@ public class MockSenderTest {
                 .send(outgoing2.append(topic, 10).senderRecords())
                 .thenEmpty(Mono.fromRunnable(() -> doneSemaphore2.release()))
                 .thenEmpty(sender.send(outgoing2.append(topic, 10).senderRecords()).then())
-                .then(Mono.fromRunnable(() -> waitSemaphore2.acquireUninterruptibly()).publishOn(Schedulers.single()))
+                .then(Mono.fromRunnable(() -> waitSemaphore2.acquireUninterruptibly()).subscribeOn(Schedulers.boundedElastic()))
                 .thenEmpty(sender.send(outgoing2.append(topic, 10).senderRecords()).then());
 
         ExecutorService executor = Executors.newFixedThreadPool(2);
