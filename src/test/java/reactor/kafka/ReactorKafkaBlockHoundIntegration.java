@@ -16,19 +16,28 @@
 
 package reactor.kafka;
 
-import reactor.BlockHound;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import reactor.blockhound.BlockHound;
 import reactor.blockhound.integration.BlockHoundIntegration;
+import reactor.kafka.mock.MockProducer;
 
 public class ReactorKafkaBlockHoundIntegration implements BlockHoundIntegration {
 
     @Override
     public void applyTo(BlockHound.Builder builder) {
         builder
-                .allowBlockingCallsInside(org.apache.log4j.Category.class.getName(), "log")
-                .blockingMethodCallback(method -> {
-                    String message = String.format("[%s] Blocking call! %s", Thread.currentThread(), method);
-                    Exception e = new Exception(message);
-                    AbstractKafkaTest.DETECTED.add(e);
-                });
+            // FIXME make sure that transactional stuff always happens on blocking-friendly (or transactional) thread
+            .allowBlockingCallsInside(KafkaProducer.class.getName(), "close")
+            .allowBlockingCallsInside(KafkaProducer.class.getName(), "commitTransaction")
+            .allowBlockingCallsInside(KafkaProducer.class.getName(), "initTransactions")
+            .allowBlockingCallsInside(KafkaProducer.class.getName(), "sendOffsetsToTransaction")
+            .allowBlockingCallsInside(KafkaProducer.class.getName(), "abortTransaction")
+
+            .allowBlockingCallsInside(MockProducer.class.getName(), "commitTransaction")
+            .blockingMethodCallback(method -> {
+                String message = String.format("[%s] Blocking call! %s", Thread.currentThread(), method);
+                Exception e = new Exception(message);
+                AbstractKafkaTest.DETECTED.add(e);
+            });
     }
 }

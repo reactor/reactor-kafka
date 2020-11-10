@@ -444,7 +444,7 @@ public class MockSenderTest {
      */
     @Test
     public void responseFluxScheduler() {
-        Scheduler scheduler = Schedulers.newSingle("scheduler-test");
+        Scheduler scheduler = Schedulers.newBoundedElastic(1, Integer.MAX_VALUE, "scheduler-test");
         SenderOptions<Integer, String> senderOptions = SenderOptions.<Integer, String>create()
                 .scheduler(scheduler)
                 .stopOnError(false);

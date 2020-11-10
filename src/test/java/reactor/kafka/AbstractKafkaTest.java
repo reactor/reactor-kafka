@@ -15,19 +15,6 @@
  */
 package reactor.kafka;
 
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.TimeUnit;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.DescribeTopicsResult;
@@ -47,12 +34,12 @@ import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.junit.After;
 import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.rules.TestName;
-
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 import reactor.core.publisher.Flux;
@@ -61,9 +48,28 @@ import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.SenderRecord;
 import reactor.kafka.util.TestUtils;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
 public abstract class AbstractKafkaTest {
 
     public static final int DEFAULT_TEST_TIMEOUT = 60_000;
+
+    public static final List<Exception> DETECTED = new CopyOnWriteArrayList<>();
 
     private static final KafkaContainer KAFKA = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:5.5.1"))
         .withNetwork(null)
@@ -93,6 +99,29 @@ public abstract class AbstractKafkaTest {
         senderOptions = SenderOptions.create(producerProps());
         receiverOptions = createReceiverOptions(testName.getMethodName());
         topic = createNewTopic();
+    }
+
+    @After
+    public void tearDownAbstractKafkaTest() {
+        if (!DETECTED.isEmpty()) {
+            String outputString;
+            try (
+                ByteArrayOutputStream output = new ByteArrayOutputStream();
+                PrintWriter writer = new PrintWriter(output);
+            ) {
+                for (Exception exception : DETECTED) {
+                    exception.printStackTrace(writer);
+                    writer.println();
+                }
+                writer.flush();
+
+                outputString = new String(output.toByteArray());
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+            DETECTED.clear();
+            Assert.fail("Blocking calls detected:\n" + outputString);
+        }
     }
 
     protected String bootstrapServers() {

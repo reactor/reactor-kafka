@@ -138,7 +138,7 @@ configure(allprojects) { project ->
     testCompile "org.testcontainers:kafka:$testcontainersVersion"
     testCompile 'org.awaitility:awaitility:4.0.2'
     testCompile 'org.assertj:assertj-core:3.16.1'
-    testCompile 'io.projectreactor.tools:blockhound-junit-platform:1.0.0.M2'
+    testCompile 'io.projectreactor.tools:blockhound-junit-platform:1.0.4.RELEASE'
     testRuntime 'org.junit.vintage:junit-vintage-engine:5.4.1'
     testRuntime 'org.junit.platform:junit-platform-launcher:1.0.0'
   }
