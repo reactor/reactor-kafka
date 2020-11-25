@@ -51,7 +51,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
         return withHandler(AckMode.MANUAL_ACK, (scheduler, handler) -> {
             return handler
                 .receive()
-                .publishOn(scheduler)
+                .publishOn(scheduler, 1)
                 .flatMapIterable(it -> it)
                 .map(record -> new ReceiverRecord<>(
                     record,
@@ -66,7 +66,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
             return handler
                 .receive()
                 .filter(it -> !it.isEmpty())
-                .publishOn(scheduler)
+                .publishOn(scheduler, 1)
                 .map(consumerRecords -> {
                     return Flux.fromIterable(consumerRecords)
                         .doAfterTerminate(() -> {
@@ -87,8 +87,8 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
                     return Flux
                         .fromIterable(records)
                         .concatMap(r -> handler.commit(r).thenReturn(r))
-                        .publishOn(scheduler);
-                });
+                        .publishOn(scheduler, 1);
+                }, 1);
         });
     }
 
