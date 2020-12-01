@@ -298,7 +298,7 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
                 properties,
                 keySerializer,
                 valueSerializer,
-                closeTimeout,
+                timeout,
                 scheduler,
                 maxInFlight,
                 stopOnError
