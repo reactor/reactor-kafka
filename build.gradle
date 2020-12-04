@@ -69,10 +69,10 @@ configure(allprojects) { project ->
   group = 'io.projectreactor.kafka'
 
   repositories {
-    maven { url 'https://repo.spring.io/libs-release' }
-    maven { url 'https://repo.spring.io/libs-snapshot' }
     mavenCentral()
     jcenter()
+    maven { url 'https://repo.spring.io/libs-release' }
+    maven { url 'https://repo.spring.io/libs-snapshot' }
   }
 
   apply plugin: 'maven'
