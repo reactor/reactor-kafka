@@ -48,7 +48,7 @@ ext {
                   "https://www.reactive-streams.org/reactive-streams-1.0.3-javadoc/",
                   "https://projectreactor.io/docs/core/release/api/"] as String[]
 
-  
+
 }
 
 apply from: "$gradleScriptDir/doc.gradle"
@@ -70,10 +70,13 @@ configure(allprojects) { project ->
   group = 'io.projectreactor.kafka'
 
   repositories {
-    maven { url 'https://repo.spring.io/libs-release' }
-    maven { url 'https://repo.spring.io/libs-snapshot' }
     mavenCentral()
     jcenter()
+    maven { url 'https://repo.spring.io/milestone' }
+
+    if (version.endsWith('-SNAPSHOT')) {
+      maven { url 'https://repo.spring.io/snapshot' }
+    }
   }
 
   apply plugin: 'maven'
