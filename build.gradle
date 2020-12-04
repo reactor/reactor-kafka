@@ -71,8 +71,11 @@ configure(allprojects) { project ->
   repositories {
     mavenCentral()
     jcenter()
-    maven { url 'https://repo.spring.io/libs-release' }
-    maven { url 'https://repo.spring.io/libs-snapshot' }
+    maven { url 'https://repo.spring.io/milestone' }
+
+    if (version.endsWith('-SNAPSHOT')) {
+      maven { url 'https://repo.spring.io/snapshot' }
+    }
   }
 
   apply plugin: 'maven'
