@@ -43,7 +43,6 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 
@@ -174,7 +173,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V>, EmitFailureH
         if (!hasProducer.getAndSet(false)) {
             return;
         }
-        producerMono.doOnNext(producer -> producer.close(senderOptions.closeTimeout().toMillis(), TimeUnit.MILLISECONDS))
+        producerMono.doOnNext(producer -> producer.close(senderOptions.closeTimeout()))
                     .block();
         if (senderOptions.isTransactional()) {
             senderOptions.scheduler().dispose();

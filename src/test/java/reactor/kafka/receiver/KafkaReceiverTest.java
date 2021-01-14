@@ -56,6 +56,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
@@ -793,7 +794,8 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
             .verify(Duration.ofSeconds(receiveTimeoutMillis));
         assertTrue("Commits did not succeed", commitSemaphore.tryAcquire(count, requestTimeoutMillis * count, TimeUnit.MILLISECONDS));
         assertEquals(0, commitFailures.get());
-        assertEquals(0, revoked.get());
+        // client revokes all assignments after closing consumer
+        assertEquals(4, revoked.get());
     }
 
     @Test
@@ -1357,16 +1359,17 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         subscribeDisposables.clear();
     }
 
-    private int committedCount(KafkaReceiver<Integer, String> receiver) {
-        return receiver.doOnConsumer(c -> {
-            int committed = 0;
-            for (int j = 0; j < partitions; j++) {
-                TopicPartition p = new TopicPartition(topic, j);
-                OffsetAndMetadata offset = c.committed(p);
-                if (offset != null && offset.offset() > 0)
-                    committed += offset.offset();
-            }
-            return committed;
+    private long committedCount(KafkaReceiver<Integer, String> receiver) {
+        return receiver.doOnConsumer(consumer -> {
+            Set<TopicPartition> topicPartitions = IntStream.range(0, partitions)
+                .mapToObj(i -> new TopicPartition(topic, i))
+                .collect(Collectors.toSet());
+
+            return consumer.committed(topicPartitions).values().stream()
+                .filter(offset -> offset != null && offset.offset() > 0)
+                .mapToLong(OffsetAndMetadata::offset)
+                .sum();
+
         }).block(Duration.ofSeconds(receiveTimeoutMillis));
     }
 

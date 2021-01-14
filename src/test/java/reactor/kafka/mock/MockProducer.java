@@ -15,6 +15,7 @@
  */
 package reactor.kafka.mock;
 
+import org.apache.kafka.clients.consumer.ConsumerGroupMetadata;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.Producer;
@@ -30,6 +31,7 @@ import org.apache.kafka.common.errors.ProducerFencedException;
 import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.internals.ProducerFactory;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -137,6 +139,11 @@ public class MockProducer implements Producer<Integer, String> {
 
     @Override
     public void close(long timeout, TimeUnit unit) {
+        close(Duration.ofMillis(unit.toMillis(timeout)));
+    }
+
+    @Override
+    public void close(Duration timeout) {
         close();
     }
 
@@ -199,15 +206,21 @@ public class MockProducer implements Producer<Integer, String> {
     @Override
     public void sendOffsetsToTransaction(Map<TopicPartition, OffsetAndMetadata> offsets,
                                          String consumerGroupId) throws ProducerFencedException {
+        sendOffsetsToTransaction(offsets, new ConsumerGroupMetadata(consumerGroupId));
+    }
+
+    @Override
+    public void sendOffsetsToTransaction(Map<TopicPartition, OffsetAndMetadata> offsets, ConsumerGroupMetadata groupMetadata) throws ProducerFencedException {
         verifyProducerState();
         verifyTransactionsInitialized();
         verifyNoTransactionInFlight();
-        Objects.requireNonNull(consumerGroupId);
+        Objects.requireNonNull(groupMetadata);
+
         if (offsets.size() == 0) {
             return;
         }
         for (Map.Entry<TopicPartition, OffsetAndMetadata> entry : offsets.entrySet())
-            cluster.addOffsetToTransaction(consumerGroupId, entry.getKey(), entry.getValue().offset());
+            cluster.addOffsetToTransaction(groupMetadata.groupId(), entry.getKey(), entry.getValue().offset());
         this.sendOffsetsCount++;
     }
 
