@@ -23,8 +23,10 @@ import reactor.kafka.receiver.ReceiverPartition;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -218,6 +220,10 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
 
         private final Duration pollTimeout = receiverOptions.pollTimeout();
 
+        private final AtomicBoolean pausedByUs = new AtomicBoolean();
+
+        private final Set<TopicPartition> pausedByUser = new HashSet<>();
+
         @Override
         public void run() {
             try {
@@ -228,12 +234,22 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                     long r = requested;
                     if (r > 0) {
                         if (!awaitingTransaction.get()) {
-                            consumer.resume(consumer.assignment());
+                            if (pausedByUs.getAndSet(false)) {
+                                Set<TopicPartition> toResume = new HashSet<>(consumer.assignment());
+                                toResume.removeAll(this.pausedByUser);
+                                consumer.resume(toResume);
+                            }
                         } else {
-                            consumer.pause(consumer.assignment());
+                            if (!pausedByUs.getAndSet(true)) {
+                                this.pausedByUser.clear();
+                                this.pausedByUser.addAll(consumer.paused());
+                                consumer.pause(consumer.assignment());
+                            }
                             schedule();
                         }
-                    } else {
+                    } else if (!pausedByUs.getAndSet(true)) {
+                        this.pausedByUser.clear();
+                        this.pausedByUser.addAll(consumer.paused());
                         consumer.pause(consumer.assignment());
                     }
 

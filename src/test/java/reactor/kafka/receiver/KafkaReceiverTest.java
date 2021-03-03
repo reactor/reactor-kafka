@@ -23,7 +23,6 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
-import org.assertj.core.api.Assertions;
 import org.junit.After;
 import org.junit.Test;
 import org.slf4j.Logger;
@@ -73,6 +72,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -1190,6 +1190,29 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         checkConsumedMessages(count, count * 3);
     }
 
+    @Test
+    public void userPause() throws InterruptedException {
+        KafkaReceiver<Integer, String> receiver = createReceiver();
+        Disposable flux = receiver.receive()
+            .doOnNext(rec -> { })
+            .subscribe();
+        waitFoPartitionAssignment();
+        receiver.doOnConsumer(consumer -> {
+            consumer.pause(Collections.singletonList(new TopicPartition(this.topic, 0)));
+            return null;
+        }).block(Duration.ofSeconds(5));
+        Thread.sleep(500);
+        assertThat(receiver.doOnConsumer(org.apache.kafka.clients.consumer.Consumer::paused)
+                .block(Duration.ofSeconds(5L))).hasSize(1);
+        receiver.doOnConsumer(consumer -> {
+            consumer.resume(Collections.singletonList(new TopicPartition(this.topic, 0)));
+            return null;
+        }).block(Duration.ofSeconds(5));
+        assertThat(receiver.doOnConsumer(org.apache.kafka.clients.consumer.Consumer::paused)
+                .block(Duration.ofSeconds(5L))).hasSize(0);
+        flux.dispose();
+    }
+
     private Disposable sendAndWaitForMessages(Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux, int count) throws Exception {
         CountDownLatch receiveLatch = new CountDownLatch(count);
         Disposable disposable = subscribe(kafkaFlux, receiveLatch);
@@ -1375,7 +1398,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
 
     private void waitForCommits(KafkaReceiver<Integer, String> receiver, int count) {
         await().alias(count + " commits").untilAsserted(() -> {
-            Assertions.assertThat(committedCount(receiver)).isEqualTo(count);
+            assertThat(committedCount(receiver)).isEqualTo(count);
         });
     }
 
