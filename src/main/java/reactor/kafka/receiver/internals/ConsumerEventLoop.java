@@ -118,6 +118,9 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
     }
 
     void onRequest(long toAdd) {
+        if (log.isDebugEnabled()) {
+            log.debug("onRequest.toAdd:" + toAdd);
+        }
         Operators.addCap(REQUESTED, this, toAdd);
         pollEvent.schedule();
     }
@@ -237,27 +240,27 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                             if (pausedByUs.getAndSet(false)) {
                                 Set<TopicPartition> toResume = new HashSet<>(consumer.assignment());
                                 toResume.removeAll(this.pausedByUser);
+                                this.pausedByUser.clear();
                                 consumer.resume(toResume);
+                                log.debug("Resumed");
                             }
                         } else {
                             if (!pausedByUs.getAndSet(true)) {
-                                this.pausedByUser.clear();
                                 this.pausedByUser.addAll(consumer.paused());
                                 consumer.pause(consumer.assignment());
+                                log.debug("Paused 1");
                             }
                             schedule();
                         }
                     } else if (!pausedByUs.getAndSet(true)) {
-                        this.pausedByUser.clear();
                         this.pausedByUser.addAll(consumer.paused());
                         consumer.pause(consumer.assignment());
+                        log.debug("Paused 2");
                     }
 
                     ConsumerRecords<K, V> records = consumer.poll(pollTimeout);
                     if (isActive.get()) {
-                        if (r > 1 || commitEvent.inProgress.get() > 0) {
-                            schedule();
-                        }
+                        schedule();
                     }
 
                     Operators.produced(REQUESTED, ConsumerEventLoop.this, 1);

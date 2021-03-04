@@ -1191,10 +1191,26 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     }
 
     @Test
-    public void userPause() throws InterruptedException {
+    public void userPause() throws Exception {
+        sendMessages(0, 300);
+        this.receiverOptions = this.receiverOptions.consumerProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 1);
+
         KafkaReceiver<Integer, String> receiver = createReceiver();
+        CountDownLatch latch1 = new CountDownLatch(1);
+        CountDownLatch latch2 = new CountDownLatch(1);
+        CountDownLatch latch3 = new CountDownLatch(300);
         Disposable flux = receiver.receive()
-            .doOnNext(rec -> { })
+            .publishOn(Schedulers.newSingle("willSuspend"), 10)
+            .doOnNext(rec -> {
+                try {
+//                    System.out.println(rec.value() + "-" + rec.partition() + "@" + rec.offset());
+                    latch2.countDown();
+                    latch1.await();
+                    latch3.countDown();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            })
             .subscribe();
         waitFoPartitionAssignment();
         receiver.doOnConsumer(consumer -> {
@@ -1204,12 +1220,24 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         Thread.sleep(500);
         assertThat(receiver.doOnConsumer(org.apache.kafka.clients.consumer.Consumer::paused)
                 .block(Duration.ofSeconds(5L))).hasSize(1);
+        assertThat(latch2.await(60, TimeUnit.SECONDS)).isTrue();
+        await().alias("Auto Paused All")
+                .timeout(Duration.ofMinutes(1))
+                .untilAsserted(() ->
+            assertThat(receiver.doOnConsumer(org.apache.kafka.clients.consumer.Consumer::paused)
+                    .block(Duration.ofSeconds(5L))).hasSize(4));
+        latch1.countDown();
+        await().alias("Only Resume Auto Paused")
+                .untilAsserted(() ->
+            assertThat(receiver.doOnConsumer(org.apache.kafka.clients.consumer.Consumer::paused)
+                    .block(Duration.ofSeconds(5L))).hasSize(1));
         receiver.doOnConsumer(consumer -> {
             consumer.resume(Collections.singletonList(new TopicPartition(this.topic, 0)));
             return null;
         }).block(Duration.ofSeconds(5));
         assertThat(receiver.doOnConsumer(org.apache.kafka.clients.consumer.Consumer::paused)
                 .block(Duration.ofSeconds(5L))).hasSize(0);
+        assertThat(latch3.await(10, TimeUnit.SECONDS)).isTrue();
         flux.dispose();
     }
 
