@@ -15,19 +15,6 @@
  */
 package reactor.kafka;
 
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.TimeUnit;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.DescribeTopicsResult;
@@ -52,7 +39,6 @@ import org.junit.Assume;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.rules.TestName;
-
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 import reactor.core.publisher.Flux;
@@ -61,11 +47,24 @@ import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.SenderRecord;
 import reactor.kafka.util.TestUtils;
 
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
 public abstract class AbstractKafkaTest {
 
     public static final int DEFAULT_TEST_TIMEOUT = 60_000;
 
-    private static final KafkaContainer KAFKA = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:5.5.1"))
+    private static final KafkaContainer KAFKA = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:6.1.0"))
         .withNetwork(null)
         .withEnv("KAFKA_TRANSACTION_STATE_LOG_MIN_ISR", "1")
         .withEnv("KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR", "1")

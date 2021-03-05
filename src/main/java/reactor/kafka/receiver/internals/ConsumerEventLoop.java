@@ -227,9 +227,12 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
 
         private final Set<TopicPartition> pausedByUser = new HashSet<>();
 
+        private boolean scheduled;
+
         @Override
         public void run() {
             try {
+                scheduled = false;
                 if (isActive.get()) {
                     // Ensure that commits are not queued behind polls since number of poll events is
                     // chosen by reactor.
@@ -250,7 +253,6 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                                 consumer.pause(consumer.assignment());
                                 log.debug("Paused 1");
                             }
-                            schedule();
                         }
                     } else if (!pausedByUs.getAndSet(true)) {
                         this.pausedByUser.addAll(consumer.paused());
@@ -275,7 +277,10 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
         }
 
         void schedule() {
-            eventScheduler.schedule(this);
+            if (!this.scheduled) {
+                eventScheduler.schedule(this);
+                this.scheduled = true;
+            }
         }
     }
 
