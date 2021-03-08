@@ -762,13 +762,13 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     @Test
     public void messageProcessingDelay() throws Exception {
         int count = 5;
-        AtomicInteger revoked = new AtomicInteger();
+        CountDownLatch revoked = new CountDownLatch(4);
         AtomicInteger commitFailures = new AtomicInteger();
         Semaphore commitSemaphore = new Semaphore(0);
         receiverOptions = receiverOptions
                 .commitInterval(Duration.ZERO)
                 .commitBatchSize(0)
-                .addRevokeListener(partitions -> revoked.addAndGet(partitions.size()))
+                .addRevokeListener(parts -> parts.forEach(p -> revoked.countDown()))
                 .addAssignListener(this::seekToBeginning)
                 .subscription(Collections.singletonList(topic));
         Flux<ReceiverRecord<Integer, String>> kafkaFlux = KafkaReceiver
@@ -795,7 +795,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         assertTrue("Commits did not succeed", commitSemaphore.tryAcquire(count, requestTimeoutMillis * count, TimeUnit.MILLISECONDS));
         assertEquals(0, commitFailures.get());
         // client revokes all assignments after closing consumer
-        assertEquals(4, revoked.get());
+        assertTrue(revoked.await(10, TimeUnit.SECONDS));
     }
 
     @Test
