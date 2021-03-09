@@ -74,9 +74,14 @@ public interface KafkaReceiver<K, V> {
      * based on the configured commit interval and commit batch size in {@link ReceiverOptions}.
      * Records may also be committed manually using {@link ReceiverOffset#commit()}.
      *
+     * @param prefetch amount of prefetched batches
      * @return Flux of inbound receiver records that are committed only after acknowledgement
      */
-    Flux<ReceiverRecord<K, V>> receive();
+    Flux<ReceiverRecord<K, V>> receive(Integer prefetch);
+
+    default Flux<ReceiverRecord<K, V>> receive() {
+        return receive(null);
+    }
 
     /**
      * Returns a {@link Flux} containing each batch of consumer records returned by {@link Consumer#poll(long)}.
@@ -86,9 +91,14 @@ public interface KafkaReceiver<K, V> {
      * are committed periodically based on the configured commit interval and commit batch size of
      * this receiver's {@link ReceiverOptions}.
      *
+     * @param prefetch amount of prefetched batches
      * @return Flux of consumer record batches from Kafka that are auto-acknowledged
      */
-    Flux<Flux<ConsumerRecord<K, V>>> receiveAutoAck();
+    Flux<Flux<ConsumerRecord<K, V>>> receiveAutoAck(Integer prefetch);
+
+    default Flux<Flux<ConsumerRecord<K, V>>> receiveAutoAck() {
+        return receiveAutoAck(null);
+    }
 
     /**
      * Returns a {@link Flux} of consumer records that are committed before the record is dispatched
@@ -101,9 +111,14 @@ public interface KafkaReceiver<K, V> {
      * configuring {@link ReceiverOptions#atmostOnceCommitAheadSize()}. The maximum number of records that
      * may be lost on each partition if the consuming application crashes is <code>commitAheadSize + 1</code>.
      *
+     * @param prefetch amount of prefetched batches
      * @return Flux of consumer records whose offsets have been committed prior to dispatch
      */
-    Flux<ConsumerRecord<K, V>> receiveAtmostOnce();
+    Flux<ConsumerRecord<K, V>> receiveAtmostOnce(Integer prefetch);
+
+    default Flux<ConsumerRecord<K, V>> receiveAtmostOnce() {
+        return receiveAtmostOnce(null);
+    }
 
     /**
      * Returns a {@link Flux} of consumer record batches that may be used for exactly once

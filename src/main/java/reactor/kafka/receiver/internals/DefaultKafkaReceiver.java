@@ -18,6 +18,8 @@ package reactor.kafka.receiver.internals;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.RetriableCommitFailedException;
 import org.apache.kafka.common.TopicPartition;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
@@ -33,6 +35,8 @@ import java.util.function.Predicate;
 
 public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
 
+    private static final Logger log = LoggerFactory.getLogger(DefaultKafkaReceiver.class);
+
     private final ConsumerFactory consumerFactory;
 
     private final ReceiverOptions<K, V> receiverOptions;
@@ -47,49 +51,39 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
     }
 
     @Override
-    public Flux<ReceiverRecord<K, V>> receive() {
-        return withHandler(AckMode.MANUAL_ACK, (scheduler, handler) -> {
-            return handler
-                .receive()
-                .publishOn(scheduler, 1)
-                .flatMapIterable(it -> it)
-                .map(record -> new ReceiverRecord<>(
-                    record,
-                    handler.toCommittableOffset(record)
-                ));
-        });
+    public Flux<ReceiverRecord<K, V>> receive(Integer prefetch) {
+        return withHandler(AckMode.MANUAL_ACK, (scheduler, handler) -> handler
+            .receive()
+            .publishOn(scheduler, preparePublishOnQueueSize(prefetch))
+            .flatMapIterable(it -> it)
+            .map(record -> new ReceiverRecord<>(
+                record,
+                handler.toCommittableOffset(record)
+            )));
     }
 
     @Override
-    public Flux<Flux<ConsumerRecord<K, V>>> receiveAutoAck() {
-        return withHandler(AckMode.AUTO_ACK, (scheduler, handler) -> {
-            return handler
-                .receive()
-                .filter(it -> !it.isEmpty())
-                .publishOn(scheduler, 1)
-                .map(consumerRecords -> {
-                    return Flux.fromIterable(consumerRecords)
-                        .doAfterTerminate(() -> {
-                            for (ConsumerRecord<K, V> r : consumerRecords) {
-                                handler.acknowledge(r);
-                            }
-                        });
-                });
-        });
+    public Flux<Flux<ConsumerRecord<K, V>>> receiveAutoAck(Integer prefetch) {
+        return withHandler(AckMode.AUTO_ACK, (scheduler, handler) -> handler
+            .receive()
+            .filter(it -> !it.isEmpty())
+            .publishOn(scheduler, preparePublishOnQueueSize(prefetch))
+            .map(consumerRecords -> Flux.fromIterable(consumerRecords)
+                .doAfterTerminate(() -> {
+                    for (ConsumerRecord<K, V> r : consumerRecords) {
+                        handler.acknowledge(r);
+                    }
+                })));
     }
 
     @Override
-    public Flux<ConsumerRecord<K, V>> receiveAtmostOnce() {
-        return withHandler(AckMode.ATMOST_ONCE, (scheduler, handler) -> {
-            return handler
-                .receive()
-                .concatMap(records -> {
-                    return Flux
-                        .fromIterable(records)
-                        .concatMap(r -> handler.commit(r).thenReturn(r))
-                        .publishOn(scheduler, 1);
-                }, 1);
-        });
+    public Flux<ConsumerRecord<K, V>> receiveAtmostOnce(Integer prefetch) {
+        return withHandler(AckMode.ATMOST_ONCE, (scheduler, handler) -> handler
+            .receive()
+            .concatMap(records -> Flux
+                .fromIterable(records)
+                .concatMap(r -> handler.commit(r).thenReturn(r))
+                .publishOn(scheduler, 1), preparePublishOnQueueSize(prefetch)));
     }
 
     @Override
@@ -102,9 +96,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
                     .map(consumerRecords -> {
                         CommittableBatch offsetBatch = new CommittableBatch();
                         for (ConsumerRecord<K, V> r : consumerRecords) {
-                            offsetBatch
-                                .updateOffset(new TopicPartition(r.topic(),
-                                    r.partition()), r.offset());
+                            offsetBatch.updateOffset(new TopicPartition(r.topic(), r.partition()), r.offset());
                         }
 
                         return transactionManager.begin()
@@ -115,13 +107,11 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
                             .concatWith(transactionManager
                                 .sendOffsets(offsetBatch
                                     .getAndClearOffsets()
-                                    .offsets(), receiverOptions
-                                    .groupId()))
-                            .doAfterTerminate(() -> handler.awaitingTransaction
-                                .set(false));
+                                    .offsets(),
+                                    receiverOptions.groupId()))
+                            .doAfterTerminate(() -> handler.awaitingTransaction.set(false));
                     });
-            return prefetch != null ? resultFlux.publishOn(transactionManager.scheduler(), prefetch)
-                : resultFlux.publishOn(transactionManager.scheduler());
+            return resultFlux.publishOn(transactionManager.scheduler(), preparePublishOnQueueSize(prefetch));
         });
     }
 
@@ -136,23 +126,24 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
 
     private <T> Flux<T> withHandler(AckMode ackMode, BiFunction<Scheduler, ConsumerHandler<K, V>, Flux<T>> function) {
         return Flux.usingWhen(
-            Mono.fromCallable(() -> {
-                return consumerHandler = new ConsumerHandler<>(
-                    receiverOptions,
-                    consumerFactory.createConsumer(receiverOptions),
-                    // Always use the currently set value
-                    e -> isRetriableException.test(e),
-                    ackMode
-                );
-            }),
-            handler -> {
-                return Flux.using(
-                    () -> Schedulers.single(receiverOptions.schedulerSupplier().get()),
-                    scheduler -> function.apply(scheduler, handler),
-                    Scheduler::dispose
-                );
-            },
+            Mono.fromCallable(() -> consumerHandler = new ConsumerHandler<>(
+                receiverOptions,
+                consumerFactory.createConsumer(receiverOptions),
+                // Always use the currently set value
+                e -> isRetriableException.test(e),
+                ackMode
+            )),
+            handler -> Flux.using(
+                () -> Schedulers.single(receiverOptions.schedulerSupplier().get()),
+                scheduler -> function.apply(scheduler, handler),
+                Scheduler::dispose
+            ),
             handler -> handler.close().doFinally(__ -> consumerHandler = null)
         );
     }
+
+    private int preparePublishOnQueueSize(Integer prefetch) {
+        return prefetch != null ? prefetch : 1;
+    }
+
 }
