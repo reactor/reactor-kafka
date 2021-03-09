@@ -48,14 +48,13 @@ import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InvalidOffsetException;
 import org.apache.kafka.common.record.TimestampType;
-
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.internals.ConsumerFactory;
 
 /**
  * Mock consumer for testing. To enable testing with different Kafka versions, this class
- * extends {@link org.apache.kafka.clients.consumer.MockConsumer (eg. to handle
- * Consumer{@link #offsetsForTimes(Map)}
+ * extends {@link org.apache.kafka.clients.consumer.MockConsumer} (eg. to handle
+ * Consumer{@link #offsetsForTimes(Map)}).
  *
  */
 public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer<Integer, String> {
@@ -72,7 +71,7 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
     private final MockCluster cluster;
     private final AtomicLong pollCount;
     private int maxPollRecords;
-    private long requestLatencyMs;
+    private final long requestLatencyMs;
     private ReceiverOptions<Integer, String> receiverOptions;
     private ConsumerRebalanceListener rebalanceCallback;
     private boolean assignmentPending = false;
@@ -340,6 +339,7 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
     }
 
     @Override
+    @Deprecated
     public OffsetAndMetadata committed(TopicPartition partition) {
         acquire();
         try {
