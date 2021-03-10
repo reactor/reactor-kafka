@@ -138,6 +138,7 @@ public class MockProducer implements Producer<Integer, String> {
     }
 
     @Override
+    @Deprecated
     public void close(long timeout, TimeUnit unit) {
         close(Duration.ofMillis(unit.toMillis(timeout)));
     }
@@ -175,7 +176,7 @@ public class MockProducer implements Producer<Integer, String> {
         } else {
             try {
                 long offset = cluster.appendMessage(record, !senderOptions.isTransactional());
-                RecordMetadata metadata = new RecordMetadata(topicPartition, 0, offset, System.currentTimeMillis(), (Long) 0L, 4, record.value().length());
+                RecordMetadata metadata = new RecordMetadata(topicPartition, 0, offset, System.currentTimeMillis(), 0L, 4, record.value().length());
                 callback.onCompletion(metadata, null);
                 return metadata;
             } catch (Exception e) {
@@ -281,6 +282,7 @@ public class MockProducer implements Producer<Integer, String> {
         public Pool(List<MockProducer> freeProducers) {
             this.freeProducers.addAll(freeProducers);
         }
+        @Override
         @SuppressWarnings("unchecked")
         public <K, V> Producer<K, V> createProducer(SenderOptions<K, V> senderOptions) {
             MockProducer producer = freeProducers.remove(0);

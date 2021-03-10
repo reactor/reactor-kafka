@@ -81,6 +81,7 @@ class SendSubscriber<K, V, C> implements CoreSubscriber<ProducerRecord<K, V>> {
             DefaultKafkaSender.log.trace("Transactional send initiated for producer {} in state {} inflight {}: {}", senderOptions.transactionalId(), state, inflight, record);
         }
 
+        @SuppressWarnings("unchecked")
         C correlationMetadata = record instanceof SenderRecord
             ? ((SenderRecord<K, V, C>) record).correlationMetadata()
             : null;

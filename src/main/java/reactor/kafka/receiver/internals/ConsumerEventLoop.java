@@ -66,6 +66,7 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
     final AtomicBoolean awaitingTransaction;
 
     volatile long requested;
+    @SuppressWarnings("rawtypes")
     static final AtomicLongFieldUpdater<ConsumerEventLoop> REQUESTED = AtomicLongFieldUpdater.newUpdater(
         ConsumerEventLoop.class,
         "requested"
