@@ -153,12 +153,9 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                     return Mono.empty();
                 }
 
+                this.consumer.wakeup();
                 return Mono.<Void>fromRunnable(new CloseEvent(receiverOptions.closeTimeout()))
-                    .as(flux -> {
-                        return KafkaSchedulers.isCurrentThreadFromScheduler()
-                            ? flux
-                            : flux.subscribeOn(eventScheduler);
-                    });
+                    .as(flux -> flux.subscribeOn(eventScheduler));
             })
             .onErrorResume(e -> {
                 log.warn("Cancel exception: " + e);
