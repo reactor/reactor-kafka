@@ -1192,21 +1192,19 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
 
     @Test
     public void userPause() throws Exception {
-        sendMessages(0, 300);
+        sendMessages(0, 600);
         this.receiverOptions = this.receiverOptions.consumerProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 1);
 
         KafkaReceiver<Integer, String> receiver = createReceiver();
         CountDownLatch latch1 = new CountDownLatch(1);
-        CountDownLatch latch2 = new CountDownLatch(1);
-        CountDownLatch latch3 = new CountDownLatch(300);
+        CountDownLatch latch2 = new CountDownLatch(600);
         Disposable flux = receiver.receive()
             .publishOn(Schedulers.newSingle("willSuspend"), 10)
             .doOnNext(rec -> {
                 try {
 //                    System.out.println(rec.value() + "-" + rec.partition() + "@" + rec.offset());
-                    latch2.countDown();
                     latch1.await();
-                    latch3.countDown();
+                    latch2.countDown();
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
@@ -1217,10 +1215,6 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
             consumer.pause(Collections.singletonList(new TopicPartition(this.topic, 0)));
             return null;
         }).block(Duration.ofSeconds(5));
-        Thread.sleep(500);
-        assertThat(receiver.doOnConsumer(org.apache.kafka.clients.consumer.Consumer::paused)
-                .block(Duration.ofSeconds(5L))).hasSize(1);
-        assertThat(latch2.await(60, TimeUnit.SECONDS)).isTrue();
         await().alias("Auto Paused All")
                 .timeout(Duration.ofMinutes(1))
                 .untilAsserted(() ->
@@ -1237,7 +1231,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         }).block(Duration.ofSeconds(5));
         assertThat(receiver.doOnConsumer(org.apache.kafka.clients.consumer.Consumer::paused)
                 .block(Duration.ofSeconds(5L))).hasSize(0);
-        assertThat(latch3.await(10, TimeUnit.SECONDS)).isTrue();
+        assertThat(latch2.await(10, TimeUnit.SECONDS)).isTrue();
         flux.dispose();
     }
 

@@ -119,7 +119,7 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
 
     void onRequest(long toAdd) {
         if (log.isDebugEnabled()) {
-            log.debug("onRequest.toAdd: " + toAdd);
+            log.debug("onRequest.toAdd {}", toAdd);
         }
         Operators.addCap(REQUESTED, this, toAdd);
         pollEvent.schedule();
@@ -265,8 +265,11 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                         schedule();
                     }
 
-                    Operators.produced(REQUESTED, ConsumerEventLoop.this, 1);
-                    sink.emitNext(records, ConsumerEventLoop.this);
+                    if (!records.isEmpty()) {
+                        Operators.produced(REQUESTED, ConsumerEventLoop.this, 1);
+                        log.debug("Emitting {} records, requested now {}", records.count(), r);
+                        sink.emitNext(records, ConsumerEventLoop.this);
+                    }
                 }
             } catch (Exception e) {
                 if (isActive.get()) {
