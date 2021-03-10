@@ -79,6 +79,19 @@ public interface KafkaReceiver<K, V> {
      */
     Flux<ReceiverRecord<K, V>> receive(Integer prefetch);
 
+    /**
+     * Starts a Kafka consumer that consumes records from the subscriptions or partition
+     * assignments configured for this receiver. Records are consumed from Kafka and delivered
+     * on the returned Flux when requests are made on the Flux. The Kafka consumer is closed
+     * when the returned Flux terminates.
+     * <p>
+     * Every record must be acknowledged using {@link ReceiverOffset#acknowledge()} in order
+     * to commit the offset corresponding to the record. Acknowledged records are committed
+     * based on the configured commit interval and commit batch size in {@link ReceiverOptions}.
+     * Records may also be committed manually using {@link ReceiverOffset#commit()}.
+     *
+     * @return Flux of inbound receiver records that are committed only after acknowledgement
+     */
     default Flux<ReceiverRecord<K, V>> receive() {
         return receive(null);
     }
@@ -96,6 +109,16 @@ public interface KafkaReceiver<K, V> {
      */
     Flux<Flux<ConsumerRecord<K, V>>> receiveAutoAck(Integer prefetch);
 
+    /**
+     * Returns a {@link Flux} containing each batch of consumer records returned by {@link Consumer#poll(long)}.
+     * The maximum number of records returned in each batch can be configured on {@link ReceiverOptions} by setting
+     * the consumer property {@link ConsumerConfig#MAX_POLL_RECORDS_CONFIG}. Each batch is returned as one Flux.
+     * All the records in a batch are acknowledged automatically when its Flux terminates. Acknowledged records
+     * are committed periodically based on the configured commit interval and commit batch size of
+     * this receiver's {@link ReceiverOptions}.
+     *
+     * @return Flux of consumer record batches from Kafka that are auto-acknowledged
+     */
     default Flux<Flux<ConsumerRecord<K, V>>> receiveAutoAck() {
         return receiveAutoAck(null);
     }
@@ -116,6 +139,19 @@ public interface KafkaReceiver<K, V> {
      */
     Flux<ConsumerRecord<K, V>> receiveAtmostOnce(Integer prefetch);
 
+    /**
+     * Returns a {@link Flux} of consumer records that are committed before the record is dispatched
+     * to provide atmost-once delivery semantics. The offset of each record dispatched on the
+     * returned Flux is committed synchronously to ensure that the record is not re-delivered
+     * if the application fails.
+     * <p>
+     * This mode is expensive since each method is committed individually and records are
+     * not delivered until the commit operation succeeds. The cost of commits may be reduced by
+     * configuring {@link ReceiverOptions#atmostOnceCommitAheadSize()}. The maximum number of records that
+     * may be lost on each partition if the consuming application crashes is <code>commitAheadSize + 1</code>.
+     *
+     * @return Flux of consumer records whose offsets have been committed prior to dispatch
+     */
     default Flux<ConsumerRecord<K, V>> receiveAtmostOnce() {
         return receiveAtmostOnce(null);
     }
