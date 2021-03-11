@@ -23,8 +23,10 @@ import reactor.kafka.receiver.ReceiverPartition;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -116,6 +118,9 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
     }
 
     void onRequest(long toAdd) {
+        if (log.isDebugEnabled()) {
+            log.debug("onRequest.toAdd {}", toAdd);
+        }
         Operators.addCap(REQUESTED, this, toAdd);
         pollEvent.schedule();
     }
@@ -218,9 +223,16 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
 
         private final Duration pollTimeout = receiverOptions.pollTimeout();
 
+        private final AtomicBoolean pausedByUs = new AtomicBoolean();
+
+        private final Set<TopicPartition> pausedByUser = new HashSet<>();
+
+        private final AtomicBoolean scheduled = new AtomicBoolean();
+
         @Override
         public void run() {
             try {
+                this.scheduled.set(false);
                 if (isActive.get()) {
                     // Ensure that commits are not queued behind polls since number of poll events is
                     // chosen by reactor.
@@ -228,24 +240,36 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                     long r = requested;
                     if (r > 0) {
                         if (!awaitingTransaction.get()) {
-                            consumer.resume(consumer.assignment());
+                            if (pausedByUs.getAndSet(false)) {
+                                Set<TopicPartition> toResume = new HashSet<>(consumer.assignment());
+                                toResume.removeAll(this.pausedByUser);
+                                this.pausedByUser.clear();
+                                consumer.resume(toResume);
+                                log.debug("Resumed");
+                            }
                         } else {
-                            consumer.pause(consumer.assignment());
-                            schedule();
+                            if (!pausedByUs.getAndSet(true)) {
+                                this.pausedByUser.addAll(consumer.paused());
+                                consumer.pause(consumer.assignment());
+                                log.debug("Paused - awaiting transaction");
+                            }
                         }
-                    } else {
+                    } else if (!pausedByUs.getAndSet(true)) {
+                        this.pausedByUser.addAll(consumer.paused());
                         consumer.pause(consumer.assignment());
+                        log.debug("Paused - back pressure");
                     }
 
                     ConsumerRecords<K, V> records = consumer.poll(pollTimeout);
                     if (isActive.get()) {
-                        if (r > 1 || commitEvent.inProgress.get() > 0) {
-                            schedule();
-                        }
+                        schedule();
                     }
 
-                    Operators.produced(REQUESTED, ConsumerEventLoop.this, 1);
-                    sink.emitNext(records, ConsumerEventLoop.this);
+                    if (!records.isEmpty()) {
+                        Operators.produced(REQUESTED, ConsumerEventLoop.this, 1);
+                        log.debug("Emitting {} records, requested now {}", records.count(), r);
+                        sink.emitNext(records, ConsumerEventLoop.this);
+                    }
                 }
             } catch (Exception e) {
                 if (isActive.get()) {
@@ -256,7 +280,9 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
         }
 
         void schedule() {
-            eventScheduler.schedule(this);
+            if (!this.scheduled.getAndSet(true)) {
+                eventScheduler.schedule(this);
+            }
         }
     }
 
