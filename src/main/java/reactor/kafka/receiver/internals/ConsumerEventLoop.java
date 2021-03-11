@@ -29,7 +29,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
-import java.util.concurrent.locks.LockSupport;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
@@ -90,7 +89,7 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
         this.sink = sink;
         this.awaitingTransaction = awaitingTransaction;
 
-        pollEvent = new PollEvent();
+        this.pollEvent = new PollEvent();
 
         eventScheduler.schedule(new SubscribeEvent());
 
@@ -171,16 +170,8 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
     public boolean onEmitFailure(SignalType signalType, EmitResult result) {
         if (!isActive.get()) {
             return false;
-        }
-
-        switch (result) {
-            case FAIL_NON_SERIALIZED:
-                return true;
-            case FAIL_OVERFLOW:
-                LockSupport.parkNanos(10);
-                return true;
-            default:
-                return false;
+        } else {
+            return result == EmitResult.FAIL_NON_SERIALIZED;
         }
     }
 
@@ -221,9 +212,12 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
 
         private final Duration pollTimeout = receiverOptions.pollTimeout();
 
+        private final AtomicBoolean scheduled = new AtomicBoolean();
+
         @Override
         public void run() {
             try {
+                this.scheduled.set(false);
                 if (isActive.get()) {
                     // Ensure that commits are not queued behind polls since number of poll events is
                     // chosen by reactor.
@@ -247,8 +241,13 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                         }
                     }
 
-                    Operators.produced(REQUESTED, ConsumerEventLoop.this, 1);
-                    sink.emitNext(records, ConsumerEventLoop.this);
+                    if (!records.isEmpty()) {
+                        Operators.produced(REQUESTED, ConsumerEventLoop.this, 1);
+                        log.debug("Emitting {} records", records.count());
+                        sink.emitNext(records, ConsumerEventLoop.this);
+                    } else {
+                        schedule();
+                    }
                 }
             } catch (Exception e) {
                 if (isActive.get()) {
@@ -259,7 +258,10 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
         }
 
         void schedule() {
-            eventScheduler.schedule(this);
+            if (!this.scheduled.getAndSet(true)) {
+                log.trace("Scheduling new poll");
+                eventScheduler.schedule(this);
+            }
         }
     }
 
