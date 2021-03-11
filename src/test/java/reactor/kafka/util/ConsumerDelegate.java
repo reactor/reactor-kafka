@@ -69,6 +69,7 @@ public class ConsumerDelegate<K, V> implements Consumer<K, V> {
     }
 
     @Override
+    @Deprecated
     public ConsumerRecords<K, V> poll(long timeout) {
         return delegate.poll(timeout);
     }
@@ -144,11 +145,13 @@ public class ConsumerDelegate<K, V> implements Consumer<K, V> {
     }
 
     @Override
+    @Deprecated
     public OffsetAndMetadata committed(TopicPartition partition) {
         return delegate.committed(partition);
     }
 
     @Override
+    @Deprecated
     public OffsetAndMetadata committed(TopicPartition partition, Duration timeout) {
         return delegate.committed(partition, timeout);
     }
@@ -249,6 +252,7 @@ public class ConsumerDelegate<K, V> implements Consumer<K, V> {
     }
 
     @Override
+    @Deprecated
     public void close(long timeout, TimeUnit unit) {
         delegate.close(timeout, unit);
     }

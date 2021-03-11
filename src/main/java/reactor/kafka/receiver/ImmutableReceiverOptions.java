@@ -652,6 +652,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
     public boolean equals(Object object) {
         if (object == this) return true;
         if (object != null && object.getClass().equals(getClass())) {
+            @SuppressWarnings("unchecked")
             ImmutableReceiverOptions<K, V> that = (ImmutableReceiverOptions<K, V>) object;
             return Objects.equals(properties, that.properties)
                 && Objects.equals(assignListeners, that.assignListeners)
