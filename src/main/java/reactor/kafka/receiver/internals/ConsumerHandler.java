@@ -61,7 +61,8 @@ class ConsumerHandler<K, V> {
 
     private final ConsumerEventLoop<K, V> consumerEventLoop;
 
-    private final Sinks.Many<ConsumerRecords<K, V>> sink = Sinks.many().unicast().onBackpressureBuffer();
+    private final Sinks.Many<ConsumerRecords<K, V>> sink =
+        Sinks.many().unicast().onBackpressureBuffer();
 
     private Consumer<K, V> consumerProxy;
 
