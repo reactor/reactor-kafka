@@ -16,7 +16,7 @@
 
 buildscript {
   repositories {
-    jcenter()
+    mavenCentral()
     maven { url "https://repo.spring.io/plugins-release" }
   }
   dependencies {
@@ -72,7 +72,6 @@ configure(allprojects) { project ->
 
   repositories {
     mavenCentral()
-    jcenter()
     maven { url 'https://repo.spring.io/milestone' }
 
     if (version.endsWith('-SNAPSHOT')) {
