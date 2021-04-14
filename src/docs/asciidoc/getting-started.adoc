@@ -80,7 +80,7 @@ Set `CLASSPATH` for running reactor-kafka samples. `CLASSPATH` can be obtained u
 
 ===== Sample Producer
 
-See https://github.com/reactor/reactor-kafka/blob/master/reactor-kafka-samples/src/main/java/reactor/kafka/samples/SampleProducer.java for sample producer code.
+See https://github.com/reactor/reactor-kafka/blob/main/reactor-kafka-samples/src/main/java/reactor/kafka/samples/SampleProducer.java for sample producer code.
 
 Run sample producer:
 
@@ -117,7 +117,7 @@ correlation metadata to match each result to its corresponding message.
 
 ===== Sample Consumer
 
-See https://github.com/reactor/reactor-kafka/blob/master/reactor-kafka-samples/src/main/java/reactor/kafka/samples/SampleConsumer.java for sample consumer code.
+See https://github.com/reactor/reactor-kafka/blob/main/reactor-kafka-samples/src/main/java/reactor/kafka/samples/SampleConsumer.java for sample consumer code.
 
 Run sample consumer:
 
