@@ -1229,8 +1229,10 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
             consumer.resume(Collections.singletonList(new TopicPartition(this.topic, 0)));
             return null;
         }).block(Duration.ofSeconds(5));
-        assertThat(receiver.doOnConsumer(org.apache.kafka.clients.consumer.Consumer::paused)
-                .block(Duration.ofSeconds(5L))).hasSize(0);
+        await().alias("All resumed")
+                .untilAsserted(() ->
+            assertThat(receiver.doOnConsumer(org.apache.kafka.clients.consumer.Consumer::paused)
+                    .block(Duration.ofSeconds(5L))).hasSize(0));
         assertThat(latch2.await(10, TimeUnit.SECONDS)).isTrue();
         flux.dispose();
     }
