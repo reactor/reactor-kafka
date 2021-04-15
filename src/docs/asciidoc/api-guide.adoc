@@ -108,7 +108,7 @@ sender.send(outboundFlux)                          // <1>
 <4> Subscribe to trigger the actual flow of records from `outboundFlux` to Kafka.
 
 
-See https://github.com/reactor/reactor-kafka/blob/master/reactor-kafka-samples/src/main/java/reactor/kafka/samples/SampleProducer.java  for the full code listing of a sample producer.
+See https://github.com/reactor/reactor-kafka/blob/main/reactor-kafka-samples/src/main/java/reactor/kafka/samples/SampleProducer.java  for the full code listing of a sample producer.
 
 ==== Error handling
 

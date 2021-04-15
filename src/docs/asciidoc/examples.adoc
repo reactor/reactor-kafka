@@ -2,7 +2,7 @@
 
 This section shows sample code segments for typical scenarios where Reactor Kafka API
 may be used. Full code listing for these scenarios are included in the
-https://github.com/reactor/reactor-kafka/tree/master/reactor-kafka-samples[samples sub-project].
+https://github.com/reactor/reactor-kafka/tree/main/reactor-kafka-samples[samples sub-project].
 
 [[sample-producer]]
 === Sending records to Kafka
