@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2016-2021 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -266,7 +266,7 @@ public class MockProducer implements Producer<Integer, String> {
     private void verifyTransactionsInitialized() {
         String transactionId = senderOptions.transactionalId();
         String thread = Thread.currentThread().getName();
-        assertTrue("Transactional operation on wrong thread " + thread, thread.contains(transactionId));
+        assertTrue("Transactional operation on wrong thread " + thread, thread.contains("reactor-kafka-sender"));
         if (!this.transactionInitialized)
             throw new IllegalStateException("MockProducer hasn't been initialized for transactions.");
     }
