@@ -44,7 +44,8 @@ KafkaReceiver.create(options)
              .doOnNext(r -> {
                      processRecord(r);                   // <4>
                      r.receiverOffset().acknowledge();   // <5>
-                 });
+                 })
+             .subscribe();
 --------
 <1> Start consuming from first available offset on each partition if committed offsets are not available
 <2> Commit every 10 acknowledged messages
@@ -265,4 +266,3 @@ receiver.receiveExactlyOnce(transactionManager)                                /
 <4> Send transformed records within the same transaction as source record offsets
 <5> Commit transaction after sends complete successfully
 <6> Abort transaction if send fails and propagate error
-
