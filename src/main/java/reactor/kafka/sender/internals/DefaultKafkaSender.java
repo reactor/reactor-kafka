@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2018 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2011-2021 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -101,13 +101,14 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V>, EmitFailureH
                                 senderOptions.transactionalId());
                         producer.initTransactions();
                     }
+                    hasProducer.set(true);
                     return producer;
                 })
-                .doOnSubscribe(s -> hasProducer.set(true))
+                .publishOn(senderOptions.isTransactional() ? this.scheduler : senderOptions.scheduler())
                 .cache()
                 .as(flux -> {
                     return senderOptions.isTransactional()
-                        ? flux.publishOn(senderOptions.scheduler())
+                        ? flux.publishOn(senderOptions.isTransactional() ? this.scheduler : senderOptions.scheduler())
                         : flux;
                 });
 
@@ -169,7 +170,6 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V>, EmitFailureH
 
     @Override
     public void close() {
-        scheduler.dispose();
         if (!hasProducer.getAndSet(false)) {
             return;
         }
@@ -178,6 +178,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V>, EmitFailureH
         if (senderOptions.isTransactional()) {
             senderOptions.scheduler().dispose();
         }
+        scheduler.dispose();
     }
 
     private <T> Flux<SenderResult<T>> transaction(Publisher<? extends SenderRecord<K, V, T>> transactionRecords, Sinks.Many<Object> transactionBoundary) {
