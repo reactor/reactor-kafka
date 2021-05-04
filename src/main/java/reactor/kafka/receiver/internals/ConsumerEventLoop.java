@@ -190,8 +190,22 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                             log.debug("onPartitionsAssigned {}", partitions);
                             // onAssign methods may perform seek. It is safe to use the consumer here since we are in a poll()
                             if (!partitions.isEmpty()) {
-                                for (Consumer<Collection<ReceiverPartition>> onAssign : receiverOptions.assignListeners())
+                                for (Consumer<Collection<ReceiverPartition>> onAssign :
+                                        receiverOptions.assignListeners()) {
                                     onAssign.accept(toSeekable(partitions));
+                                }
+                                if (log.isTraceEnabled()) {
+                                    try {
+                                        List<String> positions = new ArrayList<>();
+                                        partitions.forEach(part -> positions.add(String.format("%s pos: %d", part,
+                                            ConsumerEventLoop.this.consumer.position(part, Duration.ofSeconds(5)))));
+                                        log.trace("positions: {}, committed: {}", positions,
+                                                ConsumerEventLoop.this.consumer.committed(new HashSet<>(partitions),
+                                                        Duration.ofSeconds(5)));
+                                    } catch (Exception ex) {
+                                        log.error("Failed to get positions or committed", ex);
+                                    }
+                                }
                             }
                         }
 
