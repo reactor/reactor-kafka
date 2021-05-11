@@ -1074,15 +1074,20 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         receiverOptions = receiverOptions.consumerProperty(ConsumerConfig.ISOLATION_LEVEL_CONFIG, "read_committed");
         int count = 100;
         CountDownLatch latch = new CountDownLatch(count);
-        subscribe(createReceiver().receive(), latch);
 
         KafkaSender<Integer, String> txSender = createTransactionalSender();
         txSender.sendTransactionally(Flux.just(createSenderRecords(0, count, true)))
-                .doOnNext(result -> assertEquals(count, latch.getCount()))
                 .blockLast(Duration.ofSeconds(receiveTimeoutMillis));
+        DefaultKafkaReceiver<Integer, String> receiver = createReceiver();
+        Disposable subscribed = subscribe(receiver.receive(), latch);
 
         waitForMessages(latch);
         checkConsumedMessages(0, count);
+        Map<TopicPartition, Long> offsets =
+                receiver.doOnConsumer(consumer -> consumer.endOffsets(getTopicPartitions()))
+                                                        .block(Duration.ofSeconds(10));
+        assertThat(offsets.values()).containsExactly(26L, 26L, 26L, 26L);
+        subscribed.dispose();
     }
 
     @Test
