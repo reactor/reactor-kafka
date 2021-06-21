@@ -96,15 +96,16 @@ receiverOptions = receiverOptions
     .subscription(Pattern.compile(topics));     // <3>
 KafkaReceiver.create(receiverOptions)
              .receive()
-             .publishOn(Schedulers.newSingle("sample", true))
-             .concatMap(m -> sink.store(transform(m))                                   // <4>
-                               .doOnSuccess(r -> m.receiverOffset().commit().block())); // <5>
+             .publishOn(aBoundedElasticScheduler) // <4>
+             .concatMap(m -> sink.store(transform(m))                                   // <5>
+                               .doOnSuccess(r -> m.receiverOffset().commit().block())); // <6>
 --------
 <1> Disable periodic commits
 <2> Disable commits by batch size
 <3> Wildcard subscription
-<4> Tranform Kafka record and store in external sink
-<5> Synchronous commit after record is successfully delivered to sink
+<4> Cannot block the receiver thread
+<5> Tranform Kafka record and store in external sink
+<6> Synchronous commit after record is successfully delivered to sink
 
 [[kafka-source-sink]]
 === Reactive pipeline with Kafka source and sink
