@@ -50,6 +50,13 @@ public interface ReceiverPartition {
     void seek(long offset);
 
     /**
+     * Seek to the topic partition offset that is greater than or equal to the timestamp.
+     * @param timestamp the timestamp.
+     * @since 1.3.5
+     */
+    void seekToTimestamp(long timestamp);
+
+    /**
      * Returns the offset of the next record that will be fetched from this topic partition.
      * @return current offset of this partition
      */

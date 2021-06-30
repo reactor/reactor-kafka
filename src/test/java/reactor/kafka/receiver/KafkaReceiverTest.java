@@ -193,6 +193,39 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         sendReceive(kafkaFlux, count, count, partitions, count * 2 - partitions);
     }
 
+    /**
+     * Consume from an offset of partitions by seeking to a timestamp for all partitions in the assign listener.
+     */
+    @Test
+    public void seekToTimestamp() throws Exception {
+        int count = 10;
+        sendMessages(0, count);
+        Thread.sleep(50);
+        long t1 = System.currentTimeMillis();
+        sendMessages(count, count);
+        receiverOptions = receiverOptions
+                .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
+                .addAssignListener(parts -> {
+                    for (ReceiverPartition p : parts) {
+                        p.seekToTimestamp(t1);
+                    }
+                    this.assignSemaphore.release();
+                })
+                .subscription(Collections.singleton(topic));
+        KafkaReceiver<Integer, String> receiver = KafkaReceiver.create(receiverOptions);
+        Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux = receiver
+                .receive()
+                .doOnError(e -> log.error("KafkaFlux exception", e));
+        CountDownLatch latch = new CountDownLatch(count);
+        subscribe(kafkaFlux, latch);
+
+        waitForMessages(latch);
+        this.receivedRecords.forEach(list -> list.forEach(rec ->
+                assertThat(rec.timestamp()).isGreaterThanOrEqualTo(t1)));
+        assertThat(this.receivedRecords.stream().flatMap(list -> list.stream()).count()).isEqualTo(count);
+    }
+
+
     @Test
     public void offsetResetLatest() throws Exception {
         int count = 10;
