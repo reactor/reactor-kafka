@@ -51,6 +51,8 @@ public interface ReceiverPartition {
 
     /**
      * Seek to the topic partition offset that is greater than or equal to the timestamp.
+     * If there are no matching records, {@link #seekToEnd()} is performed. See
+     * {@link org.apache.kafka.clients.consumer.Consumer#offsetsForTimes(java.util.Map)}.
      * @param timestamp the timestamp.
      * @since 1.3.5
      */

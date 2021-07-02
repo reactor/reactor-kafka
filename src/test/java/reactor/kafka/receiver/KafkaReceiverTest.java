@@ -17,6 +17,7 @@
 package reactor.kafka.receiver;
 
 
+import javax.annotation.Nullable;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
@@ -45,7 +46,6 @@ import reactor.kafka.sender.TransactionManager;
 import reactor.kafka.util.ConsumerDelegate;
 import reactor.kafka.util.TestUtils;
 import reactor.test.StepVerifier;
-import reactor.util.annotation.Nullable;
 import reactor.util.retry.Retry;
 
 import java.time.Duration;
@@ -221,8 +221,10 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
 
         waitForMessages(latch);
         this.receivedRecords.forEach(list -> list.forEach(rec ->
-                assertThat(rec.timestamp()).isGreaterThanOrEqualTo(t1)));
-        assertThat(this.receivedRecords.stream().flatMap(list -> list.stream()).count()).isEqualTo(count);
+                assertThat(rec.timestamp()).as("timestamp too early").isGreaterThanOrEqualTo(t1)));
+        assertThat(this.receivedRecords.stream().flatMap(list -> list.stream()).count())
+                .as("count of received records")
+                .isEqualTo(count);
     }
 
 
