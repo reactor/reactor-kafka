@@ -20,11 +20,11 @@ buildscript {
     maven { url "https://repo.spring.io/plugins-release" }
   }
   dependencies {
-    classpath 'org.asciidoctor:asciidoctorj-pdf:1.5.0-alpha.16'
+    classpath 'org.asciidoctor:asciidoctorj-pdf:1.5.4'
   }
 }
 plugins {
-  id 'org.asciidoctor.convert' version '1.5.8.1'
+  id 'org.asciidoctor.convert' version '1.5.12'
   id "com.jfrog.artifactory" version "4.15.2" apply false
 }
 
