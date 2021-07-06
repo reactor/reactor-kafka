@@ -86,6 +86,7 @@ public abstract class AbstractKafkaTest {
 
     private final List<List<Integer>> expectedMessages = new ArrayList<>(partitions);
     protected final List<List<Integer>> receivedMessages = new ArrayList<>(partitions);
+    protected final List<List<ConsumerRecord<Integer, String>>> receivedRecords = new ArrayList<>(partitions);
 
     @Before
     public final void setUpAbstractKafkaTest() {
@@ -149,6 +150,7 @@ public abstract class AbstractKafkaTest {
 
     protected void onReceive(ConsumerRecord<Integer, String> record) {
         receivedMessages.get(record.partition()).add(record.key());
+        this.receivedRecords.get(record.partition()).add(record);
     }
 
     protected void checkConsumedMessages() {
@@ -202,11 +204,15 @@ public abstract class AbstractKafkaTest {
         if (resetMessages) {
             expectedMessages.clear();
             receivedMessages.clear();
+            receivedRecords.clear();
             for (int i = 0; i < partitions; i++) {
                 expectedMessages.add(new ArrayList<>());
             }
             for (int i = 0; i < partitions; i++) {
                 receivedMessages.add(new ArrayList<>());
+            }
+            for (int i = 0; i < partitions; i++) {
+                this.receivedRecords.add(new ArrayList<>());
             }
         }
     }

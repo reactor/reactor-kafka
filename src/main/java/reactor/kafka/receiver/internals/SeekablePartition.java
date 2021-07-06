@@ -16,12 +16,13 @@
 
 package reactor.kafka.receiver.internals;
 
-import java.util.Collections;
-
 import org.apache.kafka.clients.consumer.Consumer;
+import org.apache.kafka.clients.consumer.OffsetAndTimestamp;
 import org.apache.kafka.common.TopicPartition;
-
 import reactor.kafka.receiver.ReceiverPartition;
+
+import java.util.Collections;
+import java.util.Map;
 
 class SeekablePartition implements ReceiverPartition {
 
@@ -51,6 +52,18 @@ class SeekablePartition implements ReceiverPartition {
     @Override
     public void seek(long offset) {
         this.consumer.seek(topicPartition, offset);
+    }
+
+    @Override
+    public void seekToTimestamp(long timestamp) {
+        Map<TopicPartition, OffsetAndTimestamp> offsets = this.consumer
+                .offsetsForTimes(Collections.singletonMap(this.topicPartition, timestamp));
+        OffsetAndTimestamp next = offsets.values().iterator().next();
+        if (next == null) {
+            seekToEnd();
+        } else {
+            this.consumer.seek(this.topicPartition, next.offset());
+        }
     }
 
     @Override
