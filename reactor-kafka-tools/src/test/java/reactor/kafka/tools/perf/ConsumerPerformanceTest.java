@@ -18,9 +18,9 @@ package reactor.kafka.tools.perf;
 
 import java.util.Map;
 
-
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import reactor.kafka.AbstractKafkaTest;
@@ -32,6 +32,7 @@ import reactor.kafka.tools.perf.ProducerPerformance.ReactiveProducerPerformance;
 import reactor.kafka.tools.util.PerfTestUtils;
 import reactor.kafka.util.TestUtils;
 
+@Ignore
 public class ConsumerPerformanceTest extends AbstractKafkaTest {
 
     private int numMessages;
