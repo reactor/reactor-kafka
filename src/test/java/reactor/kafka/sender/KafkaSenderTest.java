@@ -264,38 +264,6 @@ public class KafkaSenderTest extends AbstractKafkaTest {
     }
 
     /**
-     * Tests that Producer send Exceptions do not cancel Record Publishers when stopOnError=false
-     * Producer subscription is async so need to wait for the subscription to the sinkAsFlux to complete.
-     */
-    @Test
-    public void sendDontStopOnSerializationErrorTransactional() throws Exception {
-        ProducerRecord<Integer, String> recordToFail = createProducerRecord(0, false);
-        ProducerRecord<Integer, String> recordToSucceed = createProducerRecord(1, true);
-
-        recreateSender(senderOptions.stopOnError(false)
-                .producerProperty(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, FirstTimeFailingStringSerializer.class)
-                .producerProperty(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "tx"));
-
-        Semaphore errorSemaphore = new Semaphore(0);
-        CountDownLatch latch = new CountDownLatch(1);
-        Sinks.Many<ProducerRecord<Integer, String>> sink = Sinks.many().unicast().onBackpressureError();
-        Flux<SenderRecord<Integer, String, Object>> sinkAsFlux = sink.asFlux()
-                    .doOnSubscribe(subs -> latch.countDown())
-                    .map(producerRecord -> SenderRecord.create(producerRecord, null));
-        kafkaSender.sendTransactionally(Flux.just(sinkAsFlux))
-            .doOnError(t -> errorSemaphore.release())
-            .subscribe();
-
-        assertTrue(latch.await(10, TimeUnit.SECONDS));
-        sink.emitNext(recordToFail, EmitFailureHandler.FAIL_FAST);
-        sink.emitNext(recordToSucceed, EmitFailureHandler.FAIL_FAST);
-        sink.emitComplete(EmitFailureHandler.FAIL_FAST);
-
-        waitForMessages(consumer, 1, true);
-        assertTrue("Error callback not invoked", errorSemaphore.tryAcquire(requestTimeoutMillis, TimeUnit.MILLISECONDS));
-    }
-
-    /**
      * Tests that response flux is terminated with error on the first failure if stopOnError=true.
      */
     @Test
