@@ -16,13 +16,12 @@
 
 package reactor.kafka.tools.perf;
 
-import java.util.Map;
-
 import static org.junit.Assert.assertEquals;
 
+import java.util.Map;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
-
 import reactor.kafka.AbstractKafkaTest;
 import reactor.kafka.tools.perf.ProducerPerformance.NonReactiveProducerPerformance;
 import reactor.kafka.tools.perf.ProducerPerformance.ReactiveProducerPerformance;
@@ -30,6 +29,7 @@ import reactor.kafka.tools.perf.ProducerPerformance.Stats;
 import reactor.kafka.tools.util.PerfTestUtils;
 import reactor.kafka.util.TestUtils;
 
+@Ignore
 public class ProducerPerformanceTest extends AbstractKafkaTest {
 
     private int numMessages;
@@ -62,6 +62,7 @@ public class ProducerPerformanceTest extends AbstractKafkaTest {
         // PerfTestUtils.verifyReactiveLatency(rStats.percentiles(0.75)[0], nrStats.percentiles(0.75)[0], 100);
     }
 
+    @Override
     public Map<String, Object> producerProps() {
         return PerfTestUtils.producerProps(bootstrapServers());
     }
