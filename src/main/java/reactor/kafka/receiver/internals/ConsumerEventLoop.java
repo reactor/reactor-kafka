@@ -137,6 +137,9 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
             log.debug("onRequest.toAdd {}", toAdd);
         }
         Operators.addCap(REQUESTED, this, toAdd);
+        if (pollEvent.isPaused()) {
+            consumer.wakeup();
+        }
         pollEvent.schedule();
     }
 
@@ -281,7 +284,13 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                         log.debug("Paused - back pressure");
                     }
 
-                    ConsumerRecords<K, V> records = consumer.poll(pollTimeout);
+                    ConsumerRecords<K, V> records;
+                    try {
+                        records = consumer.poll(pollTimeout);
+                    } catch (WakeupException e) {
+                        records = ConsumerRecords.empty();
+                    }
+
                     if (isActive.get()) {
                         schedule();
                     }
@@ -304,6 +313,10 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
             if (!this.scheduled.getAndSet(true)) {
                 eventScheduler.schedule(this);
             }
+        }
+
+        boolean isPaused() {
+            return pausedByUs.get();
         }
     }
 

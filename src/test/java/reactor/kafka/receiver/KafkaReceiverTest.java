@@ -1278,6 +1278,35 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         flux.dispose();
     }
 
+    @Test
+    public void wakeUpReceiverWhenBackPressureIsRelieved() throws Exception {
+        int count = 10;
+        receiverOptions = receiverOptions
+            .pollTimeout(Duration.ofMinutes(1))
+            .schedulerSupplier(() -> Schedulers.newSingle("back-pressure-scheduler"));
+        CountDownLatch latch = new CountDownLatch(1);
+
+        sendMessages(0, count);
+
+        Disposable disposable = createReceiver().receive()
+            .doOnNext(record -> {
+                try {
+                    latch.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                onReceive(record);
+            })
+            .subscribe();
+        subscribeDisposables.add(disposable);
+
+        TimeUnit.SECONDS.sleep(3);
+        latch.countDown();
+
+        await().timeout(Duration.ofSeconds(10))
+            .untilAsserted(() -> assertEquals(count, count(receivedMessages)));
+    }
+
     private Disposable sendAndWaitForMessages(Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux, int count) throws Exception {
         CountDownLatch receiveLatch = new CountDownLatch(count);
         Disposable disposable = subscribe(kafkaFlux, receiveLatch);
