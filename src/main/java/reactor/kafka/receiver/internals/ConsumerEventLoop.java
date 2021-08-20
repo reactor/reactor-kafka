@@ -200,7 +200,6 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
 
         @Override
         public void run() {
-            log.info("SubscribeEvent");
             try {
                 receiverOptions
                     .subscriber(new ConsumerRebalanceListener() {
