@@ -134,7 +134,7 @@ configure(allprojects) { project ->
     testCompile "io.projectreactor:reactor-test:$reactorCoreVersion"
     testCompile "org.powermock:powermock-module-junit4:$powermockVersion"
     testCompile "org.powermock:powermock-core:$powermockVersion"
-    testCompile "org.powermock:powermock-api-mockito:$powermockVersion"
+    testCompile "org.powermock:powermock-api-mockito2:$powermockVersion"
     testCompile "org.apache.logging.log4j:log4j-api:$log4jVersion"
     testCompile "org.apache.logging.log4j:log4j-core:$log4jVersion"
     testCompile "org.apache.logging.log4j:log4j-slf4j-impl:$log4jVersion"

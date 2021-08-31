@@ -208,6 +208,10 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                             log.debug("onPartitionsAssigned {}", partitions);
                             // onAssign methods may perform seek. It is safe to use the consumer here since we are in a poll()
                             if (!partitions.isEmpty()) {
+                                if (ConsumerEventLoop.this.pollEvent.pausedByUs.get()) {
+                                    log.debug("Rebalance during back pressure, re-pausing new assignments");
+                                    consumer.pause(partitions);
+                                }
                                 for (Consumer<Collection<ReceiverPartition>> onAssign :
                                         receiverOptions.assignListeners()) {
                                     onAssign.accept(toSeekable(partitions));
