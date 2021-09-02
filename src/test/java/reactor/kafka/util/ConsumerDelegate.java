@@ -28,15 +28,30 @@ import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 public class ConsumerDelegate<K, V> implements Consumer<K, V> {
+
+    static final Method CURRENT_LAG_METHOD;
+
+    static {
+        Method method;
+        try {
+            method = Consumer.class.getDeclaredMethod("currentLag", TopicPartition.class);
+        } catch (NoSuchMethodException | SecurityException e) {
+            method = null;
+        }
+        CURRENT_LAG_METHOD = method;
+    }
 
     final Consumer<K, V> delegate;
 
@@ -252,6 +267,30 @@ public class ConsumerDelegate<K, V> implements Consumer<K, V> {
         return delegate.endOffsets(partitions, timeout);
     }
 
+    /**
+     * Get the consumer's current lag on the partition. Returns an "empty" {@link OptionalLong} if the lag is not known,
+     * for example if there is no position yet, or if the end offset is not known yet.
+     * Only available with kafka-clients 3.0.0 or later.
+     * <p>
+     * This method uses locally cached metadata and never makes a remote call.
+     *
+     * @param topicPartition The partition to get the lag for.
+     *
+     * @return This {@code Consumer} instance's current lag for the given partition.
+     *
+     * @throws IllegalStateException if the {@code topicPartition} is not assigned
+     **/
+    public OptionalLong currentLag(TopicPartition topicPartition) {
+        if (CURRENT_LAG_METHOD != null) {
+            try {
+                return (OptionalLong) CURRENT_LAG_METHOD.invoke(this.delegate, topicPartition);
+            } catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
+                throw new IllegalStateException(e);
+            }
+        }
+        throw new IllegalStateException("kafka-clients version does not support this method");
+    }
+
     @Override
     public ConsumerGroupMetadata groupMetadata() {
         return delegate.groupMetadata();
@@ -270,7 +309,7 @@ public class ConsumerDelegate<K, V> implements Consumer<K, V> {
     @Override
     @Deprecated
     public void close(long timeout, TimeUnit unit) {
-        delegate.close(timeout, unit);
+        delegate.close(Duration.ofMillis(unit.toMillis(timeout)));
     }
 
     @Override

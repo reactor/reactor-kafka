@@ -16,24 +16,6 @@
 
 package reactor.kafka.mock;
 
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.ConcurrentModificationException;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Queue;
-import java.util.Set;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.ReentrantLock;
-import java.util.regex.Pattern;
-
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
@@ -51,6 +33,24 @@ import org.apache.kafka.common.errors.InvalidOffsetException;
 import org.apache.kafka.common.record.TimestampType;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.internals.ConsumerFactory;
+
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.ConcurrentModificationException;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Queue;
+import java.util.Set;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.regex.Pattern;
 
 /**
  * Mock consumer for testing. To enable testing with different Kafka versions, this class
@@ -411,7 +411,7 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
     }
 
     @Override
-    public void close() {
+    public void close() { // https://issues.apache.org/jira/browse/KAFKA-13262
         acquire();
         try {
             executor.shutdown();
