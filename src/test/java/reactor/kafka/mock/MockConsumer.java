@@ -411,7 +411,7 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
     }
 
     @Override
-    public void close() { // https://issues.apache.org/jira/browse/KAFKA-13262
+    public void close() {
         acquire();
         try {
             executor.shutdown();
