@@ -43,7 +43,6 @@ ext {
   slf4jVersion = '1.7.30'
   log4jVersion = '2.13.3'
   junitVersion = '4.12'
-  zkVersion = "3.4.13"
   powermockVersion = '1.7.4'
   testcontainersVersion = '1.15.2'
 
@@ -80,6 +79,9 @@ configure(allprojects) { project ->
     if (version.endsWith('-SNAPSHOT')) {
       maven { url 'https://repo.spring.io/snapshot' }
     }
+
+//    maven { url 'https://repository.apache.org/content/groups/staging/' }
+
   }
 
   apply plugin: 'maven'
@@ -127,6 +129,7 @@ configure(allprojects) { project ->
     compileOnly "com.google.code.findbugs:jsr305:$googleJsr305Version"
     compile "org.apache.kafka:kafka-clients:$kafkaVersion"
     compile "io.projectreactor:reactor-core:$reactorCoreVersion"
+//    compile "org.slf4j:slf4j-api:$slf4jVersion"
 
     testCompileOnly "com.google.code.findbugs:jsr305:$googleJsr305Version"
     testCompile "junit:junit:$junitVersion"
@@ -138,6 +141,7 @@ configure(allprojects) { project ->
     testCompile "org.apache.logging.log4j:log4j-api:$log4jVersion"
     testCompile "org.apache.logging.log4j:log4j-core:$log4jVersion"
     testCompile "org.apache.logging.log4j:log4j-slf4j-impl:$log4jVersion"
+    // move to compile for 3.0.0 clients
     testCompile "org.slf4j:slf4j-api:$slf4jVersion"
     testCompile "org.testcontainers:kafka:$testcontainersVersion"
     testCompile 'org.awaitility:awaitility:4.0.2'
