@@ -20,7 +20,6 @@ include::overview.adoc[]
 include::motivation.adoc[]
 include::getting-started.adoc[]
 include::resources.adoc[]
-include::new.adoc[]
 = Reference Documentation
 include::api-guide.adoc[]
 include::examples.adoc[]
