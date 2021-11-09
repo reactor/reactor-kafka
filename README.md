@@ -45,8 +45,8 @@ With Gradle from repo.spring.io:
     }
 
     dependencies {
-      //compile "io.projectreactor.kafka:reactor-kafka:1.2.7.BUILD-SNAPSHOT"
-      compile "io.projectreactor.kafka:reactor-kafka:1.2.6.RELEASE"
+      //compile "io.projectreactor.kafka:reactor-kafka:1.2.8.BUILD-SNAPSHOT"
+      compile "io.projectreactor.kafka:reactor-kafka:1.2.7.RELEASE"
     }
 ```
 
