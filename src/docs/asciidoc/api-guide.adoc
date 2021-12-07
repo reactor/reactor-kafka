@@ -390,6 +390,26 @@ Note that committing an offset acknowledges and commits all previous offsets on 
 acknowledged offsets are committed when partitions are revoked during rebalance and when the receive
 Flux is terminated.
 
+==== Out of Order Commits
+
+Starting with version 1.3.8, commits can be performed out of order and the framework will defer the commits as needed, until any "gaps" are filled.
+This removes the need for applications to keep track of offsets and commit them in the right order.
+Deferring commits increases the likelihood of duplicate deliveries if the application crashes while deferred commits are present.
+
+To enable this feature, set the `maxDeferredCommits` property of `ReceiverOptions`.
+If the number of deferred offset commits exceeds this value, the consumer is `pause()` d until the number of deferred commits is reduced by the application acknowledging or commiting some of the "missing" offsets.
+
+[source, java]
+----
+ReceiverOptions<Object, Object> options = ReceiverOptions.create()
+    .maxDeferredCommits(100)
+    .subscription(Collections.singletonList("someTopic"));
+----
+
+The number is an aggregate of deferred commits across all the assigned topics/partitions.
+
+Leaving the property at its default `0` disables the feature and commits are performed whenever called.
+
 ==== Auto-acknowledgement of batches of records
 
 `KafkaReceiver#receiveAutoAck` returns a `Flux` of batches of records returned by each `KafkaConsumer#poll()`.
@@ -513,5 +533,3 @@ underlying consumer is closed.
 
 Only one receive operation may be active in a `KafkaReceiver` at any one time. Any of the receive
 methods can be invoked after the receive Flux corresponding to the last receive is terminated.
-
-
