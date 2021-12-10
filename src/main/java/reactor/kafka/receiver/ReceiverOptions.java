@@ -236,6 +236,17 @@ public interface ReceiverOptions<K, V> {
     ReceiverOptions<K, V> maxCommitAttempts(int maxAttempts);
 
     /**
+     * Set to greater than 0 to enable out of order commit sequencing. If the number of
+     * deferred commits exceeds this value, the consumer is paused until the deferred
+     * commits are reduced.
+     * @return options instance with updated number of max deferred commits.
+     * @since 1.3.8
+     */
+    default ReceiverOptions<K, V> maxDeferredCommits(int maxDeferred) {
+        return this;
+    }
+
+    /**
      * Configures the Supplier for a Scheduler on which Records will be published
      * @return options instance with updated publishing Scheduler Supplier
      */
@@ -370,6 +381,17 @@ public interface ReceiverOptions<K, V> {
      */
     @NonNull
     int maxCommitAttempts();
+
+    /**
+     * When greater than 0, enables out of order commit sequencing. If the number of
+     * deferred commits exceeds this value, the consumer is paused until the deferred
+     * commits are reduced.
+     * @return the maximum deferred commits.
+     * @since 1.3.8
+     */
+    default int maxDeferredCommits() {
+        return 0;
+    }
 
     /**
      * Returns the Supplier for a Scheduler that Records will be published on
