@@ -24,6 +24,7 @@ import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.errors.InvalidProducerEpochException;
 import org.apache.kafka.common.errors.ProducerFencedException;
 import org.apache.kafka.common.serialization.Serializer;
 import org.apache.kafka.common.serialization.StringSerializer;
@@ -564,7 +565,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                .blockLast(Duration.ofMillis(receiveTimeoutMillis));
 
         StepVerifier.create(kafkaSender.send(createSenderRecords(count * 2, count, false)))
-                    .expectError(ProducerFencedException.class)
+                    .expectError(InvalidProducerEpochException.class)
                     .verify(Duration.ofMillis(receiveTimeoutMillis));
 
         waitForMessages(consumer, count * 2, true);

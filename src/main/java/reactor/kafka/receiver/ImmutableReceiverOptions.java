@@ -55,6 +55,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
     private final int commitBatchSize;
     private final int atmostOnceCommitAheadSize;
     private final int maxCommitAttempts;
+    private final int maxDeferredCommits;
     private final Collection<String> subscribeTopics;
     private final Collection<TopicPartition> assignTopicPartitions;
     private final Pattern subscribePattern;
@@ -88,6 +89,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
         commitBatchSize = 0;
         atmostOnceCommitAheadSize = 0;
         maxCommitAttempts = DEFAULT_MAX_COMMIT_ATTEMPTS;
+        maxDeferredCommits = 0;
         subscribeTopics = null;
         assignTopicPartitions = null;
         subscribePattern = null;
@@ -107,6 +109,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
         int commitBatchSize,
         int atmostOnceCommitAheadSize,
         int maxCommitAttempts,
+        int maxDeferredCommits,
         Collection<String> topics,
         Collection<TopicPartition> partitions,
         Pattern pattern,
@@ -123,6 +126,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
         this.commitBatchSize = commitBatchSize;
         this.atmostOnceCommitAheadSize = atmostOnceCommitAheadSize;
         this.maxCommitAttempts = maxCommitAttempts;
+        this.maxDeferredCommits = maxDeferredCommits;
         this.subscribeTopics = topics == null ? null : new HashSet<>(topics);
         this.assignTopicPartitions = partitions == null ? null : new HashSet<>(partitions);
         this.subscribePattern = pattern;
@@ -159,6 +163,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
@@ -180,6 +185,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
@@ -206,6 +212,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
@@ -240,6 +247,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
@@ -269,6 +277,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
@@ -295,6 +304,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
@@ -321,6 +331,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
@@ -342,6 +353,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
@@ -363,6 +375,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
@@ -394,6 +407,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                maxDeferredCommits,
                 Objects.requireNonNull(topics),
                 null,
                 null,
@@ -415,6 +429,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                maxDeferredCommits,
                 null,
                 null,
                 Objects.requireNonNull(pattern),
@@ -436,6 +451,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                maxDeferredCommits,
                 null,
                 Objects.requireNonNull(partitions),
                 null,
@@ -492,6 +508,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
@@ -521,6 +538,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
@@ -550,6 +568,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 commitAheadSize,
                 maxCommitAttempts,
+                maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
@@ -579,10 +598,38 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxAttempts,
+                maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
                 schedulerSupplier
+        );
+    }
+
+    @Override
+    public int maxDeferredCommits() {
+        return maxDeferredCommits;
+    }
+
+    @Override
+    public ReceiverOptions<K, V> maxDeferredCommits(int maxDeferred) {
+        return new ImmutableReceiverOptions<>(
+            properties,
+            assignListeners,
+            revokeListeners,
+            keyDeserializer,
+            valueDeserializer,
+            pollTimeout,
+            closeTimeout,
+            commitInterval,
+            commitBatchSize,
+            atmostOnceCommitAheadSize,
+            maxCommitAttempts,
+            maxDeferred,
+            subscribeTopics,
+            assignTopicPartitions,
+            subscribePattern,
+            schedulerSupplier
         );
     }
 
@@ -605,6 +652,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,

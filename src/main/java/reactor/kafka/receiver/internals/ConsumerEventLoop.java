@@ -110,6 +110,8 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
 
         this.pollEvent = new PollEvent();
 
+        commitEvent.commitBatch.outOfOrderCommits = receiverOptions.maxDeferredCommits() > 0;
+
         eventScheduler.schedule(new SubscribeEvent());
 
         Duration commitInterval = receiverOptions.commitInterval();
@@ -256,6 +258,10 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
 
         private final AtomicBoolean scheduled = new AtomicBoolean();
 
+        private final long maxDeferredCommits = receiverOptions.maxDeferredCommits();
+
+        private final CommittableBatch commitBatch = commitEvent.commitBatch;
+
         @Override
         public void run() {
             try {
@@ -265,6 +271,11 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                     // chosen by reactor.
                     commitEvent.runIfRequired(false);
                     long r = requested;
+                    boolean pauseForDeferred = this.maxDeferredCommits > 0
+                        && this.commitBatch.deferredCount() >= this.maxDeferredCommits;
+                    if (pauseForDeferred) {
+                        r = 0;
+                    }
                     if (r > 0) {
                         if (!awaitingTransaction.get()) {
                             if (pausedByUs.getAndSet(false)) {
@@ -284,7 +295,11 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                     } else if (!pausedByUs.getAndSet(true)) {
                         this.pausedByUser.addAll(consumer.paused());
                         consumer.pause(consumer.assignment());
-                        log.debug("Paused - back pressure");
+                        if (pauseForDeferred) {
+                            log.debug("Paused - too many deferred commits");
+                        } else {
+                            log.debug("Paused - back pressure");
+                        }
                     }
 
                     ConsumerRecords<K, V> records;
@@ -299,6 +314,9 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                     }
 
                     if (!records.isEmpty()) {
+                        if (this.maxDeferredCommits > 0) {
+                            this.commitBatch.addUncommitted(records);
+                        }
                         Operators.produced(REQUESTED, ConsumerEventLoop.this, 1);
                         log.debug("Emitting {} records, requested now {}", records.count(), r);
                         sink.emitNext(records, ConsumerEventLoop.this);

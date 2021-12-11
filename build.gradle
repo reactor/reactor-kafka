@@ -32,7 +32,7 @@ ext {
   gradleScriptDir = "${rootProject.projectDir}/gradle"
 
   //reactor core version is now defined in gradle.properties
-  kafkaVersion = '2.6.1'
+  kafkaVersion = '2.8.1'
   scalaVersion = '2.11'
   metricsVersion = '2.2.0'
 
