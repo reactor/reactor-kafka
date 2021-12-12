@@ -21,6 +21,7 @@
     </Console>
   </Appenders>
   <Loggers>
+    <Logger name="org.testcontainers" level="trace"/>
     <Logger name="org.apache.kafka.clients" level="info"/>
     <Logger name="org.apache.kafka.clients.admin.AdminClientConfig" level="warn"/>
     <Logger name="org.apache.kafka.clients.producer.ProducerConfig" level="warn"/>

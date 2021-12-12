@@ -42,7 +42,6 @@ import org.junit.Rule;
 import org.junit.rules.TestName;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
-
 import reactor.core.publisher.Flux;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.sender.SenderOptions;
@@ -70,7 +69,7 @@ public abstract class AbstractKafkaTest {
         .withNetwork(null)
         .withEnv("KAFKA_TRANSACTION_STATE_LOG_MIN_ISR", "1")
         .withEnv("KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR", "1")
-        .withStartupTimeout(Duration.ofMinutes(3L))
+        .withStartupTimeout(Duration.ofMinutes(1L))
         .withReuse(true);
 
     protected String topic;
