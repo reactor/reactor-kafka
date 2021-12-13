@@ -15,7 +15,7 @@ jobs:
       env:
           TESTCONTAINERS_RYUK_DISABLED: true
       with:
-        arguments: test --tests KafkaReceiverTest.sendReceive
+        arguments: test --tests KafkaReceiverTest.sendReceive --tests SenderOptionsTest
         wrapper-cache-enabled: true
         dependencies-cache-enabled: true
         configuration-cache-enabled: true
