@@ -48,39 +48,39 @@ configure(allprojects) { project ->
     }
 }
 
-//configure(rootProject) {
-//
-//    apply plugin: 'org.asciidoctor.convert'
-//    asciidoctor {
-//        sourceDir "${rootProject.projectDir}/src/docs/asciidoc"
-//        sources {
-//            include "index.asciidoc"
-//        }
-//        outputDir file("$buildDir/asciidoc")
-//        backends = ['html5', 'pdf']
-//        logDocuments = true
-//        options = [
-//                doctype: 'book'
-//        ]
-//        attributes docinfo: '',
-//                toc2: '',
-//                'compat-mode': '',
-//                stylesdir: "stylesheets/",
-//                stylesheet: 'golo.css',
-//                appversion: "$rootProject.version",
-//                'source-highlighter': 'coderay'
-//    }
-//    task docsZip(type: Zip, dependsOn: asciidoctor) {
-//        archiveBaseName.set('reactor-kafka')
-//        archiveClassifier.set('docs')
-//        afterEvaluate() {
-//            //we copy the pdf late, when a potential customVersion has been applied to rootProject
-//            from("$buildDir/asciidoc/pdf/index.pdf") {
-//                into ("docs/")
-//                rename("index.pdf", "reactor-kafka-reference-guide-${rootProject.version}.pdf")
-//            }
-//        }
-//        from("$buildDir/asciidoc/html5/index.html") { into("docs/") }
-//        from("$buildDir/asciidoc/html5/images") { into("images/") }
-//    }
-//}
+configure(rootProject) {
+
+    apply plugin: 'org.asciidoctor.convert'
+    asciidoctor {
+        sourceDir "${rootProject.projectDir}/src/docs/asciidoc"
+        sources {
+            include "index.asciidoc"
+        }
+        outputDir file("$buildDir/asciidoc")
+        backends = ['html5', 'pdf']
+        logDocuments = true
+        options = [
+                doctype: 'book'
+        ]
+        attributes docinfo: '',
+                toc2: '',
+                'compat-mode': '',
+                stylesdir: "stylesheets/",
+                stylesheet: 'golo.css',
+                appversion: "$rootProject.version",
+                'source-highlighter': 'coderay'
+    }
+    task docsZip(type: Zip, dependsOn: asciidoctor) {
+        archiveBaseName.set('reactor-kafka')
+        archiveClassifier.set('docs')
+        afterEvaluate() {
+            //we copy the pdf late, when a potential customVersion has been applied to rootProject
+            from("$buildDir/asciidoc/pdf/index.pdf") {
+                into ("docs/")
+                rename("index.pdf", "reactor-kafka-reference-guide-${rootProject.version}.pdf")
+            }
+        }
+        from("$buildDir/asciidoc/html5/index.html") { into("docs/") }
+        from("$buildDir/asciidoc/html5/images") { into("images/") }
+    }
+}

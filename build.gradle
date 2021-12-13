@@ -20,12 +20,12 @@ buildscript {
     maven { url "https://repo.spring.io/plugins-release" }
   }
   dependencies {
-//    classpath 'org.asciidoctor:asciidoctorj-pdf:1.5.4'
+    classpath 'org.asciidoctor:asciidoctorj-pdf:1.5.4'
   }
 }
 plugins {
-//  id 'org.asciidoctor.convert' version '1.5.12'
-  id "com.jfrog.artifactory" version "4.24.18" apply false
+  id 'org.asciidoctor.convert' version '1.5.12'
+  id "com.jfrog.artifactory" version "4.15.2" apply false
 }
 
 ext {
@@ -64,6 +64,9 @@ configurations.all {
 
 allprojects {
   apply plugin: 'jacoco'
+  jacoco {
+    toolVersion = '0.8.1'
+  }
 }
 
 configure(allprojects) { project ->
@@ -81,11 +84,16 @@ configure(allprojects) { project ->
 
   }
 
-//  apply plugin: 'checkstyle'
+  apply plugin: 'maven'
+  apply plugin: 'eclipse'
+  apply plugin: 'idea'
+  apply plugin: 'checkstyle'
   apply plugin: 'java'
   apply from: "$gradleScriptDir/setup.gradle"
 
   sourceCompatibility = targetCompatibility = 1.8
+
+  eclipse.project.natures += 'org.springframework.ide.eclipse.core.springnature'
 
   [compileJava, compileTestJava]*.options*.compilerArgs = ['-Xlint:all,-options']
 
@@ -101,11 +109,11 @@ configure(allprojects) { project ->
     }
   }
 
-//  checkstyle {
-//    configFile = new File(rootDir, "checkstyle/checkstyle.xml")
-//    configProperties = [suppressionsXml: "$rootDir/checkstyle/suppressions.xml"]
-//  }
-//  test.dependsOn('checkstyleMain', 'checkstyleTest')
+  checkstyle {
+    configFile = new File(rootDir, "checkstyle/checkstyle.xml")
+    configProperties = [suppressionsXml: "$rootDir/checkstyle/suppressions.xml"]
+  }
+  test.dependsOn('checkstyleMain', 'checkstyleTest')
 
   jacocoTestReport {
     dependsOn test
@@ -119,25 +127,25 @@ configure(allprojects) { project ->
 
   dependencies {
     compileOnly "com.google.code.findbugs:jsr305:$googleJsr305Version"
-    implementation "org.apache.kafka:kafka-clients:$kafkaVersion"
-	  implementation "io.projectreactor:reactor-core:$reactorCoreVersion"
+    compile "org.apache.kafka:kafka-clients:$kafkaVersion"
+    compile "io.projectreactor:reactor-core:$reactorCoreVersion"
 //    compile "org.slf4j:slf4j-api:$slf4jVersion"
 
     testCompileOnly "com.google.code.findbugs:jsr305:$googleJsr305Version"
-    testImplementation "junit:junit:$junitVersion"
+    testCompile "junit:junit:$junitVersion"
 
-    testImplementation "io.projectreactor:reactor-test:$reactorCoreVersion"
-    testImplementation "org.powermock:powermock-module-junit4:$powermockVersion"
-    testImplementation "org.powermock:powermock-core:$powermockVersion"
-    testImplementation "org.powermock:powermock-api-mockito2:$powermockVersion"
-    testImplementation "org.apache.logging.log4j:log4j-api:$log4jVersion"
-    testImplementation "org.apache.logging.log4j:log4j-core:$log4jVersion"
-    testImplementation "org.apache.logging.log4j:log4j-slf4j-impl:$log4jVersion"
+    testCompile "io.projectreactor:reactor-test:$reactorCoreVersion"
+    testCompile "org.powermock:powermock-module-junit4:$powermockVersion"
+    testCompile "org.powermock:powermock-core:$powermockVersion"
+    testCompile "org.powermock:powermock-api-mockito2:$powermockVersion"
+    testCompile "org.apache.logging.log4j:log4j-api:$log4jVersion"
+    testCompile "org.apache.logging.log4j:log4j-core:$log4jVersion"
+    testCompile "org.apache.logging.log4j:log4j-slf4j-impl:$log4jVersion"
     // move to compile for 3.0.0 clients
-    testImplementation "org.slf4j:slf4j-api:$slf4jVersion"
-    testImplementation "org.testcontainers:kafka:$testcontainersVersion"
-    testImplementation 'org.awaitility:awaitility:4.0.2'
-    testImplementation 'org.assertj:assertj-core:3.16.1'
+    testCompile "org.slf4j:slf4j-api:$slf4jVersion"
+    testCompile "org.testcontainers:kafka:$testcontainersVersion"
+    testCompile 'org.awaitility:awaitility:4.0.2'
+    testCompile 'org.assertj:assertj-core:3.16.1'
   }
 }
 
@@ -152,19 +160,19 @@ configure(rootProject) {
   }
 
   //add specific task artifacts to the publication
-//  publishing.publications.mavenJava.artifact(docsZip)
+  publishing.publications.mavenJava.artifact(docsZip)
 }
 
 project(':reactor-kafka-tools') {
   archivesBaseName = 'reactor-kafka-tools'
   description = 'Tools for Reactor Kafka'
   dependencies {
-	  implementation rootProject
-	  implementation "com.yammer.metrics:metrics-core:$metricsVersion"
-	  implementation "net.sf.jopt-simple:jopt-simple:$joptVersion"
-	  implementation "net.sourceforge.argparse4j:argparse4j:$argparseVersion"
+    compile rootProject
+    compile "com.yammer.metrics:metrics-core:$metricsVersion"
+    compile "net.sf.jopt-simple:jopt-simple:$joptVersion"
+    compile "net.sourceforge.argparse4j:argparse4j:$argparseVersion"
 
-    testImplementation rootProject.sourceSets.test.output
+    testCompile rootProject.sourceSets.test.output
   }
 
   test {
@@ -185,10 +193,10 @@ project(':reactor-kafka-samples') {
   archivesBaseName = 'reactor-kafka-samples'
   description = 'Samples for Reactor Kafka'
   dependencies {
-	  implementation rootProject
-	  implementation "com.yammer.metrics:metrics-core:$metricsVersion"
+    compile rootProject
+    compile "com.yammer.metrics:metrics-core:$metricsVersion"
 
-    testImplementation rootProject.sourceSets.test.output
+    testCompile rootProject.sourceSets.test.output
   }
 
   test {
