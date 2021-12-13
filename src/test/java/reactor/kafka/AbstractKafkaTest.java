@@ -69,7 +69,6 @@ public abstract class AbstractKafkaTest {
         .withNetwork(null)
         .withEnv("KAFKA_TRANSACTION_STATE_LOG_MIN_ISR", "1")
         .withEnv("KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR", "1")
-        .withStartupTimeout(Duration.ofMinutes(1L))
         .withReuse(true);
 
     protected String topic;
