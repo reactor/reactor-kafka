@@ -44,7 +44,7 @@ ext {
   log4jVersion = '2.13.3'
   junitVersion = '4.12'
   powermockVersion = '1.7.4'
-  testcontainersVersion = '1.15.2'
+  testcontainersVersion = '1.16.2'
 
   javadocLinks = ["https://docs.oracle.com/javase/8/docs/api/",
                   "https://kafka.apache.org/10/javadoc/",
