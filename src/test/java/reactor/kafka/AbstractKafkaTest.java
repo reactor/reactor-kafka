@@ -42,7 +42,6 @@ import org.junit.Rule;
 import org.junit.rules.TestName;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
-
 import reactor.core.publisher.Flux;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.sender.SenderOptions;
