@@ -18,6 +18,7 @@ package reactor.kafka.sender;
 
 import java.util.Map;
 
+import org.apache.kafka.clients.consumer.ConsumerGroupMetadata;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.common.TopicPartition;
@@ -53,8 +54,25 @@ public interface TransactionManager {
      * @param consumerGroupId The consumer group id for which offsets are updated
      * @return empty {@link Mono} that completes when the offsets have been sent to the consumer offsets topic.
      *         The offsets will be committed when the current transaction is committed.
+     * @deprecated in favor of #sendOffsets(Map<TopicPartition, OffsetAndMetadata>, ConsumerGroupMetadata)
      */
+    @Deprecated
     <T> Mono<T> sendOffsets(Map<TopicPartition, OffsetAndMetadata> offsets, String consumerGroupId);
+
+    /**
+     * Sends provided offsets to the consumer offsets topic. Offsets are updated within the current transaction.
+     * See {@link KafkaProducer#sendOffsetsToTransaction(Map, ConsumerGroupMetadata)} for details on updating consumer
+     * offsets within a transaction.
+     *
+     * @param offsets Consumer offsets to update
+     * @param metadata The consumer group metadata
+     * @return empty {@link Mono} that completes when the offsets have been sent to the consumer offsets topic.
+     *         The offsets will be committed when the current transaction is committed.
+     * @since 1.3.9
+     */
+    default <T> Mono<T> sendOffsets(Map<TopicPartition, OffsetAndMetadata> offsets, ConsumerGroupMetadata metadata) {
+        return sendOffsets(offsets, metadata.groupId());
+    }
 
     /**
      * Commits the current transaction. See {@link KafkaProducer#commitTransaction()} for details.

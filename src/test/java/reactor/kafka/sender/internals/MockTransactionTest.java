@@ -17,6 +17,7 @@
 package reactor.kafka.sender.internals;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerGroupMetadata;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -332,7 +333,7 @@ public class MockTransactionTest {
             this.consumerGroupId = consumerGroupId;
         }
         Mono<Void> commit() {
-            return transactionManager.sendOffsets(offsets, consumerGroupId).then(transactionManager.commit());
+            return transactionManager.sendOffsets(offsets, new ConsumerGroupMetadata(consumerGroupId)).then(transactionManager.commit());
         }
         Mono<Void> commitAndBegin() {
             return commit().then(transactionManager.begin());

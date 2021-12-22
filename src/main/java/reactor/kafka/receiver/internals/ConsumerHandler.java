@@ -71,7 +71,7 @@ class ConsumerHandler<K, V> {
 
     private final ReceiverOptions<K, V> receiverOptions;
 
-    private final Consumer<K, V> consumer;
+    final Consumer<K, V> consumer;
 
     private final Scheduler eventScheduler;
 
