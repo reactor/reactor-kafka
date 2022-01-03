@@ -41,7 +41,7 @@ ext {
   joptVersion = '4.9'
 
   slf4jVersion = '1.7.30'
-  log4jVersion = '2.15.0'
+  log4jVersion = '2.17.1'
   junitVersion = '4.12'
   powermockVersion = '1.7.4'
   testcontainersVersion = '1.16.2'
