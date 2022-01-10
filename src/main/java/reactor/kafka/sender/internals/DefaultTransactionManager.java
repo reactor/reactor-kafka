@@ -16,6 +16,7 @@
 
 package reactor.kafka.sender.internals;
 
+import org.apache.kafka.clients.consumer.ConsumerGroupMetadata;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.common.TopicPartition;
@@ -46,10 +47,21 @@ class DefaultTransactionManager<K, V> implements TransactionManager {
     }
 
     @Override
+    @Deprecated
     public <T> Mono<T> sendOffsets(Map<TopicPartition, OffsetAndMetadata> offsets, String consumerGroupId) {
         return producerMono.flatMap(producer -> Mono.fromRunnable(() -> {
             if (!offsets.isEmpty()) {
                 producer.sendOffsetsToTransaction(offsets, consumerGroupId);
+                DefaultKafkaSender.log.trace("Sent offsets to transaction for producer {}, offsets: {}", senderOptions.transactionalId(), offsets);
+            }
+        }));
+    }
+
+    @Override
+    public <T> Mono<T> sendOffsets(Map<TopicPartition, OffsetAndMetadata> offsets, ConsumerGroupMetadata metadata) {
+        return producerMono.flatMap(producer -> Mono.fromRunnable(() -> {
+            if (!offsets.isEmpty()) {
+                producer.sendOffsetsToTransaction(offsets, metadata);
                 DefaultKafkaSender.log.trace("Sent offsets to transaction for producer {}, offsets: {}", senderOptions.transactionalId(), offsets);
             }
         }));
