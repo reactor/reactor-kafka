@@ -16,7 +16,15 @@
 
 package reactor.kafka.receiver.internals;
 
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.common.TopicPartition;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import reactor.core.publisher.MonoSink;
+
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -24,17 +32,13 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.consumer.OffsetAndMetadata;
-import org.apache.kafka.common.TopicPartition;
-
-import reactor.core.publisher.MonoSink;
-
 class CommittableBatch {
 
+    private static final Logger log = LoggerFactory.getLogger(CommittableBatch.class);
+
     final Map<TopicPartition, Long> consumedOffsets = new HashMap<>();
-    private final Map<TopicPartition, List<Long>> uncommitted = new HashMap<>();
-    private final Map<TopicPartition, List<Long>> deferred = new HashMap<>();
+    final Map<TopicPartition, List<Long>> uncommitted = new HashMap<>();
+    final Map<TopicPartition, List<Long>> deferred = new HashMap<>();
     private final Map<TopicPartition, Long> latestOffsets = new HashMap<>();
     boolean outOfOrderCommits;
     private int batchSize;
@@ -42,8 +46,16 @@ class CommittableBatch {
 
     public synchronized int updateOffset(TopicPartition topicPartition, long offset) {
         if (this.outOfOrderCommits) {
-            this.deferred.computeIfAbsent(topicPartition, tp -> new LinkedList<>()).add(offset);
-            batchSize++;
+            List<Long> uncommittedThisTP = this.uncommitted.get(topicPartition);
+            if (uncommittedThisTP != null && uncommittedThisTP.contains(offset)) {
+                List<Long> offsets = this.deferred.computeIfAbsent(topicPartition, tp -> new LinkedList<>());
+                if (!offsets.contains(offset)) {
+                    offsets.add(offset);
+                    batchSize++;
+                }
+            } else {
+                log.debug("No uncomitted offset for {}@{}, partition revoked?", topicPartition, offset);
+            }
         } else if (!((Long) offset).equals(consumedOffsets.put(topicPartition, offset))) {
             batchSize++;
         }
@@ -65,7 +77,18 @@ class CommittableBatch {
     public synchronized void addUncommitted(ConsumerRecords<?, ?> records) {
         records.partitions().forEach(tp -> {
             List<Long> offsets = this.uncommitted.computeIfAbsent(tp, part -> new LinkedList<>());
-            records.records(tp).forEach(rec -> offsets.add(rec.offset()));
+            records.records(tp).forEach(rec -> {
+                if (!offsets.contains(rec.offset())) {
+                    offsets.add(rec.offset());
+                }
+            });
+        });
+    }
+
+    public synchronized void partitionsRevoked(Collection<TopicPartition> revoked) {
+        revoked.forEach(part -> {
+            this.uncommitted.remove(part);
+            this.deferred.remove(part);
         });
     }
 
@@ -147,8 +170,8 @@ class CommittableBatch {
     }
 
     public static class CommitArgs {
-        private Map<TopicPartition, OffsetAndMetadata> offsets;
-        private List<MonoSink<Void>> callbackEmitters;
+        private final Map<TopicPartition, OffsetAndMetadata> offsets;
+        private final List<MonoSink<Void>> callbackEmitters;
         CommitArgs(Map<TopicPartition, OffsetAndMetadata> offsets, List<MonoSink<Void>> callbackEmitters) {
             this.offsets = offsets;
             this.callbackEmitters = callbackEmitters;
