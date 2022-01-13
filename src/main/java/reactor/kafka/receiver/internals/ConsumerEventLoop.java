@@ -136,7 +136,7 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
 
     void onRequest(long toAdd) {
         if (log.isDebugEnabled()) {
-            log.debug("onRequest.toAdd {}", toAdd);
+            log.debug("onRequest.toAdd {}, paused {}", toAdd, pollEvent.isPaused());
         }
         Operators.addCap(REQUESTED, this, toAdd);
         if (pollEvent.isPaused()) {
@@ -235,6 +235,7 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
 
                         @Override
                         public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
+                            ConsumerEventLoop.this.pollEvent.commitBatch.partitionsRevoked(partitions);
                             ConsumerEventLoop.this.onPartitionsRevoked(partitions);
                         }
                     })
@@ -286,13 +287,13 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                                 log.debug("Resumed");
                             }
                         } else {
-                            if (!pausedByUs.getAndSet(true)) {
+                            if (checkAndSetPausedByUs()) {
                                 this.pausedByUser.addAll(consumer.paused());
                                 consumer.pause(consumer.assignment());
                                 log.debug("Paused - awaiting transaction");
                             }
                         }
-                    } else if (!pausedByUs.getAndSet(true)) {
+                    } else if (checkAndSetPausedByUs()) {
                         this.pausedByUser.addAll(consumer.paused());
                         consumer.pause(consumer.assignment());
                         if (pauseForDeferred) {
@@ -306,6 +307,7 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                     try {
                         records = consumer.poll(pollTimeout);
                     } catch (WakeupException e) {
+                        log.debug("Consumer woken");
                         records = ConsumerRecords.empty();
                     }
 
@@ -328,6 +330,18 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                     sink.emitError(e, ConsumerEventLoop.this);
                 }
             }
+        }
+
+        /*
+         * Race condition where onRequest was called to increase requested but we
+         * hadn't yet paused the consumer; wake immediately in this case.
+         */
+        private boolean checkAndSetPausedByUs() {
+            boolean pausedNow = !pausedByUs.getAndSet(true);
+            if (pausedNow && requested > 0) {
+                consumer.wakeup();
+            }
+            return pausedNow;
         }
 
         void schedule() {
