@@ -111,6 +111,12 @@ configure(allprojects) { project ->
 
   [compileJava, compileTestJava]*.options*.compilerArgs = ['-Xlint:all,-options']
 
+  java {
+    registerFeature('optional') {
+        usingSourceSet(sourceSets.main)
+    }
+  }
+
   test {
     maxHeapSize = "1024m"
     testLogging {
@@ -142,6 +148,7 @@ configure(allprojects) { project ->
   dependencies {
     api libs.kafka
     api libs.reactor.core
+    optionalApi libs.micrometer.core
 
     compileOnly libs.jsr305
     testCompileOnly libs.jsr305

@@ -16,11 +16,14 @@
 
 package reactor.kafka.receiver.internals;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.Test;
 import reactor.core.Disposable;
 import reactor.core.scheduler.Scheduler;
 import reactor.kafka.AbstractKafkaTest;
 import reactor.kafka.receiver.KafkaReceiver;
+import reactor.kafka.receiver.MicrometerConsumerListener;
 
 import java.time.Duration;
 import java.util.Collections;
@@ -38,11 +41,17 @@ public class KafkaReceiverInternalTest extends AbstractKafkaTest {
 
     @Test
     public void closeForeignThread() throws InterruptedException {
-        this.receiverOptions = this.receiverOptions.pollTimeout(Duration.ofSeconds(60));
+        MeterRegistry registry = new SimpleMeterRegistry();
+        MicrometerConsumerListener listener = new MicrometerConsumerListener(registry);
+        this.receiverOptions = this.receiverOptions.pollTimeout(Duration.ofSeconds(60))
+                .consumerListener(listener);
         DefaultKafkaReceiver<Integer, String> receiver = createReceiver();
         Disposable dispo = receiver.receive()
                 .doOnNext(rec -> { })
                 .subscribe();
+        assertThat(registry.get("kafka.consumer.request.total")
+                .tagKeys("reactor-kafka.id")
+                .functionCounter()).isNotNull();
         Scheduler sched = KafkaSchedulers.newEvent("closeForeignThread2");
         CountDownLatch latch = new CountDownLatch(1);
         sched.schedule(() -> {
@@ -55,6 +64,7 @@ public class KafkaReceiverInternalTest extends AbstractKafkaTest {
          * the error in the log before the fix.
          */
         sched.dispose();
+        assertThat(registry.getMeters()).isEmpty();
     }
 
     private DefaultKafkaReceiver<Integer, String> createReceiver() {

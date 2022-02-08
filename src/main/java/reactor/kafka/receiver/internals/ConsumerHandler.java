@@ -28,6 +28,7 @@ import reactor.core.scheduler.Scheduler;
 import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOffset;
 import reactor.kafka.receiver.ReceiverOptions;
+import reactor.kafka.receiver.ReceiverOptions.ConsumerListener;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
@@ -36,6 +37,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -65,6 +67,8 @@ class ConsumerHandler<K, V> {
         "endOffsets"
     ));
 
+    private static final AtomicInteger COUNTER = new AtomicInteger();
+
     final AtomicBoolean awaitingTransaction = new AtomicBoolean();
 
     private final AtmostOnceOffsets atmostOnceOffsets = new AtmostOnceOffsets();
@@ -80,6 +84,10 @@ class ConsumerHandler<K, V> {
     private final Sinks.Many<ConsumerRecords<K, V>> sink =
         Sinks.many().unicast().onBackpressureBuffer();
 
+    private final ConsumerListener consumerListener;
+
+    private final String consumerId;
+
     private Consumer<K, V> consumerProxy;
 
     ConsumerHandler(
@@ -90,6 +98,11 @@ class ConsumerHandler<K, V> {
     ) {
         this.receiverOptions = receiverOptions;
         this.consumer = consumer;
+        consumerListener = receiverOptions.consumerListener();
+        consumerId = "reactor-kafka-" + receiverOptions.groupId() + "-" + COUNTER.incrementAndGet();
+        if (consumerListener != null) {
+            consumerListener.consumerAdded(consumerId, consumer);
+        }
 
         eventScheduler = KafkaSchedulers.newEvent(receiverOptions.groupId());
 
@@ -111,6 +124,9 @@ class ConsumerHandler<K, V> {
     }
 
     public Mono<Void> close() {
+        if (consumerListener != null) {
+            consumerListener.consumerRemoved(consumerId, consumer);
+        }
         return consumerEventLoop.stop().doFinally(__ -> eventScheduler.dispose());
     }
 

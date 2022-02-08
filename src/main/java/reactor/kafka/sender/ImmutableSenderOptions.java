@@ -16,13 +16,6 @@
 
 package reactor.kafka.sender;
 
-import java.time.Duration;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Properties;
-import java.util.stream.Collectors;
-
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -30,6 +23,13 @@ import org.apache.kafka.common.serialization.Serializer;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.concurrent.Queues;
+
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Properties;
+import java.util.stream.Collectors;
 
 class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
 
@@ -40,6 +40,7 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
     private final Scheduler           scheduler;
     private final int                 maxInFlight;
     private final boolean             stopOnError;
+    private final ProducerListener    producerListener;
 
     ImmutableSenderOptions() {
         this(new HashMap<>());
@@ -66,6 +67,7 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
         scheduler = Schedulers.immediate();
         maxInFlight = Queues.SMALL_BUFFER_SIZE;
         stopOnError = true;
+        producerListener = null;
     }
 
     ImmutableSenderOptions(
@@ -75,7 +77,8 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
             Duration timeout,
             Scheduler scheduler,
             int flight,
-            boolean error
+            boolean error,
+            ProducerListener producerListener
     ) {
         this.properties = properties;
         keySerializer = serializer;
@@ -84,6 +87,7 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
         this.scheduler = scheduler;
         maxInFlight = flight;
         stopOnError = error;
+        this.producerListener = producerListener;
     }
 
     /**
@@ -125,7 +129,8 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
                 closeTimeout,
                 scheduler,
                 maxInFlight,
-                stopOnError
+                stopOnError,
+                producerListener
         );
     }
 
@@ -154,7 +159,8 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
                 closeTimeout,
                 scheduler,
                 maxInFlight,
-                stopOnError
+                stopOnError,
+                producerListener
         );
     }
 
@@ -183,7 +189,8 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
                 closeTimeout,
                 scheduler,
                 maxInFlight,
-                stopOnError
+                stopOnError,
+                producerListener
         );
     }
 
@@ -209,7 +216,8 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
                 closeTimeout,
                 Objects.requireNonNull(scheduler),
                 maxInFlight,
-                stopOnError
+                stopOnError,
+                producerListener
         );
     }
 
@@ -239,7 +247,8 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
                 closeTimeout,
                 scheduler,
                 maxInFlight,
-                stopOnError
+                stopOnError,
+                producerListener
         );
     }
 
@@ -276,7 +285,8 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
                 closeTimeout,
                 scheduler,
                 maxInFlight,
-                stopOnError
+                stopOnError,
+                producerListener
         );
     }
 
@@ -302,7 +312,27 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
                 timeout,
                 scheduler,
                 maxInFlight,
-                stopOnError
+                stopOnError,
+                producerListener
+        );
+    }
+
+    @Override
+    public ProducerListener producerListener() {
+        return producerListener;
+    }
+
+    @Override
+    public SenderOptions<K, V> producerListener(ProducerListener producerListener) {
+        return new ImmutableSenderOptions<>(
+                properties,
+                keySerializer,
+                valueSerializer,
+                closeTimeout,
+                scheduler,
+                maxInFlight,
+                stopOnError,
+                producerListener
         );
     }
 
@@ -315,7 +345,8 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
             closeTimeout,
             scheduler,
             maxInFlight,
-            stopOnError
+            stopOnError,
+            producerListener
         );
     }
 
@@ -330,7 +361,8 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
                 && Objects.equals(keySerializer, that.keySerializer)
                 && Objects.equals(valueSerializer, that.valueSerializer)
                 && Objects.equals(closeTimeout, that.closeTimeout)
-                && Objects.equals(scheduler, that.scheduler);
+                && Objects.equals(scheduler, that.scheduler)
+                && Objects.equals(producerListener, that.producerListener);
         }
         return false;
     }
