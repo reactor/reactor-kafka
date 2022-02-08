@@ -5,6 +5,7 @@ reactorCore = "3.4.27-SNAPSHOT"
 asciidoctor = "3.3.2"
 kafka-doc = "28"
 log4j = "2.17.1"
+micrometer = "1.10.3"
 powermock = "2.0.9"
 reactiveStreams = "1.0.3"
 
@@ -22,6 +23,7 @@ junit4 = "junit:junit:4.13.2"
 log4j-api = { module = "org.apache.logging.log4j:log4j-api", version.ref = "log4j" }
 log4j-core = { module = "org.apache.logging.log4j:log4j-core", version.ref = "log4j" }
 log4j-slf4j = { module = "org.apache.logging.log4j:log4j-slf4j-impl", version.ref = "log4j" }
+micrometer-core = { module = "io.micrometer:micrometer-core", version.ref = "micrometer" }
 powermock-core = { module = "org.powermock:powermock-core", version.ref = "powermock" }
 powermock-junit = { module = "org.powermock:powermock-module-junit4", version.ref = "powermock" }
 powermock-mockito = { module = "org.powermock:powermock-api-mockito2", version.ref = "powermock" }

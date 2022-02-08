@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -290,6 +290,16 @@ public interface ReceiverOptions<K, V> {
     ReceiverOptions<K, V> schedulerSupplier(Supplier<Scheduler> schedulerSupplier);
 
     /**
+     * Set a function that will be applied after a consumer is created but before it
+     * is subscribed.
+     * @return options instance with the updated function.
+     * @since 1.3.10
+     */
+    default ReceiverOptions<K, V> consumerListener(@Nullable ConsumerListener listener) {
+        return this;
+    }
+
+    /**
      * Returns the configuration properties of the underlying {@link KafkaConsumer}.
      * @return options to configure for Kafka consumer.
      */
@@ -471,6 +481,18 @@ public interface ReceiverOptions<K, V> {
     Supplier<Scheduler> schedulerSupplier();
 
     /**
+     * Returns the function that will be applied after a consumer is created but before it
+     * is subscribed.
+     * @return the function.
+     * @since 1.3.16
+     */
+    @Nullable
+    default ConsumerListener consumerListener() {
+        return null;
+    }
+
+
+    /**
      * Returns the {@link KafkaConsumer#subscribe(Collection, ConsumerRebalanceListener)},
      * {@link KafkaConsumer#subscribe(Pattern, ConsumerRebalanceListener)} or {@link KafkaConsumer#assign(Collection)}
      * operation corresponding to the subscription or assignment options configured for this instance.
@@ -492,4 +514,34 @@ public interface ReceiverOptions<K, V> {
         else
             throw new IllegalStateException("No subscriptions have been created");
     }
+
+    /**
+     * Called whenever a consumer is added or removed.
+     *
+     * @param <K> the key type.
+     * @param <V> the value type.
+     *
+     * @since 2.5
+     *
+     */
+    interface ConsumerListener {
+
+        /**
+         * A new consumer was created.
+         * @param id the consumer id.
+         * @param consumer the consumer.
+         */
+        default void consumerAdded(String id, org.apache.kafka.clients.consumer.Consumer<?, ?> consumer) {
+        }
+
+        /**
+         * An existing consumer was removed.
+         * @param id the consumer id.
+         * @param consumer the consumer.
+         */
+        default void consumerRemoved(String id, org.apache.kafka.clients.consumer.Consumer<?, ?> consumer) {
+        }
+
+    }
+
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package reactor.kafka.sender;
 
+import javax.naming.AuthenticationException;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -25,7 +26,6 @@ import reactor.core.scheduler.Scheduler;
 import reactor.util.annotation.NonNull;
 import reactor.util.annotation.Nullable;
 
-import javax.naming.AuthenticationException;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Properties;
@@ -188,6 +188,25 @@ public interface SenderOptions<K, V> {
     SenderOptions<K, V> closeTimeout(@NonNull Duration timeout);
 
     /**
+     * Returns the listener that will be applied after a producer is added and removed.
+     * @return the listener.
+     * @since 1.3.16
+     */
+    @Nullable
+    default ProducerListener producerListener() {
+        return null;
+    }
+
+    /**
+     * Set a listener that will be applied after a producer is added and removed.
+     * @return options instance with the updated listener.
+     * @since 1.3.16
+     */
+    default SenderOptions<K, V> producerListener(@Nullable ProducerListener listener) {
+        return this;
+    }
+
+    /**
      * Senders created from this options will be transactional if a transactional id is
      * configured using {@link ProducerConfig#TRANSACTIONAL_ID_CONFIG}. If transactional,
      * {@link KafkaProducer#initTransactions()} is invoked on the producer to initialize
@@ -215,4 +234,35 @@ public interface SenderOptions<K, V> {
     default boolean fatalException(@NonNull Throwable t) {
         return t instanceof AuthenticationException || t instanceof ProducerFencedException;
     }
+
+    /**
+     * Called whenever a producer is added or removed.
+     *
+     * @param <K> the key type.
+     * @param <V> the value type.
+     *
+     * @since 1.3.16
+     *
+     */
+    interface ProducerListener {
+
+        /**
+         * A new producer was created.
+         * @param id the producer id (factory bean name and client.id separated by a
+         * period).
+         * @param producer the producer.
+         */
+        default void producerAdded(String id, Producer<?, ?> producer) {
+        }
+
+        /**
+         * An existing producer was removed.
+         * @param id the producer id (factory bean name and client.id separated by a period).
+         * @param producer the producer.
+         */
+        default void producerRemoved(String id, Producer<?, ?> producer) {
+        }
+
+    }
+
 }
