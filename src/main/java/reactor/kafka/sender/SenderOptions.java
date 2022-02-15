@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -190,7 +190,7 @@ public interface SenderOptions<K, V> {
     /**
      * Returns the listener that will be applied after a producer is added and removed.
      * @return the listener.
-     * @since 1.3.10
+     * @since 1.3.11
      */
     @Nullable
     default ProducerListener producerListener() {
@@ -200,7 +200,7 @@ public interface SenderOptions<K, V> {
     /**
      * Set a listener that will be applied after a producer is added and removed.
      * @return options instance with the updated listener.
-     * @since 1.3.10
+     * @since 1.3.11
      */
     default SenderOptions<K, V> producerListener(@Nullable ProducerListener listener) {
         return this;
@@ -241,7 +241,7 @@ public interface SenderOptions<K, V> {
      * @param <K> the key type.
      * @param <V> the value type.
      *
-     * @since 1.3.10
+     * @since 1.3.11
      *
      */
     interface ProducerListener {

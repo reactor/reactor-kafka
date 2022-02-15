@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -257,7 +257,7 @@ public interface ReceiverOptions<K, V> {
      * Set a function that will be applied after a consumer is created but before it
      * is subscribed.
      * @return options instance with the updated function.
-     * @since 1.3.10
+     * @since 1.3.11
      */
     default ReceiverOptions<K, V> consumerListener(@Nullable ConsumerListener listener) {
         return this;
@@ -414,7 +414,7 @@ public interface ReceiverOptions<K, V> {
      * Returns the function that will be applied after a consumer is created but before it
      * is subscribed.
      * @return the function.
-     * @since 1.3.10
+     * @since 1.3.11
      */
     @Nullable
     default ConsumerListener consumerListener() {
@@ -451,7 +451,7 @@ public interface ReceiverOptions<K, V> {
      * @param <K> the key type.
      * @param <V> the value type.
      *
-     * @since 2.5
+     * @since 1.3.11
      *
      */
     interface ConsumerListener {
