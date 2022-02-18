@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2011-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,20 +19,23 @@ buildscript {
     mavenCentral()
     maven { url "https://repo.spring.io/plugins-release" }
   }
-  dependencies {
-    classpath 'org.asciidoctor:asciidoctorj-pdf:1.5.4'
-  }
 }
+
 plugins {
-  id 'org.asciidoctor.convert' version '1.5.12'
+//  alias(libs.plugins.asciidoctor.convert) apply false
+//  alias(libs.plugins.asciidoctor.pdf) apply false
+//  alias(libs.plugins.artifactory) apply false
+  id "org.asciidoctor.jvm.convert" version "3.3.2" apply false
+  id "org.asciidoctor.jvm.pdf" version "3.3.2" apply false
   id "com.jfrog.artifactory" version "4.15.2" apply false
 }
 
 ext {
-  gradleScriptDir = "${rootProject.projectDir}/gradle"
+  //NOTE: all dependencies, including plugins, are defined in gradle/libs.versions.toml catalog
 
-  //reactor core version is now defined in gradle.properties
+  //TODO add versions to catalog
   kafkaVersion = '2.8.1'
+  kafkaDocVersion = "28"
   scalaVersion = '2.11'
   metricsVersion = '2.2.0'
 
@@ -46,27 +49,28 @@ ext {
   powermockVersion = '1.7.4'
   testcontainersVersion = '1.16.2'
 
-  javadocLinks = ["https://docs.oracle.com/javase/8/docs/api/",
-                  "https://kafka.apache.org/10/javadoc/",
-                  "https://www.reactive-streams.org/reactive-streams-1.0.3-javadoc/",
-                  "https://projectreactor.io/docs/core/release/api/"] as String[]
-
-
+  jdk = JavaVersion.current().majorVersion
+  jdkJavadoc = "https://docs.oracle.com/javase/$jdk/docs/api/"
+  if (JavaVersion.current().isJava11Compatible()) {
+    jdkJavadoc = "https://docs.oracle.com/en/java/javase/$jdk/docs/api/"
+  }
+  javadocLinks = [
+    jdkJavadoc,
+//    "https://projectreactor.io/docs/core/${libs.versions.reactorCore.get()}/api/",
+    "https://projectreactor.io/docs/core/release/api/",
+//    "https://www.reactive-streams.org/reactive-streams-${libs.versions.reactiveStreams.get()}-javadoc/"
+    "https://www.reactive-streams.org/reactive-streams-1.0.3-javadoc/",
+//    "https://kafka.apache.org/${libs.versions.kafka.doc.get()}/javadoc/"
+    "https://kafka.apache.org/28/javadoc/"
+  ] as String[]
 }
 
-apply from: "$gradleScriptDir/doc.gradle"
-apply from: "$gradleScriptDir/releaser.gradle"
+apply from: "${rootDir}/gradle/asciidoc.gradle"
+apply from: "${rootDir}/gradle/releaser.gradle"
 
 configurations.all {
   // check for snapshot updates every time
   resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
-}
-
-allprojects {
-  apply plugin: 'jacoco'
-  jacoco {
-    toolVersion = '0.8.1'
-  }
 }
 
 configure(allprojects) { project ->
@@ -79,21 +83,17 @@ configure(allprojects) { project ->
     if (version.endsWith('-SNAPSHOT')) {
       maven { url 'https://repo.spring.io/snapshot' }
     }
-
-//    maven { url 'https://repository.apache.org/content/groups/staging/' }
-
   }
 
-  apply plugin: 'maven'
+  apply plugin: 'java-library'
   apply plugin: 'eclipse'
   apply plugin: 'idea'
   apply plugin: 'checkstyle'
-  apply plugin: 'java'
-  apply from: "$gradleScriptDir/setup.gradle"
+  apply plugin: 'jacoco'
+  apply from: "${rootDir}/gradle/setup.gradle"
+  apply from: "${rootDir}/gradle/javadoc.gradle"
 
   sourceCompatibility = targetCompatibility = 1.8
-
-  eclipse.project.natures += 'org.springframework.ide.eclipse.core.springnature'
 
   [compileJava, compileTestJava]*.options*.compilerArgs = ['-Xlint:all,-options']
 
@@ -126,26 +126,27 @@ configure(allprojects) { project ->
   jacocoTestReport.dependsOn test
 
   dependencies {
+    api "org.apache.kafka:kafka-clients:$kafkaVersion"
+    api "io.projectreactor:reactor-core:$reactorCoreVersion"
+
     compileOnly "com.google.code.findbugs:jsr305:$googleJsr305Version"
-    compile "org.apache.kafka:kafka-clients:$kafkaVersion"
-    compile "io.projectreactor:reactor-core:$reactorCoreVersion"
+    testCompileOnly "com.google.code.findbugs:jsr305:$googleJsr305Version"
 //    compile "org.slf4j:slf4j-api:$slf4jVersion"
 
-    testCompileOnly "com.google.code.findbugs:jsr305:$googleJsr305Version"
-    testCompile "junit:junit:$junitVersion"
+    testImplementation "junit:junit:$junitVersion"
 
-    testCompile "io.projectreactor:reactor-test:$reactorCoreVersion"
-    testCompile "org.powermock:powermock-module-junit4:$powermockVersion"
-    testCompile "org.powermock:powermock-core:$powermockVersion"
-    testCompile "org.powermock:powermock-api-mockito2:$powermockVersion"
-    testCompile "org.apache.logging.log4j:log4j-api:$log4jVersion"
-    testCompile "org.apache.logging.log4j:log4j-core:$log4jVersion"
-    testCompile "org.apache.logging.log4j:log4j-slf4j-impl:$log4jVersion"
+    testImplementation "io.projectreactor:reactor-test:$reactorCoreVersion"
+    testImplementation "org.powermock:powermock-module-junit4:$powermockVersion"
+    testImplementation "org.powermock:powermock-core:$powermockVersion"
+    testImplementation "org.powermock:powermock-api-mockito2:$powermockVersion"
+    testImplementation "org.apache.logging.log4j:log4j-api:$log4jVersion"
+    testImplementation "org.apache.logging.log4j:log4j-core:$log4jVersion"
+    testImplementation "org.apache.logging.log4j:log4j-slf4j-impl:$log4jVersion"
     // move to compile for 3.0.0 clients
-    testCompile "org.slf4j:slf4j-api:$slf4jVersion"
-    testCompile "org.testcontainers:kafka:$testcontainersVersion"
-    testCompile 'org.awaitility:awaitility:4.0.2'
-    testCompile 'org.assertj:assertj-core:3.16.1'
+    testCompileOnly "org.slf4j:slf4j-api:$slf4jVersion"
+    testImplementation "org.testcontainers:kafka:$testcontainersVersion"
+    testImplementation 'org.awaitility:awaitility:4.0.2'
+    testImplementation 'org.assertj:assertj-core:3.16.1'
   }
 }
 
@@ -167,12 +168,12 @@ project(':reactor-kafka-tools') {
   archivesBaseName = 'reactor-kafka-tools'
   description = 'Tools for Reactor Kafka'
   dependencies {
-    compile rootProject
-    compile "com.yammer.metrics:metrics-core:$metricsVersion"
-    compile "net.sf.jopt-simple:jopt-simple:$joptVersion"
-    compile "net.sourceforge.argparse4j:argparse4j:$argparseVersion"
+    implementation rootProject
+    implementation "com.yammer.metrics:metrics-core:$metricsVersion"
+    implementation "net.sf.jopt-simple:jopt-simple:$joptVersion"
+    implementation "net.sourceforge.argparse4j:argparse4j:$argparseVersion"
 
-    testCompile rootProject.sourceSets.test.output
+    testImplementation rootProject.sourceSets.test.output
   }
 
   test {
@@ -193,10 +194,10 @@ project(':reactor-kafka-samples') {
   archivesBaseName = 'reactor-kafka-samples'
   description = 'Samples for Reactor Kafka'
   dependencies {
-    compile rootProject
-    compile "com.yammer.metrics:metrics-core:$metricsVersion"
+    implementation rootProject
+    implementation "com.yammer.metrics:metrics-core:$metricsVersion"
 
-    testCompile rootProject.sourceSets.test.output
+    testImplementation rootProject.sourceSets.test.output
   }
 
   test {
