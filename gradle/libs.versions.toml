@@ -27,7 +27,6 @@ powermock-junit = { module = "org.powermock:powermock-module-junit4", version.re
 powermock-mockito = { module = "org.powermock:powermock-api-mockito2", version.ref = "powermock" }
 slf4j = "org.slf4j:slf4j-api:1.7.36"
 testcontainers = "org.testcontainers:kafka:1.16.3"
-yammerMetrics = "com.yammer.metrics:metrics-core:2.2.0" #no update since 2012?
 
 [plugins]
 artifactory = { id = "com.jfrog.artifactory", version = "4.27.1" }

@@ -148,7 +148,6 @@ project(':reactor-kafka-tools') {
   description = 'Tools for Reactor Kafka'
   dependencies {
     implementation rootProject
-    implementation libs.yammerMetrics
     implementation libs.jopt
     implementation libs.argparse4j
 
@@ -174,7 +173,6 @@ project(':reactor-kafka-samples') {
   description = 'Samples for Reactor Kafka'
   dependencies {
     implementation rootProject
-    implementation libs.yammerMetrics
 
     testImplementation rootProject.sourceSets.test.output
   }
