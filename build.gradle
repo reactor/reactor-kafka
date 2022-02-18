@@ -22,6 +22,7 @@ buildscript {
 }
 
 plugins {
+  id("jacoco-report-aggregation")
 //  alias(libs.plugins.asciidoctor.convert) apply false
 //  alias(libs.plugins.asciidoctor.pdf) apply false
 //  alias(libs.plugins.artifactory) apply false
@@ -213,27 +214,4 @@ project(':reactor-kafka-samples') {
   }
 }
 
-
-
-// aggregates jacoco results from the top-level project and subprojects with jacoco enabled and generates a report
-task jacocoRootTestReport(type: JacocoReport) {
-
-  def jacocoProjects = allprojects.findAll { it.test.jacoco.enabled }
-
-  logger.info('Aggregating JaCoCo Coverage from projects : {}', jacocoProjects)
-  getExecutionData().from(files(jacocoProjects.jacocoTestReport.executionData))
-  getSourceDirectories().from(files(jacocoProjects.sourceSets.main.allSource.srcDirs))
-  getClassDirectories().from(files(jacocoProjects.sourceSets.main.output))
-
-  reports {
-    xml.enabled true
-    html.enabled true
-  }
-
-  onlyIf = { true }
-  doFirst {
-    getExecutionData().from(files(executionData.findAll { it.exists() }))
-  }
-}
-jacocoRootTestReport.dependsOn allprojects.test
-check.dependsOn jacocoRootTestReport
+// Gradle 7.4 supports aggregated jacoco reports via "jacoco-report-aggregation" plugin
