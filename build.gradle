@@ -29,6 +29,8 @@ plugins {
 }
 
 ext {
+  isCiServer = System.getenv().containsKey("CI") //doesn't detect Bamboo, but eh
+
   jdk = JavaVersion.current().majorVersion
   jdkJavadoc = "https://docs.oracle.com/javase/$jdk/docs/api/"
   if (JavaVersion.current().isJava11Compatible()) {
