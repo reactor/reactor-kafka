@@ -231,9 +231,19 @@ public interface ReceiverOptions<K, V> {
      * if the commit does not succeed after these attempts.
      *
      * @return options instance with updated number of commit attempts
+     * @see #commitRetryInterval()
      */
     @NonNull
     ReceiverOptions<K, V> maxCommitAttempts(int maxAttempts);
+
+    /**
+     * Configures the retry commit interval for commits that fail with non-fatal
+     * {@link RetriableCommitFailedException}.
+     *
+     * @return options instance with new commit retry interval
+     */
+    @NonNull
+    ReceiverOptions<K, V> commitRetryInterval(Duration commitRetryInterval);
 
     /**
      * Set to greater than 0 to enable out of order commit sequencing. If the number of
@@ -381,6 +391,15 @@ public interface ReceiverOptions<K, V> {
      */
     @NonNull
     int maxCommitAttempts();
+
+    /**
+     * Returns the configured retry commit interval for commits that fail with non-fatal
+     * {@link RetriableCommitFailedException}s.
+     * @return commit interval duration
+     * @see ReceiverOptions#maxCommitAttempts()
+     */
+    @NonNull
+    Duration commitRetryInterval();
 
     /**
      * When greater than 0, enables out of order commit sequencing. If the number of

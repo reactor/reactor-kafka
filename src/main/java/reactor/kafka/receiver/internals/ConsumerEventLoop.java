@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2020-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -274,7 +274,7 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                     long r = requested;
                     boolean pauseForDeferred = this.maxDeferredCommits > 0
                         && this.commitBatch.deferredCount() >= this.maxDeferredCommits;
-                    if (pauseForDeferred) {
+                    if (pauseForDeferred || commitEvent.retrying) {
                         r = 0;
                     }
                     if (r > 0) {
@@ -298,6 +298,8 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                         consumer.pause(consumer.assignment());
                         if (pauseForDeferred) {
                             log.debug("Paused - too many deferred commits");
+                        } else if (commitEvent.retrying) {
+                            log.debug("Paused - commits are retrying");
                         } else {
                             log.debug("Paused - back pressure");
                         }
@@ -338,7 +340,7 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
          */
         private boolean checkAndSetPausedByUs() {
             boolean pausedNow = !pausedByUs.getAndSet(true);
-            if (pausedNow && requested > 0) {
+            if (pausedNow && requested > 0 && !commitEvent.retrying) {
                 consumer.wakeup();
             }
             return pausedNow;
@@ -360,6 +362,7 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
         private final AtomicBoolean isPending = new AtomicBoolean();
         private final AtomicInteger inProgress = new AtomicInteger();
         private final AtomicInteger consecutiveCommitFailures = new AtomicInteger();
+        private boolean retrying;
 
         @Override
         public void run() {
@@ -372,6 +375,9 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                     if (!commitArgs.offsets().isEmpty()) {
                         switch (ackMode) {
                             case ATMOST_ONCE:
+                                if (log.isDebugEnabled()) {
+                                    log.debug("Sync committing: " + commitArgs.offsets());
+                                }
                                 consumer.commitSync(commitArgs.offsets());
                                 handleSuccess(commitArgs, commitArgs.offsets());
                                 atmostOnceOffsets.onCommit(commitArgs.offsets());
@@ -383,6 +389,9 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                             case MANUAL_ACK:
                                 inProgress.incrementAndGet();
                                 try {
+                                    if (log.isDebugEnabled()) {
+                                        log.debug("Async committing: " + commitArgs.offsets());
+                                    }
                                     consumer.commitAsync(commitArgs.offsets(), (offsets, exception) -> {
                                         inProgress.decrementAndGet();
                                         if (exception == null)
@@ -410,13 +419,14 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
         void runIfRequired(boolean force) {
             if (force)
                 isPending.set(true);
-            if (isPending.get())
+            if (!this.retrying && isPending.get())
                 run();
         }
 
         private void handleSuccess(CommittableBatch.CommitArgs commitArgs, Map<TopicPartition, OffsetAndMetadata> offsets) {
             if (!offsets.isEmpty())
                 consecutiveCommitFailures.set(0);
+            pollTaskAfterRetry();
             if (commitArgs.callbackEmitters() != null) {
                 for (MonoSink<Void> emitter : commitArgs.callbackEmitters()) {
                     emitter.success();
@@ -430,6 +440,8 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                 consumer != null &&
                 consecutiveCommitFailures.incrementAndGet() < receiverOptions.maxCommitAttempts();
             if (!mayRetry) {
+                log.debug("Cannot retry");
+                pollTaskAfterRetry();
                 List<MonoSink<Void>> callbackEmitters = commitArgs.callbackEmitters();
                 if (callbackEmitters != null && !callbackEmitters.isEmpty()) {
                     isPending.set(false);
@@ -442,14 +454,27 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                 }
             } else {
                 commitBatch.restoreOffsets(commitArgs, true);
-                log.warn("Commit failed with exception" + exception + ", retries remaining " + (receiverOptions.maxCommitAttempts() - consecutiveCommitFailures.get()));
+                log.warn("Commit failed with exception" + exception + ", retries remaining "
+                            + (receiverOptions.maxCommitAttempts() - consecutiveCommitFailures.get()));
                 isPending.set(true);
+                this.retrying = true;
+                pollEvent.schedule();
+                eventScheduler.schedule(this, receiverOptions.commitRetryInterval().toMillis(), TimeUnit.MILLISECONDS);
+            }
+        }
+
+        private void pollTaskAfterRetry() {
+            if (log.isTraceEnabled()) {
+                log.trace("after retry " + this.retrying);
+            }
+            if (this.retrying) {
+                this.retrying = false;
                 pollEvent.schedule();
             }
         }
 
         void scheduleIfRequired() {
-            if (isActive.get() && isPending.compareAndSet(false, true)) {
+            if (isActive.get() && !this.retrying && isPending.compareAndSet(false, true)) {
                 eventScheduler.schedule(this);
             }
         }

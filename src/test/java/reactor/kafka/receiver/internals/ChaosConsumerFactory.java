@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2020-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -60,7 +60,7 @@ public class ChaosConsumerFactory extends ConsumerFactory {
                                     break;
                                 }
                                 @SuppressWarnings("rawtypes")
-                                Map<TopicPartition, OffsetAndMetadata> offsets = new HashMap<>((Map) args[0]);
+                                Map<TopicPartition, OffsetAndMetadata> offsets = new HashMap<>();
                                 offsets.put(NON_EXISTENT_PARTITION, new OffsetAndMetadata(1L));
                                 args[0] = offsets;
                         }

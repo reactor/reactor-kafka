@@ -24,6 +24,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.record.TimestampType;
 import org.junit.Test;
+import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Sinks.Many;
 import reactor.core.scheduler.Scheduler;
 import reactor.kafka.receiver.ReceiverOptions;
@@ -40,13 +41,13 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 /**
  * @author Gary Russell
@@ -79,30 +80,38 @@ public class ConsumerEventLoopTest {
         Collection<TopicPartition> partitions = new ArrayList<>();
         TopicPartition tp = new TopicPartition("test", 0);
         partitions.add(tp);
-        AtomicReference<ConsumerRebalanceListener> rebal = new AtomicReference<>();
-        willAnswer(inv -> {
-            rebal.set(inv.getArgument(1));
-            rebal.get().onPartitionsAssigned(partitions);
-            return null;
-        }).given(consumer).subscribe(eq(topics), any());
         Map<TopicPartition, List<ConsumerRecord>> record = new HashMap<>();
         record.put(tp, Collections.singletonList(
                 new ConsumerRecord("test", 0, 0, 0, TimestampType.NO_TIMESTAMP_TYPE, 0, 0, 0, null, null)));
         ConsumerRecords records = new ConsumerRecords(record);
         CountDownLatch latch = new CountDownLatch(2);
+        AtomicBoolean paused = new AtomicBoolean();
         willAnswer(inv -> {
             Thread.sleep(10);
             latch.countDown();
+            if (paused.get()) {
+                return ConsumerRecords.empty();
+            }
             return records;
         }).given(consumer).poll(any());
+        willAnswer(inv -> {
+            paused.set(true);
+            return null;
+        }).given(consumer).pause(any());
+        willAnswer(inv -> {
+            paused.set(false);
+            return null;
+        }).given(consumer).resume(any());
         loop.onRequest(1);
         loop.onRequest(1);
         CommittableBatch batch = loop.commitEvent.commitBatch;
         assertThat(latch.await(10, TimeUnit.SECONDS)).isTrue();
         assertThat(batch.uncommitted).hasSize(1);
         assertThat(batch.uncommitted.get(tp)).hasSize(1);
-        rebal.get().onPartitionsRevoked(partitions);
-        assertThat(batch.uncommitted).hasSize(0);
+        ArgumentCaptor<ConsumerRebalanceListener> rebal = ArgumentCaptor.forClass(ConsumerRebalanceListener.class);
+        verify(consumer).subscribe(any(Collection.class), rebal.capture());
+        rebal.getValue().onPartitionsRevoked(partitions);
+        await().until(() -> batch.uncommitted.size() == 0);
         assertThat(batch.deferred).hasSize(0);
     }
 
