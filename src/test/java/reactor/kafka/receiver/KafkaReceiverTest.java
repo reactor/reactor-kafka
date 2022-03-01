@@ -670,7 +670,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         testAutoCommitFailureScenarios(false, count, 2, 0, 10);
 
         Flux<? extends ConsumerRecord<Integer, String>> flux = createReceiver().receiveAutoAck().concatMap(r -> r);
-        sendReceiveWithRedelivery(flux, count + 4, count, 3, 5);
+        sendReceiveWithRedelivery(flux, count, count, 3, 5);
     }
 
     @Test

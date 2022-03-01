@@ -241,6 +241,7 @@ public interface ReceiverOptions<K, V> {
      * {@link RetriableCommitFailedException}.
      *
      * @return options instance with new commit retry interval
+     * @since 1.3.11
      */
     @NonNull
     ReceiverOptions<K, V> commitRetryInterval(Duration commitRetryInterval);
@@ -396,6 +397,7 @@ public interface ReceiverOptions<K, V> {
      * Returns the configured retry commit interval for commits that fail with non-fatal
      * {@link RetriableCommitFailedException}s.
      * @return commit interval duration
+     * @since 1.3.11
      * @see ReceiverOptions#maxCommitAttempts()
      */
     @NonNull
