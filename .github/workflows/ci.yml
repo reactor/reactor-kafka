@@ -8,15 +8,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579 # renovate: tag=v2
-        with:
-          fetch-depth: 0 #needed by spotless
+      with:
+        fetch-depth: 0 #needed by spotless
     - uses: actions/setup-java@f0bb91606209742fe3ea40199be2f3ef195ecabf # renovate: tag=v2
       with:
         distribution: 'temurin'
         java-version: 8
     - uses: gradle/gradle-build-action@937999e9cc2425eddc7fd62d1053baf041147db7 # renovate: tag=v2
       name: spotless (license header)
-      if: always()
       with:
         # the --continue helps spotless find both java and gradle issues
         arguments: spotlessCheck -PspotlessFrom=origin/${{ github.base_ref }} --continue
