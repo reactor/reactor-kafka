@@ -26,6 +26,7 @@ plugins {
   alias(libs.plugins.asciidoctor.convert) apply false
   alias(libs.plugins.asciidoctor.pdf) apply false
   alias(libs.plugins.artifactory) apply false
+  alias(libs.plugins.spotless)
 }
 
 ext {
@@ -52,6 +53,38 @@ apply from: "${rootDir}/gradle/releaser.gradle"
 configurations.all {
   // check for snapshot updates every time
   resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+}
+
+spotless {
+  if (project.hasProperty("spotlessFrom")) {
+    if (project.spotlessFrom == "ALL") {
+      println "[Spotless] Ratchet deactivated"
+    }
+    else {
+      println "[Spotless] Ratchet from $project.spotlessFrom"
+      ratchetFrom project.spotlessFrom
+    }
+  }
+  else if (isCiServer) {
+    println "[Spotless] CI detected without explicit branch, not enforcing check"
+    enforceCheck false
+  }
+  else {
+    String spotlessBranch = "origin/main"
+    println "[Spotless] Local run detected, ratchet from $spotlessBranch"
+    ratchetFrom spotlessBranch
+  }
+  java {
+    licenseHeaderFile('codequality/spotless/licenseSlashstarStyle.txt')
+  }
+  format 'gradle', {
+    target '**/*.gradle'
+    targetExclude 'settings.gradle'
+    //find start of gradle files by looking for either `import`
+    // or start of blocks like `javadoc{` or `configure(rootProject) {`...
+    licenseHeaderFile('codequality/spotless/licenseSlashstarStyle.txt',
+      "^\\w+(\\(\\w+\\))?\\s?\\{\$|import")
+  }
 }
 
 configure(allprojects) { project ->
@@ -91,8 +124,8 @@ configure(allprojects) { project ->
   }
 
   checkstyle {
-    configFile = new File(rootDir, "checkstyle/checkstyle.xml")
-    configProperties = [suppressionsXml: "$rootDir/checkstyle/suppressions.xml"]
+    configFile = new File(rootDir, "codequality/checkstyle/checkstyle.xml")
+    configProperties = [suppressionsXml: "$rootDir/codequality/checkstyle/suppressions.xml"]
   }
   test.dependsOn('checkstyleMain', 'checkstyleTest')
 

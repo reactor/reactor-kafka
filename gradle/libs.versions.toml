@@ -32,3 +32,4 @@ testcontainers = "org.testcontainers:kafka:1.16.3"
 artifactory = { id = "com.jfrog.artifactory", version = "4.27.1" }
 asciidoctor-convert = { id = "org.asciidoctor.jvm.convert", version.ref = "asciidoctor" }
 asciidoctor-pdf = { id = "org.asciidoctor.jvm.pdf", version.ref = "asciidoctor" }
+spotless = { id = "com.diffplug.spotless", version = "6.3.0" }
