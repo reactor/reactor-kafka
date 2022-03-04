@@ -3,22 +3,9 @@ on:
     pull_request: {}
 permissions: read-all
 jobs:
-  preliminary:
-    name: preliminary sanity checks
-    runs-on: ubuntu-20.04
-    steps:
-      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579 # renovate: tag=v2
-        with:
-          fetch-depth: 0 #needed by spotless
-      - uses: actions/setup-java@f0bb91606209742fe3ea40199be2f3ef195ecabf # renovate: tag=v2
-        with:
-          distribution: 'temurin'
-          java-version: 8
-
   build:
     name: build
     runs-on: ubuntu-latest
-    needs: prepare
     steps:
     - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579 # renovate: tag=v2
         with:
