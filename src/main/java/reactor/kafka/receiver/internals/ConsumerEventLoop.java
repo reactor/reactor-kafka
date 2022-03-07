@@ -274,7 +274,7 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                     long r = requested;
                     boolean pauseForDeferred = this.maxDeferredCommits > 0
                         && this.commitBatch.deferredCount() >= this.maxDeferredCommits;
-                    if (pauseForDeferred || commitEvent.retrying) {
+                    if (pauseForDeferred || commitEvent.retrying.get()) {
                         r = 0;
                     }
                     if (r > 0) {
@@ -298,7 +298,7 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                         consumer.pause(consumer.assignment());
                         if (pauseForDeferred) {
                             log.debug("Paused - too many deferred commits");
-                        } else if (commitEvent.retrying) {
+                        } else if (commitEvent.retrying.get()) {
                             log.debug("Paused - commits are retrying");
                         } else {
                             log.debug("Paused - back pressure");
@@ -340,7 +340,7 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
          */
         private boolean checkAndSetPausedByUs() {
             boolean pausedNow = !pausedByUs.getAndSet(true);
-            if (pausedNow && requested > 0 && !commitEvent.retrying) {
+            if (pausedNow && requested > 0 && !commitEvent.retrying.get()) {
                 consumer.wakeup();
             }
             return pausedNow;
@@ -362,7 +362,7 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
         private final AtomicBoolean isPending = new AtomicBoolean();
         private final AtomicInteger inProgress = new AtomicInteger();
         private final AtomicInteger consecutiveCommitFailures = new AtomicInteger();
-        private boolean retrying;
+        private final AtomicBoolean retrying = new AtomicBoolean();
 
         @Override
         public void run() {
@@ -419,7 +419,7 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
         void runIfRequired(boolean force) {
             if (force)
                 isPending.set(true);
-            if (!this.retrying && isPending.get())
+            if (!this.retrying.get() && isPending.get())
                 run();
         }
 
@@ -457,7 +457,7 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                 log.warn("Commit failed with exception" + exception + ", retries remaining "
                             + (receiverOptions.maxCommitAttempts() - consecutiveCommitFailures.get()));
                 isPending.set(true);
-                this.retrying = true;
+                this.retrying.set(true);
                 pollEvent.schedule();
                 eventScheduler.schedule(this, receiverOptions.commitRetryInterval().toMillis(), TimeUnit.MILLISECONDS);
             }
@@ -465,16 +465,15 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
 
         private void pollTaskAfterRetry() {
             if (log.isTraceEnabled()) {
-                log.trace("after retry " + this.retrying);
+                log.trace("after retry " + this.retrying.get());
             }
-            if (this.retrying) {
-                this.retrying = false;
+            if (this.retrying.getAndSet(false)) {
                 pollEvent.schedule();
             }
         }
 
         void scheduleIfRequired() {
-            if (isActive.get() && !this.retrying && isPending.compareAndSet(false, true)) {
+            if (isActive.get() && !this.retrying.get() && isPending.compareAndSet(false, true)) {
                 eventScheduler.schedule(this);
             }
         }
