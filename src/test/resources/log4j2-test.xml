@@ -27,7 +27,7 @@
     <Logger name="org.apache.kafka.clients.producer.ProducerConfig" level="warn"/>
     <Logger name="org.apache.kafka.clients.consumer.ConsumerConfig" level="warn"/>
     <Logger name="reactor" level="info"/>
-    <Logger name="reactor.kafka" level="trace"/>
+    <Logger name="reactor.kafka" level="off"/>
     <Logger name="reactor.Flux.Interval" level="off"/>
     <Logger name="reactor.Flux.FlatMap.10" level="off"/>
     <Logger name="reactor.Flux.Map.8" level="off"/>
