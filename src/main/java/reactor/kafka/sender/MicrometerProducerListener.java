@@ -19,8 +19,8 @@ package reactor.kafka.sender;
 import io.micrometer.core.instrument.ImmutableTag;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tag;
-import io.micrometer.core.instrument.binder.kafka.KafkaClientMetrics;
 import org.apache.kafka.clients.producer.Producer;
+import reactor.kafka.utils.MicrometerUtils;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -41,7 +41,7 @@ public class MicrometerProducerListener implements SenderOptions.ProducerListene
 
     private final List<Tag> tags;
 
-    private final Map<String, KafkaClientMetrics> metrics = new HashMap<>();
+    private final Map<String, Object> metrics = new HashMap<>();
 
     /**
      * Construct an instance with the provided registry.
@@ -67,16 +67,19 @@ public class MicrometerProducerListener implements SenderOptions.ProducerListene
         if (!this.metrics.containsKey(id)) {
             List<Tag> producerTags = new ArrayList<>(this.tags);
             producerTags.add(new ImmutableTag("reactor-kafka.id", id));
-            this.metrics.put(id, new KafkaClientMetrics(producer, producerTags));
-            this.metrics.get(id).bindTo(this.meterRegistry);
+            Object metrics = MicrometerUtils.bindTo(producer, producerTags, this.meterRegistry);
+            if (metrics != null) {
+                this.metrics.put(id, metrics);
+            }
+            this.metrics.put(id, metrics);
         }
     }
 
     @Override
     public synchronized void producerRemoved(String id, Producer<?, ?> producer) {
-        KafkaClientMetrics removed = this.metrics.remove(id);
+        Object removed = this.metrics.remove(id);
         if (removed != null) {
-            removed.close();
+            MicrometerUtils.close(removed);
         }
     }
 
