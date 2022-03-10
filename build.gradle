@@ -149,6 +149,7 @@ configure(allprojects) { project ->
     api libs.kafka
     api libs.reactor.core
     optionalApi libs.micrometer.core
+// 2.0.x   optionalApi libs.micrometer.binders
 
     compileOnly libs.jsr305
     testCompileOnly libs.jsr305
