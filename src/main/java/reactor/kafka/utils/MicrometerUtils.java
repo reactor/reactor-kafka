@@ -71,15 +71,6 @@ public final class MicrometerUtils {
     }
 
     /**
-     * Return the KafkaClientMetrics class
-     * @return the class.
-     */
-    @Nullable
-    public static Class<?> metrics() {
-        return METRICS;
-    }
-
-    /**
      * Bind the target to the registry.
      * @param consumerTags
      */
