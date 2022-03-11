@@ -743,6 +743,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
             atmostOnceCommitAheadSize,
             maxCommitAttempts,
             commitRetryInterval,
+            maxDeferredCommits,
             subscribeTopics,
             assignTopicPartitions,
             subscribePattern
@@ -767,6 +768,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 && Objects.equals(atmostOnceCommitAheadSize, that.atmostOnceCommitAheadSize)
                 && Objects.equals(maxCommitAttempts, that.maxCommitAttempts)
                 && Objects.equals(commitRetryInterval, that.commitRetryInterval)
+                && Objects.equals(maxDeferredCommits, that.maxDeferredCommits)
                 && Objects.equals(subscribeTopics, that.subscribeTopics)
                 && Objects.equals(assignTopicPartitions, that.assignTopicPartitions)
                 && Objects.equals(subscribePattern, that.subscribePattern);
