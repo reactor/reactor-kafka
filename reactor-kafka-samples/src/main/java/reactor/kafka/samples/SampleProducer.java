@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,8 @@
 
 package reactor.kafka.samples;
 
-import java.text.SimpleDateFormat;
-import java.util.Date;
+import java.time.format.DateTimeFormatter;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -55,7 +55,7 @@ public class SampleProducer {
     private static final String TOPIC = "demo-topic";
 
     private final KafkaSender<Integer, String> sender;
-    private final SimpleDateFormat dateFormat;
+    private final DateTimeFormatter dateFormat;
 
     public SampleProducer(String bootstrapServers) {
 
@@ -68,7 +68,7 @@ public class SampleProducer {
         SenderOptions<Integer, String> senderOptions = SenderOptions.create(props);
 
         sender = KafkaSender.create(senderOptions);
-        dateFormat = new SimpleDateFormat("HH:mm:ss:SSS z dd MMM yyyy");
+        dateFormat = DateTimeFormatter.ofPattern("HH:mm:ss:SSS z dd MMM yyyy");
     }
 
     public void sendMessages(String topic, int count, CountDownLatch latch) throws InterruptedException {
@@ -77,12 +77,13 @@ public class SampleProducer {
               .doOnError(e -> log.error("Send failed", e))
               .subscribe(r -> {
                   RecordMetadata metadata = r.recordMetadata();
+                  Instant timestamp = Instant.ofEpochMilli(metadata.timestamp());
                   System.out.printf("Message %d sent successfully, topic-partition=%s-%d offset=%d timestamp=%s\n",
                       r.correlationMetadata(),
                       metadata.topic(),
                       metadata.partition(),
                       metadata.offset(),
-                      dateFormat.format(new Date(metadata.timestamp())));
+                      dateFormat.format(timestamp));
                   latch.countDown();
               });
     }

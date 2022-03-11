@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,9 @@
 
 package reactor.kafka.samples;
 
-import java.text.SimpleDateFormat;
+import java.time.format.DateTimeFormatter;
+import java.time.Instant;
 import java.util.Collections;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -57,7 +57,7 @@ public class SampleConsumer {
     private static final String TOPIC = "demo-topic";
 
     private final ReceiverOptions<Integer, String> receiverOptions;
-    private final SimpleDateFormat dateFormat;
+    private final DateTimeFormatter dateFormat;
 
     public SampleConsumer(String bootstrapServers) {
 
@@ -69,7 +69,7 @@ public class SampleConsumer {
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         receiverOptions = ReceiverOptions.create(props);
-        dateFormat = new SimpleDateFormat("HH:mm:ss:SSS z dd MMM yyyy");
+        dateFormat = DateTimeFormatter.ofPattern("HH:mm:ss:SSS z dd MMM yyyy");
     }
 
     public Disposable consumeMessages(String topic, CountDownLatch latch) {
@@ -80,10 +80,11 @@ public class SampleConsumer {
         Flux<ReceiverRecord<Integer, String>> kafkaFlux = KafkaReceiver.create(options).receive();
         return kafkaFlux.subscribe(record -> {
             ReceiverOffset offset = record.receiverOffset();
+            Instant timestamp = Instant.ofEpochMilli(record.timestamp());
             System.out.printf("Received message: topic-partition=%s offset=%d timestamp=%s key=%d value=%s\n",
                     offset.topicPartition(),
                     offset.offset(),
-                    dateFormat.format(new Date(record.timestamp())),
+                    dateFormat.format(timestamp),
                     record.key(),
                     record.value());
             offset.acknowledge();
