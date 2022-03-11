@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,13 @@
 
 package reactor.kafka.receiver;
 
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.config.ConfigException;
+import org.apache.kafka.common.serialization.Deserializer;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
+
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -29,13 +36,6 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.config.ConfigException;
-import org.apache.kafka.common.serialization.Deserializer;
-import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
 
 class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
 
@@ -691,6 +691,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
             commitBatchSize,
             atmostOnceCommitAheadSize,
             maxCommitAttempts,
+            maxDeferredCommits,
             subscribeTopics,
             assignTopicPartitions,
             subscribePattern
@@ -714,6 +715,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 && Objects.equals(commitBatchSize, that.commitBatchSize)
                 && Objects.equals(atmostOnceCommitAheadSize, that.atmostOnceCommitAheadSize)
                 && Objects.equals(maxCommitAttempts, that.maxCommitAttempts)
+                && Objects.equals(maxDeferredCommits, that.maxDeferredCommits)
                 && Objects.equals(subscribeTopics, that.subscribeTopics)
                 && Objects.equals(assignTopicPartitions, that.assignTopicPartitions)
                 && Objects.equals(subscribePattern, that.subscribePattern);
