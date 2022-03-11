@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -231,9 +231,20 @@ public interface ReceiverOptions<K, V> {
      * if the commit does not succeed after these attempts.
      *
      * @return options instance with updated number of commit attempts
+     * @see #commitRetryInterval()
      */
     @NonNull
     ReceiverOptions<K, V> maxCommitAttempts(int maxAttempts);
+
+    /**
+     * Configures the retry commit interval for commits that fail with non-fatal
+     * {@link RetriableCommitFailedException}.
+     *
+     * @return options instance with new commit retry interval
+     * @since 1.3.11
+     */
+    @NonNull
+    ReceiverOptions<K, V> commitRetryInterval(Duration commitRetryInterval);
 
     /**
      * Set to greater than 0 to enable out of order commit sequencing. If the number of
@@ -381,6 +392,16 @@ public interface ReceiverOptions<K, V> {
      */
     @NonNull
     int maxCommitAttempts();
+
+    /**
+     * Returns the configured retry commit interval for commits that fail with non-fatal
+     * {@link RetriableCommitFailedException}s.
+     * @return commit interval duration
+     * @since 1.3.11
+     * @see ReceiverOptions#maxCommitAttempts()
+     */
+    @NonNull
+    Duration commitRetryInterval();
 
     /**
      * When greater than 0, enables out of order commit sequencing. If the number of

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -655,10 +655,11 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     @Test
     public void autoCommitRetry() throws Exception {
         int count = 5;
+        this.requestTimeoutMillis = 10_000;
         testAutoCommitFailureScenarios(true, count, 10, 0, 2);
 
         Flux<? extends ConsumerRecord<Integer, String>> flux = createReceiver().receiveAutoAck().concatMap(r -> r);
-        sendReceive(flux, count, count, count, count);
+        sendReceive(flux, count + 4, count, count + 4, count);
     }
 
     @Test
@@ -677,54 +678,76 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         int count = 5;
         receiverOptions = receiverOptions.consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
                                          .maxCommitAttempts(2);
+        this.requestTimeoutMillis = 10_000;
         testAutoCommitFailureScenarios(true, count, 2, 0, Integer.MAX_VALUE);
 
         Flux<? extends ConsumerRecord<Integer, String>> flux = createReceiver().receive();
-        sendReceiveWithRedelivery(flux, count, count, 2, 5);
+        sendReceiveWithRedelivery(flux, count + 4, count, 2, 5);
     }
 
     private void testAutoCommitFailureScenarios(boolean retriable, int count, int maxAttempts,
             int errorInjectIndex, int errorClearIndex) throws Exception {
-        AtomicBoolean failed = new AtomicBoolean();
+        AtomicInteger failed = new AtomicInteger();
         receiverOptions = receiverOptions.commitBatchSize(1)
                                .commitInterval(Duration.ofMillis(1000))
                                .maxCommitAttempts(maxAttempts)
                                .closeTimeout(Duration.ofMillis(1000))
-                               .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+                               .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
+                               .consumerProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 1);
 
 
         ChaosConsumerFactory consumerFactory = new ChaosConsumerFactory();
         DefaultKafkaReceiver<Integer, String> receiver = createReceiver(consumerFactory);
         TestableReceiver testReceiver = new TestableReceiver(receiver);
         Semaphore onNextSemaphore = new Semaphore(0);
+        AtomicInteger receiveCount = new AtomicInteger();
+        CountDownLatch waitForFinal = new CountDownLatch(4);
         Flux<ReceiverRecord<Integer, String>> flux = receiver.receive()
                   .doOnSubscribe(s -> {
                       if (retriable)
                           testReceiver.injectCommitEventForRetriableException();
                   })
                   .doOnNext(record -> {
-                      int receiveCount = count(receivedMessages);
-                      if (receiveCount == errorInjectIndex) {
+                      if (receiveCount.getAndIncrement() == errorInjectIndex) {
                           consumerFactory.injectCommitError();
                       }
-                      if (receiveCount >= errorClearIndex) {
+                      if (failed.get() == errorClearIndex) {
                           consumerFactory.clearCommitError();
                       }
                       record.receiverOffset().acknowledge();
                       onNextSemaphore.release();
+                      if (count <= record.key()) {
+                          waitForFinal.countDown();
+                      }
                   })
-                  .doOnError(e -> failed.set(true));
+                  .doOnError(e -> {
+                      failed.incrementAndGet();
+                      clearReceivedMessages();
+                  });
+        if (retriable) {
+            flux = flux.retry();
+        }
         subscribe(flux, new CountDownLatch(count));
         for (int i = 0; i < count; i++) {
             sendMessages(i, 1);
-            if (!failed.get()) {
+            if (!(failed.get() == i + 1)) {
                 onNextSemaphore.tryAcquire(requestTimeoutMillis, TimeUnit.MILLISECONDS);
                 TestUtils.sleep(receiverOptions.pollTimeout().toMillis());
             }
         }
-
+        if (retriable) {
+            // there will be duplicate deliveries (indeterminate) so send 1 more message to each partition
+            for (int i = count; i < count + 4; i++) {
+                sendMessages(i, 1);
+            }
+            assertTrue(waitForFinal.await(10, TimeUnit.SECONDS));
+        }
         boolean failureExpected = !retriable || errorClearIndex > count;
-        assertEquals(failureExpected, failed.get());
+        if (failureExpected) {
+            assertTrue(failed.get() > 0);
+        } else {
+            assertEquals(errorClearIndex - errorInjectIndex, failed.get());
+        }
         if (failureExpected) {
             testReceiver.waitForClose();
         }

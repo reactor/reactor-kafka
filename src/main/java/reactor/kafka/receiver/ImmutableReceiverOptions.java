@@ -41,6 +41,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
 
     private static final Duration DEFAULT_POLL_TIMEOUT = Duration.ofMillis(100);
     private static final int DEFAULT_MAX_COMMIT_ATTEMPTS = 100;
+    private static final Duration DEFAULT_COMMIT_RETRY_INTERVAL = Duration.ofMillis(500);
 
     private final Map<String, Object> properties;
     private final List<Consumer<Collection<ReceiverPartition>>> assignListeners;
@@ -55,6 +56,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
     private final int commitBatchSize;
     private final int atmostOnceCommitAheadSize;
     private final int maxCommitAttempts;
+    private final Duration commitRetryInterval;
     private final int maxDeferredCommits;
     private final Collection<String> subscribeTopics;
     private final Collection<TopicPartition> assignTopicPartitions;
@@ -89,6 +91,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
         commitBatchSize = 0;
         atmostOnceCommitAheadSize = 0;
         maxCommitAttempts = DEFAULT_MAX_COMMIT_ATTEMPTS;
+        commitRetryInterval = DEFAULT_COMMIT_RETRY_INTERVAL;
         maxDeferredCommits = 0;
         subscribeTopics = null;
         assignTopicPartitions = null;
@@ -109,6 +112,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
         int commitBatchSize,
         int atmostOnceCommitAheadSize,
         int maxCommitAttempts,
+        Duration commitRetryInterval,
         int maxDeferredCommits,
         Collection<String> topics,
         Collection<TopicPartition> partitions,
@@ -126,6 +130,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
         this.commitBatchSize = commitBatchSize;
         this.atmostOnceCommitAheadSize = atmostOnceCommitAheadSize;
         this.maxCommitAttempts = maxCommitAttempts;
+        this.commitRetryInterval = commitRetryInterval;
         this.maxDeferredCommits = maxDeferredCommits;
         this.subscribeTopics = topics == null ? null : new HashSet<>(topics);
         this.assignTopicPartitions = partitions == null ? null : new HashSet<>(partitions);
@@ -163,6 +168,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                commitRetryInterval,
                 maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
@@ -185,6 +191,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                commitRetryInterval,
                 maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
@@ -212,6 +219,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                commitRetryInterval,
                 maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
@@ -247,6 +255,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                commitRetryInterval,
                 maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
@@ -277,6 +286,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                commitRetryInterval,
                 maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
@@ -304,6 +314,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                commitRetryInterval,
                 maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
@@ -331,6 +342,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                commitRetryInterval,
                 maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
@@ -353,6 +365,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                commitRetryInterval,
                 maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
@@ -375,6 +388,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                commitRetryInterval,
                 maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
@@ -407,6 +421,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                commitRetryInterval,
                 maxDeferredCommits,
                 Objects.requireNonNull(topics),
                 null,
@@ -429,6 +444,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                commitRetryInterval,
                 maxDeferredCommits,
                 null,
                 null,
@@ -451,6 +467,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                commitRetryInterval,
                 maxDeferredCommits,
                 null,
                 Objects.requireNonNull(partitions),
@@ -508,6 +525,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                commitRetryInterval,
                 maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
@@ -538,6 +556,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                commitRetryInterval,
                 maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
@@ -568,6 +587,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 commitAheadSize,
                 maxCommitAttempts,
+                commitRetryInterval,
                 maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
@@ -598,6 +618,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxAttempts,
+                commitRetryInterval,
                 maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
@@ -625,6 +646,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
             commitBatchSize,
             atmostOnceCommitAheadSize,
             maxCommitAttempts,
+            commitRetryInterval,
             maxDeferred,
             subscribeTopics,
             assignTopicPartitions,
@@ -652,12 +674,41 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 commitBatchSize,
                 atmostOnceCommitAheadSize,
                 maxCommitAttempts,
+                commitRetryInterval,
                 maxDeferredCommits,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
                 Objects.requireNonNull(schedulerSupplier)
         );
+    }
+
+    @Override
+    public ReceiverOptions<K, V> commitRetryInterval(Duration commitRetryInterval) {
+        return new ImmutableReceiverOptions<>(
+                properties,
+                assignListeners,
+                revokeListeners,
+                keyDeserializer,
+                valueDeserializer,
+                pollTimeout,
+                closeTimeout,
+                commitInterval,
+                commitBatchSize,
+                atmostOnceCommitAheadSize,
+                maxCommitAttempts,
+                commitRetryInterval,
+                maxDeferredCommits,
+                subscribeTopics,
+                assignTopicPartitions,
+                subscribePattern,
+                schedulerSupplier
+        );
+    }
+
+    @Override
+    public Duration commitRetryInterval() {
+        return commitRetryInterval;
     }
 
     private long getLongOption(String optionName, long defaultValue) {
@@ -691,6 +742,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
             commitBatchSize,
             atmostOnceCommitAheadSize,
             maxCommitAttempts,
+            commitRetryInterval,
             maxDeferredCommits,
             subscribeTopics,
             assignTopicPartitions,
@@ -715,6 +767,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 && Objects.equals(commitBatchSize, that.commitBatchSize)
                 && Objects.equals(atmostOnceCommitAheadSize, that.atmostOnceCommitAheadSize)
                 && Objects.equals(maxCommitAttempts, that.maxCommitAttempts)
+                && Objects.equals(commitRetryInterval, that.commitRetryInterval)
                 && Objects.equals(maxDeferredCommits, that.maxDeferredCommits)
                 && Objects.equals(subscribeTopics, that.subscribeTopics)
                 && Objects.equals(assignTopicPartitions, that.assignTopicPartitions)
@@ -722,4 +775,5 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
         }
         return false;
     }
+
 }

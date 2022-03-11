@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -87,7 +87,7 @@ public class MockReceiverTest {
     private final String groupId = "test-group";
     private final Queue<ConsumerRecord<Integer, String>> receivedMessages = new ConcurrentLinkedQueue<>();
     private final List<ConsumerRecord<Integer, String>> uncommittedMessages = new CopyOnWriteArrayList<>();
-    private Map<TopicPartition, Long> receiveStartOffsets = new ConcurrentHashMap<>();
+    private final Map<TopicPartition, Long> receiveStartOffsets = new ConcurrentHashMap<>();
     private final Set<TopicPartition> assignedPartitions = new CopyOnWriteArraySet<>();
 
     private Map<Integer, String> topics;
@@ -526,7 +526,7 @@ public class MockReceiverTest {
                 .doOnNext(r -> receivedMessages.add(r))
                 .doOnError(e -> errorSemaphore.release())
                 .subscribe();
-        assertTrue("Flux did not fail", errorSemaphore.tryAcquire(1, TimeUnit.SECONDS));
+        assertTrue("Flux did not fail", errorSemaphore.tryAcquire(10, TimeUnit.SECONDS));
         assertTrue("Commit failure did not fail flux", receivedMessages.size() < count);
     }
 
@@ -1361,7 +1361,7 @@ public class MockReceiverTest {
     @SuppressWarnings("unchecked")
     private void verifyMessages(Flux<? extends ConsumerRecord<Integer, String>> inboundFlux, int receiveCount) {
         StepVerifier.create(inboundFlux)
-                .recordWith(() -> (Collection) receivedMessages)
+                .recordWith(() -> receivedMessages)
                 .expectNextCount(receiveCount)
                 .expectComplete()
                 .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
@@ -1477,7 +1477,7 @@ public class MockReceiverTest {
         DefaultKafkaReceiver<Integer, String> receiver = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions);
         return receiver.receive()
                 .doOnNext(r -> {
-                    receivedMessages.add((ConsumerRecord<Integer, String>) r);
+                    receivedMessages.add(r);
                     latch.countDown();
                 })
                 .subscribe();
