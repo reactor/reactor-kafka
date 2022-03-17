@@ -1217,11 +1217,15 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         KafkaReceiver<Integer, String> receiver = createReceiver();
 
         Semaphore completion = new Semaphore(0);
+        AtomicBoolean completed = new AtomicBoolean();
         receiveAndSendTransactions(receiver, txSender, destTopic, count, 4, completion)
             .onErrorResume(e -> txSender.transactionManager().abort()
-                    .thenMany(receiveAndSendTransactions(receiver, txSender, destTopic, count, -1, completion)))
+                    .thenMany(receiveAndSendTransactions(receiver, txSender, destTopic, count, -1, completion)
+                    .takeWhile(sres -> !completed.get())))
             .subscribe();
         assertTrue(completion.tryAcquire(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
+        completed.set(true);
+        sendMessages(11, 1);
 
         // Check that exactly 'count' messages is committed on destTopic, with one copy of each message
         // from source topic
