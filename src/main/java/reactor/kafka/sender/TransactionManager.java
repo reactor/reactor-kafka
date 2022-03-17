@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,15 @@
 
 package reactor.kafka.sender;
 
-import java.util.Map;
-
 import org.apache.kafka.clients.consumer.ConsumerGroupMetadata;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.common.TopicPartition;
-
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
+
+import java.util.Map;
+import java.util.function.Consumer;
 
 public interface TransactionManager {
 
@@ -95,5 +95,15 @@ public interface TransactionManager {
      * @return the scheduler associated with this transaction instance.
      */
     Scheduler scheduler();
+
+    /**
+     * A callback to indicate a commit or rollback has completed, true for commit.
+     * @param txComplete the commitComplete to set.
+     * @return the manager;
+     * @since 1.3.12
+     */
+    default TransactionManager transactionComplete(Consumer<Boolean> txComplete) {
+        return this;
+    }
 
 }

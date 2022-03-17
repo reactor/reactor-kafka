@@ -132,7 +132,7 @@ public class CommitRetryTests {
         verify(scheduler, times(4)).schedule(any(), eq(11L), eq(TimeUnit.MILLISECONDS));
     }
 
-    private Scheduler injectMockScheduler(KafkaReceiver receiver) throws Exception {
+    private Scheduler injectMockScheduler(KafkaReceiver<?, ?> receiver) throws Exception {
         Field handlerField = DefaultKafkaReceiver.class.getDeclaredField("consumerHandler");
         handlerField.setAccessible(true);
         Object eventLoop = handlerField.get(receiver);
