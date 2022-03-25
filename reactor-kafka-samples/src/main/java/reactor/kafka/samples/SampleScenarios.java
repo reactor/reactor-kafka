@@ -632,7 +632,7 @@ public class SampleScenarios {
         public ReceiverOptions<Integer, Person> receiverOptions(Collection<String> topics) {
             return receiverOptions()
                     .addAssignListener(p -> log.info("Group {} partitions assigned {}", groupId, p))
-                    .addRevokeListener(p -> log.info("Group {} partitions assigned {}", groupId, p))
+                    .addRevokeListener(p -> log.info("Group {} partitions revoked {}", groupId, p))
                     .subscription(topics);
         }
 
