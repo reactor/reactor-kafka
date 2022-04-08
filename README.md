@@ -1,3 +1,5 @@
+<img align="left"  height="150" src="reactor-kafka.png">
+
 Reactor Kafka
 ===================
 
