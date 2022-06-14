@@ -152,7 +152,7 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
             if (ackMode != AckMode.ATMOST_ONCE) {
                 commitEvent.runIfRequired(true);
                 long maxDelayRebalance = receiverOptions.maxDelayRebalance().toMillis();
-                if (maxDelayRebalance > 0) {
+                if (isActive.get() && maxDelayRebalance > 0) {
                     long interval = receiverOptions.commitIntervalDuringDelay();
                     int inPipeline = commitEvent.commitBatch.getInPipeline();
                     if (inPipeline > 0 || this.awaitingTransaction.get()) {
@@ -167,7 +167,7 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                                 break;
                             }
                             inPipeline = commitEvent.commitBatch.getInPipeline();
-                        } while ((inPipeline > 0 || this.awaitingTransaction.get())
+                        } while (isActive.get() && (inPipeline > 0 || this.awaitingTransaction.get())
                                 && System.currentTimeMillis() < end);
                     }
                 }
