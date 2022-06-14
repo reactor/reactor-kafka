@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2020-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,8 @@ import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.TransactionManager;
 
 import java.util.Map;
+import java.util.Objects;
+import java.util.function.Consumer;
 
 class DefaultTransactionManager<K, V> implements TransactionManager {
 
@@ -33,10 +35,20 @@ class DefaultTransactionManager<K, V> implements TransactionManager {
 
     private final SenderOptions<K, V> senderOptions;
 
+    private Consumer<Boolean> txComplete = b -> { };
+
     DefaultTransactionManager(Mono<Producer<K, V>> producerMono, SenderOptions<K, V> senderOptions) {
         this.producerMono = producerMono;
         this.senderOptions = senderOptions;
     }
+
+    @Override
+    public TransactionManager transactionComplete(Consumer<Boolean> txCompleteConsumer) {
+        Objects.requireNonNull(txCompleteConsumer);
+        this.txComplete = txCompleteConsumer;
+        return this;
+    }
+
 
     @Override
     public <T> Mono<T> begin() {
@@ -72,6 +84,7 @@ class DefaultTransactionManager<K, V> implements TransactionManager {
         return producerMono.flatMap(producer -> Mono.fromRunnable(() -> {
             producer.commitTransaction();
             DefaultKafkaSender.log.debug("Commit current transaction for producer {}", senderOptions.transactionalId());
+            txComplete.accept(true);
         }));
     }
 
@@ -80,6 +93,7 @@ class DefaultTransactionManager<K, V> implements TransactionManager {
         return producerMono.flatMap(p -> Mono.fromRunnable(() -> {
             p.abortTransaction();
             DefaultKafkaSender.log.debug("Abort current transaction for producer {}", senderOptions.transactionalId());
+            txComplete.accept(false);
         }));
     }
 

@@ -32,6 +32,15 @@ jobs:
       - name: run checks
         id: checks
         run: ./gradlew check
+      - name: Capture Test Results
+        if: failure() && steps.gradle.outcome == 'failure'
+        uses: actions/upload-artifact@82c141cc518b40d92cc801eee768e7aafc9c2fa2 # renovate: tag=v2
+        with:
+          name: test-results
+          path: |
+            build/reports/tests/**/*.*
+            */build/reports/tests/**/*.*
+          retention-days: 3
 
   #deploy the snapshot artifacts to Artifactory
   deploySnapshot:

@@ -26,7 +26,6 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.After;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -92,6 +91,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
 
     private final Semaphore assignSemaphore = new Semaphore(0);
     private final List<Disposable> subscribeDisposables = new ArrayList<>();
+    private final Set<Integer> committedRecords = Collections.synchronizedSet(new HashSet<>());
 
     @After
     public void tearDown() {
@@ -675,7 +675,6 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     }
 
     @Test
-    @Ignore("to investigate, flaky since 1.3.11")
     public void autoCommitFailurePropagationAfterRetries() throws Exception {
         int count = 5;
         receiverOptions = receiverOptions.consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
@@ -1200,8 +1199,9 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     }
 
     @Test
-    @Ignore("to investigate, flaky before release of 1.3.11")
+//    @Ignore("to investigate, flaky before release of 1.3.11")
     public void transactionalOffsetCommit() throws Exception {
+        committedRecords.clear();
         String destTopic = createNewTopic();
 
         int count = 10;
@@ -1214,9 +1214,16 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         KafkaSender<Integer, String> txSender = createTransactionalSender();
         KafkaReceiver<Integer, String> receiver = createReceiver();
 
-        receiveAndSendTransactions(receiver, txSender, destTopic, count, 4)
-            .onErrorResume(e -> txSender.transactionManager().abort().thenMany(receiveAndSendTransactions(receiver, txSender, destTopic, count - 2, -1)))
-            .blockLast(Duration.ofMillis(receiveTimeoutMillis));
+        Semaphore completion = new Semaphore(0);
+        AtomicBoolean completed = new AtomicBoolean();
+        receiveAndSendTransactions(receiver, txSender, destTopic, count, 4, completion)
+            .onErrorResume(e -> txSender.transactionManager().abort()
+                    .thenMany(receiveAndSendTransactions(receiver, txSender, destTopic, count, -1, completion)
+                    .takeWhile(sres -> !completed.get())))
+            .subscribe();
+        assertTrue(completion.tryAcquire(receiveTimeoutMillis, TimeUnit.MILLISECONDS));
+        completed.set(true);
+        sendMessages(11, 1);
 
         // Check that exactly 'count' messages is committed on destTopic, with one copy of each message
         // from source topic
@@ -1225,8 +1232,10 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
                 .subscription(Collections.singletonList(destTopic))
                 .clearAssignListeners()
                 .addAssignListener(partitions -> assignSemaphore.release());
+        this.topic = destTopic;
         CountDownLatch latch = new CountDownLatch(count);
-        subscribe(createReceiver().receive(), latch);
+        subscribe(createReceiver().receive().doOnNext(r ->
+                log.info("Dest Received: {}-{}@{} ({})", r.topic(), r.partition(), r.offset(), r.key())), latch);
         waitForMessages(latch);
         checkConsumedMessages(0, count);
     }
@@ -1408,6 +1417,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
 
         int maybeRedelivered = maxRedelivered - minRedelivered;
         CountDownLatch latch = new CountDownLatch(sendCount + maxRedelivered);
+        clearReceivedMessages();
         subscribe(kafkaFlux, latch);
         sendMessages(sendStartIndex, sendCount);
 
@@ -1530,20 +1540,36 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     }
 
     private Flux<SenderResult<Integer>> receiveAndSendTransactions(KafkaReceiver<Integer, String> receiver,
-            KafkaSender<Integer, String> sender, String destTopic, int count, int exceptionIndex) {
+            KafkaSender<Integer, String> sender, String destTopic, int count, int exceptionIndex,
+            Semaphore completion) {
+
         AtomicInteger index = new AtomicInteger();
-        TransactionManager transactionManager = sender.transactionManager();
+        TransactionManager transactionManager = sender.transactionManager()
+                .transactionComplete(bool -> {
+                    log.info("Commit complete {} - {}", bool, committedRecords);
+                    if (bool && committedRecords.size() == count) {
+                        completion.release();
+                    }
+                });
+
         return receiver.receiveExactlyOnce(transactionManager)
                 .concatMap(f ->
                     sender.send(
-                        f.map(r -> toSenderRecord(destTopic, r, r.key()))
+                        f.map(r -> {
+                            log.info("Received: {}-{}@{} ({})", r.topic(), r.partition(), r.offset(), r.key());
+                            committedRecords.add(r.key());
+                            return toSenderRecord(destTopic, r, r.key());
+                        })
                          .doOnNext(r -> {
                              if (index.incrementAndGet() == exceptionIndex) {
                                  throw new RuntimeException("Test exception");
                              }
-                         })
-                    ).concatWith(transactionManager.commit())
-                )
-                .take(count);
+                         }))
+                    .concatWith(transactionManager.commit())
+                    .doOnNext(sr -> {
+                        log.info("Sent: {}-{}@{}",
+                            sr.recordMetadata().topic(), sr.recordMetadata().partition(), sr.recordMetadata().offset());
+                    })
+                );
     }
 }
