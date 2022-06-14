@@ -58,6 +58,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
     private final int maxCommitAttempts;
     private final Duration commitRetryInterval;
     private final int maxDeferredCommits;
+    private final Duration maxDelayRebalance;
+    private final long commitIntervalDuringDelay;
     private final Collection<String> subscribeTopics;
     private final Collection<TopicPartition> assignTopicPartitions;
     private final Pattern subscribePattern;
@@ -93,6 +95,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
         maxCommitAttempts = DEFAULT_MAX_COMMIT_ATTEMPTS;
         commitRetryInterval = DEFAULT_COMMIT_RETRY_INTERVAL;
         maxDeferredCommits = 0;
+        maxDelayRebalance = Duration.ofSeconds(60);
+        commitIntervalDuringDelay = 100L;
         subscribeTopics = null;
         assignTopicPartitions = null;
         subscribePattern = null;
@@ -114,6 +118,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
         int maxCommitAttempts,
         Duration commitRetryInterval,
         int maxDeferredCommits,
+        Duration maxDelayRebalance,
+        long commitIntervalDuringDelay,
         Collection<String> topics,
         Collection<TopicPartition> partitions,
         Pattern pattern,
@@ -132,6 +138,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
         this.maxCommitAttempts = maxCommitAttempts;
         this.commitRetryInterval = commitRetryInterval;
         this.maxDeferredCommits = maxDeferredCommits;
+        this.maxDelayRebalance = maxDelayRebalance;
+        this.commitIntervalDuringDelay = commitIntervalDuringDelay;
         this.subscribeTopics = topics == null ? null : new HashSet<>(topics);
         this.assignTopicPartitions = partitions == null ? null : new HashSet<>(partitions);
         this.subscribePattern = pattern;
@@ -170,6 +178,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 maxCommitAttempts,
                 commitRetryInterval,
                 maxDeferredCommits,
+                maxDelayRebalance,
+                commitIntervalDuringDelay,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
@@ -193,6 +203,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 maxCommitAttempts,
                 commitRetryInterval,
                 maxDeferredCommits,
+                maxDelayRebalance,
+                commitIntervalDuringDelay,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
@@ -221,6 +233,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 maxCommitAttempts,
                 commitRetryInterval,
                 maxDeferredCommits,
+                maxDelayRebalance,
+                commitIntervalDuringDelay,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
@@ -257,6 +271,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 maxCommitAttempts,
                 commitRetryInterval,
                 maxDeferredCommits,
+                maxDelayRebalance,
+                commitIntervalDuringDelay,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
@@ -288,6 +304,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 maxCommitAttempts,
                 commitRetryInterval,
                 maxDeferredCommits,
+                maxDelayRebalance,
+                commitIntervalDuringDelay,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
@@ -316,6 +334,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 maxCommitAttempts,
                 commitRetryInterval,
                 maxDeferredCommits,
+                maxDelayRebalance,
+                commitIntervalDuringDelay,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
@@ -344,6 +364,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 maxCommitAttempts,
                 commitRetryInterval,
                 maxDeferredCommits,
+                maxDelayRebalance,
+                commitIntervalDuringDelay,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
@@ -367,6 +389,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 maxCommitAttempts,
                 commitRetryInterval,
                 maxDeferredCommits,
+                maxDelayRebalance,
+                commitIntervalDuringDelay,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
@@ -390,6 +414,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 maxCommitAttempts,
                 commitRetryInterval,
                 maxDeferredCommits,
+                maxDelayRebalance,
+                commitIntervalDuringDelay,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
@@ -423,6 +449,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 maxCommitAttempts,
                 commitRetryInterval,
                 maxDeferredCommits,
+                maxDelayRebalance,
+                commitIntervalDuringDelay,
                 Objects.requireNonNull(topics),
                 null,
                 null,
@@ -446,6 +474,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 maxCommitAttempts,
                 commitRetryInterval,
                 maxDeferredCommits,
+                maxDelayRebalance,
+                commitIntervalDuringDelay,
                 null,
                 null,
                 Objects.requireNonNull(pattern),
@@ -469,6 +499,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 maxCommitAttempts,
                 commitRetryInterval,
                 maxDeferredCommits,
+                maxDelayRebalance,
+                commitIntervalDuringDelay,
                 null,
                 Objects.requireNonNull(partitions),
                 null,
@@ -527,6 +559,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 maxCommitAttempts,
                 commitRetryInterval,
                 maxDeferredCommits,
+                maxDelayRebalance,
+                commitIntervalDuringDelay,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
@@ -558,6 +592,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 maxCommitAttempts,
                 commitRetryInterval,
                 maxDeferredCommits,
+                maxDelayRebalance,
+                commitIntervalDuringDelay,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
@@ -589,6 +625,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 maxCommitAttempts,
                 commitRetryInterval,
                 maxDeferredCommits,
+                maxDelayRebalance,
+                commitIntervalDuringDelay,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
@@ -620,6 +658,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 maxAttempts,
                 commitRetryInterval,
                 maxDeferredCommits,
+                maxDelayRebalance,
+                commitIntervalDuringDelay,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
@@ -648,11 +688,72 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
             maxCommitAttempts,
             commitRetryInterval,
             maxDeferred,
+            maxDelayRebalance,
+            commitIntervalDuringDelay,
             subscribeTopics,
             assignTopicPartitions,
             subscribePattern,
             schedulerSupplier
         );
+    }
+
+    @Override
+    public Duration maxDelayRebalance() {
+        return this.maxDelayRebalance;
+    }
+
+    @Override
+    public ReceiverOptions<K, V> maxDelayRebalance(Duration maxDelay) {
+        return new ImmutableReceiverOptions<>(
+                properties,
+                assignListeners,
+                revokeListeners,
+                keyDeserializer,
+                valueDeserializer,
+                pollTimeout,
+                closeTimeout,
+                commitInterval,
+                commitBatchSize,
+                atmostOnceCommitAheadSize,
+                maxCommitAttempts,
+                commitRetryInterval,
+                maxDeferredCommits,
+                maxDelay,
+                commitIntervalDuringDelay,
+                subscribeTopics,
+                assignTopicPartitions,
+                subscribePattern,
+                schedulerSupplier
+            );
+    }
+
+    @Override
+    public long commitIntervalDuringDelay() {
+        return this.commitIntervalDuringDelay;
+    }
+    @Override
+    public ReceiverOptions<K, V> commitIntervalDuringDelay(long interval) {
+        return new ImmutableReceiverOptions<>(
+                properties,
+                assignListeners,
+                revokeListeners,
+                keyDeserializer,
+                valueDeserializer,
+                pollTimeout,
+                closeTimeout,
+                commitInterval,
+                commitBatchSize,
+                atmostOnceCommitAheadSize,
+                maxCommitAttempts,
+                commitRetryInterval,
+                maxDeferredCommits,
+                maxDelayRebalance,
+                interval,
+                subscribeTopics,
+                assignTopicPartitions,
+                subscribePattern,
+                schedulerSupplier
+            );
     }
 
     @Override
@@ -676,6 +777,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 maxCommitAttempts,
                 commitRetryInterval,
                 maxDeferredCommits,
+                maxDelayRebalance,
+                commitIntervalDuringDelay,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
@@ -699,6 +802,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 maxCommitAttempts,
                 commitRetryInterval,
                 maxDeferredCommits,
+                maxDelayRebalance,
+                commitIntervalDuringDelay,
                 subscribeTopics,
                 assignTopicPartitions,
                 subscribePattern,
@@ -744,6 +849,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
             maxCommitAttempts,
             commitRetryInterval,
             maxDeferredCommits,
+            maxDelayRebalance,
+            commitIntervalDuringDelay,
             subscribeTopics,
             assignTopicPartitions,
             subscribePattern
@@ -769,6 +876,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 && Objects.equals(maxCommitAttempts, that.maxCommitAttempts)
                 && Objects.equals(commitRetryInterval, that.commitRetryInterval)
                 && Objects.equals(maxDeferredCommits, that.maxDeferredCommits)
+                && Objects.equals(maxDelayRebalance, that.maxDelayRebalance)
+                && Objects.equals(commitIntervalDuringDelay, that.commitIntervalDuringDelay)
                 && Objects.equals(subscribeTopics, that.subscribeTopics)
                 && Objects.equals(assignTopicPartitions, that.assignTopicPartitions)
                 && Objects.equals(subscribePattern, that.subscribePattern);

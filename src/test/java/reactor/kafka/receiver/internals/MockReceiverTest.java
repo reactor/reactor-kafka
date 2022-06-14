@@ -330,7 +330,7 @@ public class MockReceiverTest {
      */
     @Test
     public void manualAssignment() {
-        receiverOptions = receiverOptions.assignment(cluster.partitions(topic));
+        receiverOptions = receiverOptions.assignment(cluster.partitions(topic)).maxDelayRebalance(Duration.ZERO);
         sendMessages(topic, 0, 10);
         receiveAndVerify(10, r -> {
             assertTrue("Assign callback not invoked", assignedPartitions.contains(r.receiverOffset().topicPartition()));

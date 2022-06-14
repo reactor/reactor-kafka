@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,6 +43,7 @@ class CommittableBatch {
     boolean outOfOrderCommits;
     private int batchSize;
     private List<MonoSink<Void>> callbackEmitters = new ArrayList<>();
+    private int inPipeline;
 
     public synchronized int updateOffset(TopicPartition topicPartition, long offset) {
         if (this.outOfOrderCommits) {
@@ -52,12 +53,14 @@ class CommittableBatch {
                 if (!offsets.contains(offset)) {
                     offsets.add(offset);
                     batchSize++;
+                    this.inPipeline--;
                 }
             } else {
                 log.debug("No uncomitted offset for {}@{}, partition revoked?", topicPartition, offset);
             }
         } else if (!((Long) offset).equals(consumedOffsets.put(topicPartition, offset))) {
             batchSize++;
+            this.inPipeline--;
         }
         return batchSize;
     }
@@ -75,14 +78,17 @@ class CommittableBatch {
     }
 
     public synchronized void addUncommitted(ConsumerRecords<?, ?> records) {
-        records.partitions().forEach(tp -> {
-            List<Long> offsets = this.uncommitted.computeIfAbsent(tp, part -> new LinkedList<>());
-            records.records(tp).forEach(rec -> {
-                if (!offsets.contains(rec.offset())) {
-                    offsets.add(rec.offset());
-                }
+        if (this.outOfOrderCommits) {
+            records.partitions().forEach(tp -> {
+                List<Long> offsets = this.uncommitted.computeIfAbsent(tp, part -> new LinkedList<>());
+                records.records(tp).forEach(rec -> {
+                    if (!offsets.contains(rec.offset())) {
+                        offsets.add(rec.offset());
+                    }
+                });
             });
-        });
+        }
+        this.inPipeline += records.count();
     }
 
     public synchronized void partitionsRevoked(Collection<TopicPartition> revoked) {
@@ -98,6 +104,10 @@ class CommittableBatch {
             count += offsets.size();
         }
         return count;
+    }
+
+    public synchronized int getInPipeline() {
+        return this.inPipeline;
     }
 
     public synchronized CommitArgs getAndClearOffsets() {

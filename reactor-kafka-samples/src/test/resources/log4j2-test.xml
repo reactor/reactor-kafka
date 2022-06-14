@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+# Copyright (c) 2022 VMware Inc, All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+ -->
+<Configuration status="WARN">
+  <Appenders>
+    <Console name="STDOUT" target="SYSTEM_OUT">
+      <PatternLayout pattern="[%d] [%t] [%c] %p %m%n" />
+    </Console>
+  </Appenders>
+  <Loggers>
+    <Logger name="org.testcontainers" level="trace"/>
+    <Logger name="org.apache.kafka" level="error"/>
+    <Logger name="org.apache.kafka.clients" level="info"/>
+    <Logger name="org.apache.kafka.clients.admin.AdminClientConfig" level="warn"/>
+    <Logger name="org.apache.kafka.clients.producer.ProducerConfig" level="warn"/>
+    <Logger name="org.apache.kafka.clients.consumer.ConsumerConfig" level="warn"/>
+    <Logger name="reactor" level="info"/>
+    <Logger name="reactor.kafka" level="error"/>
+    <Logger name="reactor.kafka.samples" level="debug"/>
+    <Logger name="reactor.Flux.Interval" level="off"/>
+    <Logger name="reactor.Flux.FlatMap.10" level="off"/>
+    <Logger name="reactor.Flux.Map.8" level="off"/>
+    <Root level="off">
+      <AppenderRef ref="STDOUT" />
+    </Root>
+  </Loggers>
+</Configuration>

@@ -326,6 +326,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
                              assertTrue(assignedPartitions.containsKey(m.receiverOffset().topicPartition()));
                              assignedPartitions.put(m.receiverOffset().topicPartition(), m.receiverOffset());
                              receiveLatch.countDown();
+                             m.receiverOffset().acknowledge();
                          })
                          .take(count)
                          .subscribe();

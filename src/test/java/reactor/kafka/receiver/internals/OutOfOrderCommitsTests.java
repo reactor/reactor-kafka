@@ -1,11 +1,11 @@
 /*
- * Copyright 2021 the original author or authors.
+ * Copyright (c) 2021-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -25,6 +25,8 @@ import org.apache.kafka.clients.consumer.OffsetCommitCallback;
 import org.apache.kafka.clients.consumer.RetriableCommitFailedException;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.Disposable;
 import reactor.core.scheduler.Schedulers;
 import reactor.kafka.receiver.KafkaReceiver;
@@ -45,6 +47,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -60,6 +63,8 @@ import static org.mockito.Mockito.verify;
  *
  */
 public class OutOfOrderCommitsTests {
+
+    private final Logger log = LoggerFactory.getLogger(getClass());
 
     @Test
     @SuppressWarnings({ "rawtypes", "unchecked" })
@@ -467,6 +472,77 @@ public class OutOfOrderCommitsTests {
         received.get(0).receiverOffset().acknowledge();
         assertTrue(commitLatch.await(10, TimeUnit.SECONDS));
         verify(consumer, times(1)).commitAsync(any(), any());
+        Map<TopicPartition, OffsetAndMetadata> commits = new HashMap<>();
+        commits.put(new TopicPartition("foo", 0), new OffsetAndMetadata(4L));
+        verify(consumer).commitAsync(eq(commits), any());
+        disposable.dispose();
+    }
+
+    @Test
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    public void rebalance() throws InterruptedException {
+        ConsumerFactory cf = mock(ConsumerFactory.class);
+        Consumer consumer = mock(Consumer.class);
+        given(cf.createConsumer(any())).willReturn(consumer);
+        AtomicReference<ConsumerRebalanceListener> listener = new AtomicReference<>();
+        TopicPartition tp0 = new TopicPartition("foo", 0);
+        Set<TopicPartition> assigned = Collections.singleton(tp0);
+        CountDownLatch subscribeLatch = new CountDownLatch(1);
+        willAnswer(inv -> {
+            listener.set(inv.getArgument(1));
+            listener.get().onPartitionsAssigned(Collections.singletonList(tp0));
+            subscribeLatch.countDown();
+            return null;
+        }).given(consumer).subscribe(any(Collection.class), any(ConsumerRebalanceListener.class));
+        CountDownLatch commitLatch = new CountDownLatch(1);
+        willAnswer(inv -> {
+            commitLatch.countDown();
+            return null;
+        }).given(consumer).commitAsync(any(), any());
+        final Map<TopicPartition, List<ConsumerRecord<Integer, String>>> records = new HashMap<>();
+        records.put(new TopicPartition("foo", 0), Arrays.asList(
+            new ConsumerRecord<>("foo", 0, 0L, 1, "foo"),
+            new ConsumerRecord<>("foo", 0, 1L, 1, "bar"),
+            new ConsumerRecord<>("foo", 0, 2L, 1, "baz"),
+            new ConsumerRecord<>("foo", 0, 3L, 1, "qux")));
+        ConsumerRecords<Integer, String> consumerRecords = new ConsumerRecords<>(records);
+        AtomicBoolean first = new AtomicBoolean(true);
+        willAnswer(inv -> {
+            Thread.sleep(10);
+            if (first.getAndSet(false)) {
+                return consumerRecords;
+            }
+            return ConsumerRecords.empty();
+        }).given(consumer).poll(any(Duration.class));
+        given(consumer.assignment()).willReturn(assigned);
+        ReceiverOptions<Object, Object> options = ReceiverOptions.create()
+            .maxDeferredCommits(100)
+            .maxDelayRebalance(Duration.ofSeconds(100))
+            .commitIntervalDuringDelay(101L)
+            .subscription(Collections.singletonList("foo"));
+        assertEquals(Duration.ofSeconds(100), options.maxDelayRebalance());
+        assertEquals(101L, options.commitIntervalDuringDelay());
+        KafkaReceiver receiver = KafkaReceiver.create(cf, options);
+        CountDownLatch latch = new CountDownLatch(1);
+        Disposable disposable = receiver.receive()
+            .publishOn(Schedulers.parallel(), 1)
+            .doOnNext(rec -> {
+                ReceiverRecord<?, ?> record = (ReceiverRecord<?, ?>) rec;
+                log.debug("{}", record.value());
+                record.receiverOffset().acknowledge();
+                latch.countDown();
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            })
+            .subscribe();
+        assertTrue(subscribeLatch.await(10, TimeUnit.SECONDS));
+        assertTrue(latch.await(10, TimeUnit.SECONDS));
+        listener.get().onPartitionsRevoked(Collections.singleton(tp0));
+        assertTrue(commitLatch.await(10, TimeUnit.SECONDS));
+        verify(consumer, times(4)).commitAsync(any(), any());
         Map<TopicPartition, OffsetAndMetadata> commits = new HashMap<>();
         commits.put(new TopicPartition("foo", 0), new OffsetAndMetadata(4L));
         verify(consumer).commitAsync(eq(commits), any());

@@ -149,8 +149,29 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
         log.debug("onPartitionsRevoked {}", partitions);
         if (!partitions.isEmpty()) {
             // It is safe to use the consumer here since we are in a poll()
-            if (ackMode != AckMode.ATMOST_ONCE)
+            if (ackMode != AckMode.ATMOST_ONCE) {
                 commitEvent.runIfRequired(true);
+                long maxDelayRebalance = receiverOptions.maxDelayRebalance().toMillis();
+                if (maxDelayRebalance > 0) {
+                    long interval = receiverOptions.commitIntervalDuringDelay();
+                    int inPipeline = commitEvent.commitBatch.getInPipeline();
+                    if (inPipeline > 0 || this.awaitingTransaction.get()) {
+                        long end = maxDelayRebalance + System.currentTimeMillis();
+                        do {
+                            try {
+                                log.debug("Rebalancing; waiting for {} records in pipeline", inPipeline);
+                                Thread.sleep(interval);
+                                commitEvent.runIfRequired(true);
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                                break;
+                            }
+                            inPipeline = commitEvent.commitBatch.getInPipeline();
+                        } while ((inPipeline > 0 || this.awaitingTransaction.get())
+                                && System.currentTimeMillis() < end);
+                    }
+                }
+            }
             for (Consumer<Collection<ReceiverPartition>> onRevoke : receiverOptions.revokeListeners()) {
                 onRevoke.accept(toSeekable(partitions));
             }
@@ -235,8 +256,8 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
 
                         @Override
                         public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
-                            ConsumerEventLoop.this.pollEvent.commitBatch.partitionsRevoked(partitions);
                             ConsumerEventLoop.this.onPartitionsRevoked(partitions);
+                            ConsumerEventLoop.this.pollEvent.commitBatch.partitionsRevoked(partitions);
                         }
                     })
                     .accept(consumer);
@@ -318,9 +339,7 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                     }
 
                     if (!records.isEmpty()) {
-                        if (this.maxDeferredCommits > 0) {
-                            this.commitBatch.addUncommitted(records);
-                        }
+                        this.commitBatch.addUncommitted(records);
                         Operators.produced(REQUESTED, ConsumerEventLoop.this, 1);
                         log.debug("Emitting {} records, requested now {}", records.count(), r);
                         sink.emitNext(records, ConsumerEventLoop.this);
