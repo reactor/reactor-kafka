@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,19 +44,19 @@ import org.slf4j.LoggerFactory;
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 import reactor.kafka.AbstractKafkaTest;
-import reactor.kafka.receiver.ReceiverOptions;
-import reactor.kafka.receiver.ReceiverRecord;
 import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOffset;
+import reactor.kafka.receiver.ReceiverOptions;
+import reactor.kafka.receiver.ReceiverRecord;
 import reactor.kafka.samples.SampleScenarios.AtmostOnce;
 import reactor.kafka.samples.SampleScenarios.CommittableSource;
 import reactor.kafka.samples.SampleScenarios.FanOut;
 import reactor.kafka.samples.SampleScenarios.KafkaExactlyOnce;
-import reactor.kafka.samples.SampleScenarios.KafkaTransform;
-import reactor.kafka.samples.SampleScenarios.PartitionProcessor;
 import reactor.kafka.samples.SampleScenarios.KafkaSink;
 import reactor.kafka.samples.SampleScenarios.KafkaSinkChain;
 import reactor.kafka.samples.SampleScenarios.KafkaSource;
+import reactor.kafka.samples.SampleScenarios.KafkaTransform;
+import reactor.kafka.samples.SampleScenarios.PartitionProcessor;
 import reactor.kafka.samples.SampleScenarios.Person;
 import reactor.kafka.samples.SampleScenarios.TransactionalSend;
 import reactor.kafka.util.TestUtils;
@@ -64,12 +64,13 @@ import reactor.kafka.util.TestUtils;
 public class SampleScenariosTest extends AbstractKafkaTest {
     private static final Logger log = LoggerFactory.getLogger(SampleScenariosTest.class.getName());
 
-    private List<Disposable> disposables = new ArrayList<>();
+    private final List<Disposable> disposables = new ArrayList<>();
 
     @After
     public void tearDown() {
-        for (Disposable disposable : disposables)
+        for (Disposable disposable : disposables) {
             disposable.dispose();
+        }
     }
 
     @Test
@@ -96,8 +97,9 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         sinkChain.runScenario();
         waitForMessages(expected, received1);
         List<Person> expected2 = new ArrayList<>();
-        for (Person p : expected)
+        for (Person p : expected) {
             expected2.add(p.upperCase());
+        }
         waitForMessages(expected2, received2);
     }
 
@@ -106,10 +108,12 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         List<Person> expected = new CopyOnWriteArrayList<>();
         List<Person> received = new CopyOnWriteArrayList<>();
         KafkaSource source = new KafkaSource(bootstrapServers(), topic) {
+            @Override
             public Mono<Void> storeInDB(Person person) {
                 received.add(person);
                 return Mono.empty();
             }
+            @Override
             public ReceiverOptions<Integer, Person> receiverOptions() {
                 return super.receiverOptions().consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
             }
@@ -126,15 +130,19 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         String sourceTopic = topic;
         String destTopic = createNewTopic();
         KafkaTransform flow = new KafkaTransform(bootstrapServers(), sourceTopic, destTopic) {
+            @Override
             public ReceiverOptions<Integer, Person> receiverOptions() {
-                return super.receiverOptions().consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+                return super.receiverOptions()
+                        .maxDelayRebalance(Duration.ZERO)
+                        .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
             }
         };
         disposables.add(flow.flux().subscribe());
         subscribeToDestTopic("test-group", destTopic, received);
         sendMessages(sourceTopic, 20, expected);
-        for (Person p : expected)
+        for (Person p : expected) {
             p.email(flow.transform(p).value().email());
+        }
         waitForMessages(expected, received);
     }
 
@@ -145,6 +153,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         String sourceTopic = topic;
         String destTopic = createNewTopic();
         AtmostOnce flow = new AtmostOnce(bootstrapServers(), sourceTopic, destTopic) {
+            @Override
             public ReceiverOptions<Integer, Person> receiverOptions() {
                 return super.receiverOptions().consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
             }
@@ -152,8 +161,9 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         disposables.add(flow.flux().subscribe());
         subscribeToDestTopic("test-group", destTopic, received);
         sendMessages(sourceTopic, 20, expected);
-        for (Person p : expected)
+        for (Person p : expected) {
             p.email(flow.transform(p).value().email());
+        }
         waitForMessages(expected, received);
     }
 
@@ -168,8 +178,9 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         subscribeToDestTopic("test-group", destTopic2, received2);
         TransactionalSend sink = new TransactionalSend(bootstrapServers(), destTopic1, destTopic2);
         sink.source(createTestSource(10, expected1));
-        for (Person p : expected1)
+        for (Person p : expected1) {
             p.email(p.firstName().toLowerCase(Locale.ROOT) + "@kafka.io");
+        }
         List<Person> expected2 = new ArrayList<>();
         for (Person p : expected1) {
             Person p2 = new Person(p.id(), p.firstName(), p.lastName());
@@ -188,15 +199,19 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         String sourceTopic = topic;
         String destTopic = createNewTopic();
         KafkaExactlyOnce flow = new KafkaExactlyOnce(bootstrapServers(), sourceTopic, destTopic) {
+            @Override
             public ReceiverOptions<Integer, Person> receiverOptions() {
-                return super.receiverOptions().consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+                return super.receiverOptions()
+                        .maxDelayRebalance(Duration.ZERO)
+                        .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
             }
         };
         disposables.add(flow.flux().subscribe());
         subscribeToDestTopic("test-group", destTopic, received);
         sendMessages(sourceTopic, 500, expected);
-        for (Person p : expected)
+        for (Person p : expected) {
             p.email(flow.transform(p).value().email());
+        }
         waitForMessages(expected, received);
     }
 
@@ -210,16 +225,19 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         String destTopic = createNewTopic();
         sendMessages(sourceTopic, count, expected);
         KafkaExactlyOnce flow = new KafkaExactlyOnce(bootstrapServers(), sourceTopic, destTopic) {
+            @Override
             public ReceiverOptions<Integer, Person> receiverOptions() {
                 return super.receiverOptions()
+                            .maxDelayRebalance(Duration.ZERO)
                             .consumerProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "10")
                             .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
                             .consumerProperty(ConsumerConfig.ISOLATION_LEVEL_CONFIG, "read_committed");
             }
             @Override
             public ProducerRecord<Integer, Person> transform(Person p) {
-                if (transformCounter.incrementAndGet() == count / 2 + 3)
+                if (transformCounter.incrementAndGet() == count / 2 + 3) {
                     throw new RuntimeException("Test exception");
+                }
                 return super.transform(p);
             }
         };
@@ -241,6 +259,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         String destTopic1 = createNewTopic();
         String destTopic2 = createNewTopic();
         FanOut flow = new FanOut(bootstrapServers(), sourceTopic, destTopic1, destTopic2) {
+            @Override
             public ReceiverOptions<Integer, Person> receiverOptions() {
                 return super.receiverOptions().consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
             }
@@ -264,11 +283,15 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         List<Person> expected = new ArrayList<>();
         Queue<Person> received = new ConcurrentLinkedQueue<Person>();
         Map<Integer, List<Person>> partitionMap = new HashMap<>();
-        for (int i = 0; i < partitions; i++)
+        for (int i = 0; i < partitions; i++) {
             partitionMap.put(i, new ArrayList<>());
+        }
         PartitionProcessor source = new PartitionProcessor(bootstrapServers(), topic) {
+            @Override
             public ReceiverOptions<Integer, Person> receiverOptions() {
-                return super.receiverOptions().consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+                return super.receiverOptions()
+                        .maxDelayRebalance(Duration.ZERO)
+                        .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
             }
             @Override
             public ReceiverOffset processRecord(TopicPartition topicPartition, ReceiverRecord<Integer, Person> message) {
@@ -294,6 +317,7 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         receiverOptions = receiverOptions
                 .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
                 .consumerProperty(ConsumerConfig.GROUP_ID_CONFIG, groupId)
+                .maxDelayRebalance(Duration.ZERO)
                 .addAssignListener(partitions -> {
                     log.debug("Group {} assigned {}", groupId, partitions);
                     partitions.forEach(p -> log.trace("Group {} partition {} position {}", groupId, p, p.position()));
@@ -309,8 +333,9 @@ public class SampleScenariosTest extends AbstractKafkaTest {
         disposables.add(c);
     }
     private CommittableSource createTestSource(int count, List<Person> expected) {
-        for (int i = 0; i < count; i++)
+        for (int i = 0; i < count; i++) {
             expected.add(new Person(i, "foo" + i, "bar" + i));
+        }
 
         return new CommittableSource(expected);
     }

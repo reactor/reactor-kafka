@@ -326,6 +326,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
                              assertTrue(assignedPartitions.containsKey(m.receiverOffset().topicPartition()));
                              assignedPartitions.put(m.receiverOffset().topicPartition(), m.receiverOffset());
                              receiveLatch.countDown();
+                             m.receiverOffset().acknowledge();
                          })
                          .take(count)
                          .subscribe();
@@ -1199,7 +1200,6 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     }
 
     @Test
-//    @Ignore("to investigate, flaky before release of 1.3.11")
     public void transactionalOffsetCommit() throws Exception {
         committedRecords.clear();
         String destTopic = createNewTopic();

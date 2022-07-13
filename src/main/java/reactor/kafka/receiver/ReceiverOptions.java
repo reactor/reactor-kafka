@@ -258,6 +258,31 @@ public interface ReceiverOptions<K, V> {
     }
 
     /**
+     * Set the maximum amount of time to delay a rebalance until existing records in the
+     * pipeline have been processed. Default 60s. Must be somewhat less than
+     * {@code max.poll.interval.ms}.
+     * @param maxDelay the max delay.
+     * @return options updated with the max delay.
+     * @since 1.3.12
+     * @see #commitIntervalDuringDelay(long)
+     */
+    default ReceiverOptions<K, V> maxDelayRebalance(Duration maxDelay) {
+        return this;
+    }
+
+    /**
+     * Set how often to commit offsets, in milliseconds, while a rebalance is being
+     * delayed. Default 100ms.
+     * @param interval the interval.
+     * @return options updated with the interval
+     * @since 1.3.12
+     * @see #maxDelayRebalance(Duration)
+     */
+    default ReceiverOptions<K, V> commitIntervalDuringDelay(long interval) {
+        return this;
+    }
+
+    /**
      * Configures the Supplier for a Scheduler on which Records will be published
      * @return options instance with updated publishing Scheduler Supplier
      */
@@ -412,6 +437,30 @@ public interface ReceiverOptions<K, V> {
      */
     default int maxDeferredCommits() {
         return 0;
+    }
+
+    /**
+     * Get the maximum amount of time to delay a rebalance until existing records in the
+     * pipeline have been processed. Default 60s.
+     * @param maxDelay the max delay.
+     * @return options updated with the max delay.
+     * @since 1.3.12
+     * @see #commitIntervalDuringDelay()
+     */
+    default Duration maxDelayRebalance() {
+        return Duration.ofSeconds(60);
+    }
+
+    /**
+     * Get how often to commit offsets, in milliseconds, while a rebalance is being
+     * delayed. Default 100ms.
+     * @param interval the interval.
+     * @return options updated with the interval
+     * @since 1.3.12
+     * @see #maxDelayRebalance()
+     */
+    default long commitIntervalDuringDelay() {
+        return 100;
     }
 
     /**
