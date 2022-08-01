@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2020-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -171,6 +172,11 @@ class ConsumerHandler<K, V> {
         InvocationHandler handler = (proxy, method, args) -> {
             if (DELEGATE_METHODS.contains(method.getName())) {
                 try {
+                    if (method.getName().equals("pause")) {
+                        this.consumerEventLoop.paused((Collection<TopicPartition>) args[0]);
+                    } else if (method.getName().equals("resume")) {
+                        this.consumerEventLoop.resumed((Collection<TopicPartition>) args[0]);
+                    }
                     return method.invoke(consumer, args);
                 } catch (InvocationTargetException e) {
                     throw e.getCause();

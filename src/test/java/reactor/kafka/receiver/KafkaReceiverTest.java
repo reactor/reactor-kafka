@@ -1316,6 +1316,53 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     }
 
     @Test
+    public void userPauseWhileBackPressured() throws Exception {
+        sendMessages(0, 600);
+        this.receiverOptions = this.receiverOptions.consumerProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 1);
+
+        KafkaReceiver<Integer, String> receiver = createReceiver();
+        CountDownLatch latch1 = new CountDownLatch(1);
+        CountDownLatch latch2 = new CountDownLatch(600);
+        Disposable flux = receiver.receive()
+            .publishOn(Schedulers.newSingle("willSuspend"), 10)
+            .doOnNext(rec -> {
+                try {
+//                    System.out.println(rec.value() + "-" + rec.partition() + "@" + rec.offset());
+                    latch1.await();
+                    latch2.countDown();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            })
+            .subscribe();
+        waitFoPartitionAssignment();
+        await().alias("Auto Paused All")
+                .timeout(Duration.ofMinutes(1))
+                .untilAsserted(() ->
+            assertThat(receiver.doOnConsumer(org.apache.kafka.clients.consumer.Consumer::paused)
+                    .block(Duration.ofSeconds(5L))).hasSize(4));
+        receiver.doOnConsumer(consumer -> {
+            consumer.pause(Collections.singletonList(new TopicPartition(this.topic, 0)));
+            return null;
+        }).block(Duration.ofSeconds(5));
+        latch1.countDown();
+        await().alias("Should not resume user pause")
+                .untilAsserted(() ->
+            assertThat(receiver.doOnConsumer(org.apache.kafka.clients.consumer.Consumer::paused)
+                    .block(Duration.ofSeconds(5L))).hasSize(1));
+        receiver.doOnConsumer(consumer -> {
+            consumer.resume(Collections.singletonList(new TopicPartition(this.topic, 0)));
+            return null;
+        }).block(Duration.ofSeconds(5));
+        await().alias("All resumed")
+                .untilAsserted(() ->
+            assertThat(receiver.doOnConsumer(org.apache.kafka.clients.consumer.Consumer::paused)
+                    .block(Duration.ofSeconds(5L))).hasSize(0));
+        assertThat(latch2.await(10, TimeUnit.SECONDS)).isTrue();
+        flux.dispose();
+    }
+
+    @Test
     public void wakeUpReceiverWhenBackPressureIsRelieved() throws Exception {
         int count = 10;
         receiverOptions = receiverOptions

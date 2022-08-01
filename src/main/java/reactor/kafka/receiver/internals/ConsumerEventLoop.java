@@ -73,6 +73,9 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
     final CommitEvent commitEvent = new CommitEvent();
 
     final Predicate<Throwable> isRetriableException;
+
+    final Set<TopicPartition> pausedByUser =  new HashSet<>();
+
     private final Disposable periodicCommitDisposable;
 
     // TODO make it final
@@ -132,6 +135,14 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
         } else {
             periodicCommitDisposable = Disposables.disposed();
         }
+    }
+
+    void paused(Collection<TopicPartition> paused) {
+        this.pausedByUser.addAll(paused);
+    }
+
+    void resumed(Collection<TopicPartition> resumed) {
+        this.pausedByUser.removeAll(resumed);
     }
 
     void onRequest(long toAdd) {
@@ -276,8 +287,6 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
 
         private final AtomicBoolean pausedByUs = new AtomicBoolean();
 
-        private final Set<TopicPartition> pausedByUser = new HashSet<>();
-
         private final AtomicBoolean scheduled = new AtomicBoolean();
 
         private final long maxDeferredCommits = receiverOptions.maxDeferredCommits();
@@ -302,20 +311,17 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                         if (!awaitingTransaction.get()) {
                             if (pausedByUs.getAndSet(false)) {
                                 Set<TopicPartition> toResume = new HashSet<>(consumer.assignment());
-                                toResume.removeAll(this.pausedByUser);
-                                this.pausedByUser.clear();
+                                toResume.removeAll(ConsumerEventLoop.this.pausedByUser);
                                 consumer.resume(toResume);
                                 log.debug("Resumed");
                             }
                         } else {
                             if (checkAndSetPausedByUs()) {
-                                this.pausedByUser.addAll(consumer.paused());
                                 consumer.pause(consumer.assignment());
                                 log.debug("Paused - awaiting transaction");
                             }
                         }
                     } else if (checkAndSetPausedByUs()) {
-                        this.pausedByUser.addAll(consumer.paused());
                         consumer.pause(consumer.assignment());
                         if (pauseForDeferred) {
                             log.debug("Paused - too many deferred commits");
