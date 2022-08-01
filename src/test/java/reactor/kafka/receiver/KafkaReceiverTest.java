@@ -1341,11 +1341,14 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
                 .untilAsserted(() ->
             assertThat(receiver.doOnConsumer(org.apache.kafka.clients.consumer.Consumer::paused)
                     .block(Duration.ofSeconds(5L))).hasSize(4));
+        CountDownLatch latch3 = new CountDownLatch(1);
         receiver.doOnConsumer(consumer -> {
             consumer.pause(Collections.singletonList(new TopicPartition(this.topic, 0)));
+            latch3.countDown();
             return null;
         }).block(Duration.ofSeconds(5));
         latch1.countDown();
+        assertThat(latch3.await(10, TimeUnit.SECONDS)).isTrue();
         await().alias("Should not resume user pause")
                 .untilAsserted(() ->
             assertThat(receiver.doOnConsumer(org.apache.kafka.clients.consumer.Consumer::paused)
