@@ -340,7 +340,7 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
     public long position(TopicPartition partition) {
         acquire();
         try {
-            if (offsets == null) {
+            if (!offsets.containsKey(partition)) {
                 return 0L;
             }
             return offsets.get(partition);
