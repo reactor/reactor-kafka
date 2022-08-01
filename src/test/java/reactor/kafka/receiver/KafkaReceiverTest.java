@@ -677,7 +677,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     }
 
     @Test
-    @Ignore
+    @Ignore("flaky")
     public void autoCommitFailurePropagationAfterRetries() throws Exception {
         int count = 5;
         receiverOptions = receiverOptions.consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
