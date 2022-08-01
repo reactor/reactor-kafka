@@ -26,6 +26,7 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.After;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -676,6 +677,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     }
 
     @Test
+    @Ignore("flaky")
     public void autoCommitFailurePropagationAfterRetries() throws Exception {
         int count = 5;
         receiverOptions = receiverOptions.consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
