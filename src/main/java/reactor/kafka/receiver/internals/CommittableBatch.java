@@ -25,20 +25,20 @@ import reactor.core.publisher.MonoSink;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.SortedSet;
+import java.util.TreeSet;
 
 class CommittableBatch {
 
     private static final Logger log = LoggerFactory.getLogger(CommittableBatch.class);
 
     final Map<TopicPartition, Long> consumedOffsets = new HashMap<>();
-    final Map<TopicPartition, List<Long>> uncommitted = new HashMap<>();
-    final Map<TopicPartition, List<Long>> deferred = new HashMap<>();
+    final Map<TopicPartition, SortedSet<Long>> uncommitted = new HashMap<>();
+    final Map<TopicPartition, SortedSet<Long>> deferred = new HashMap<>();
     private final Map<TopicPartition, Long> latestOffsets = new HashMap<>();
     boolean outOfOrderCommits;
     private int batchSize;
@@ -47,11 +47,10 @@ class CommittableBatch {
 
     public synchronized int updateOffset(TopicPartition topicPartition, long offset) {
         if (this.outOfOrderCommits) {
-            List<Long> uncommittedThisTP = this.uncommitted.get(topicPartition);
+            SortedSet<Long> uncommittedThisTP = this.uncommitted.get(topicPartition);
             if (uncommittedThisTP != null && uncommittedThisTP.contains(offset)) {
-                List<Long> offsets = this.deferred.computeIfAbsent(topicPartition, tp -> new LinkedList<>());
-                if (!offsets.contains(offset)) {
-                    offsets.add(offset);
+                SortedSet<Long> offsets = this.deferred.computeIfAbsent(topicPartition, tp -> new TreeSet<>());
+                if (offsets.add(offset)) {
                     batchSize++;
                     this.inPipeline--;
                 }
@@ -80,12 +79,8 @@ class CommittableBatch {
     public synchronized void addUncommitted(ConsumerRecords<?, ?> records) {
         if (this.outOfOrderCommits) {
             records.partitions().forEach(tp -> {
-                List<Long> offsets = this.uncommitted.computeIfAbsent(tp, part -> new LinkedList<>());
-                records.records(tp).forEach(rec -> {
-                    if (!offsets.contains(rec.offset())) {
-                        offsets.add(rec.offset());
-                    }
-                });
+                SortedSet<Long> offsets = this.uncommitted.computeIfAbsent(tp, part -> new TreeSet<>());
+                records.records(tp).forEach(rec -> offsets.add(rec.offset()));
             });
         }
         this.inPipeline += records.count();
@@ -100,7 +95,7 @@ class CommittableBatch {
 
     public synchronized int deferredCount() {
         int count = 0;
-        for (List<Long> offsets : this.deferred.values()) {
+        for (SortedSet<Long> offsets : this.deferred.values()) {
             count += offsets.size();
         }
         return count;
@@ -115,14 +110,22 @@ class CommittableBatch {
         if (this.outOfOrderCommits) {
             this.deferred.forEach((tp, offsets) -> {
                 if (offsets.size() > 0) {
-                    Collections.sort(offsets);
-                    List<Long> uncomittedThisPart = this.uncommitted.get(tp);
                     long lastThisPart = -1;
-                    while (offsets.size() > 0 && offsets.get(0).equals(uncomittedThisPart.get(0))) {
-                        lastThisPart = offsets.get(0);
-                        offsets.remove(0);
-                        uncomittedThisPart.remove(0);
+                    Iterator<Long> uncommittedIterator = this.uncommitted.get(tp).iterator();
+                    Iterator<Long> deferredIterator = offsets.iterator();
+
+                    while (deferredIterator.hasNext()) {
+                        Long earliestDeferredOffset = deferredIterator.next();
+                        Long earliestUncommittedOffset = uncommittedIterator.next();
+                        if (!earliestDeferredOffset.equals(earliestUncommittedOffset)) {
+                            break;
+                        }
+
+                        lastThisPart = earliestDeferredOffset;
+                        uncommittedIterator.remove();
+                        deferredIterator.remove();
                     }
+
                     if (lastThisPart >= 0) {
                         offsetMap.put(tp, new OffsetAndMetadata(lastThisPart + 1));
                     }
@@ -154,8 +157,8 @@ class CommittableBatch {
         // Restore offsets that haven't been updated.
         if (outOfOrderCommits) {
             commitArgs.offsets.forEach((tp, offset) -> {
-                this.deferred.get(tp).add(0, offset.offset() - 1);
-                this.uncommitted.get(tp).add(0, offset.offset() - 1);
+                this.deferred.get(tp).add(offset.offset() - 1);
+                this.uncommitted.get(tp).add(offset.offset() - 1);
             });
         } else {
             for (Map.Entry<TopicPartition, OffsetAndMetadata> entry : commitArgs.offsets.entrySet()) {
