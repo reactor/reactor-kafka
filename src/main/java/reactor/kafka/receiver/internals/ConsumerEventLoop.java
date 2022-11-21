@@ -313,7 +313,9 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                                 Set<TopicPartition> toResume = new HashSet<>(consumer.assignment());
                                 toResume.removeAll(ConsumerEventLoop.this.pausedByUser);
                                 consumer.resume(toResume);
-                                log.debug("Resumed");
+                                if (log.isDebugEnabled()) {
+                                    log.debug("Resumed partitions: " + toResume);
+                                }
                             }
                         } else {
                             if (checkAndSetPausedByUs()) {
