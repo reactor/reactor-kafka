@@ -494,7 +494,7 @@ public class OutOfOrderCommitsTests {
             subscribeLatch.countDown();
             return null;
         }).given(consumer).subscribe(any(Collection.class), any(ConsumerRebalanceListener.class));
-        CountDownLatch commitLatch = new CountDownLatch(1);
+        CountDownLatch commitLatch = new CountDownLatch(4);
         willAnswer(inv -> {
             commitLatch.countDown();
             return null;
