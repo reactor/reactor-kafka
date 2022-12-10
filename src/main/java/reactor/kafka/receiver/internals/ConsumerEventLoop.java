@@ -40,6 +40,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -240,27 +241,42 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                         @Override
                         public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
                             log.debug("onPartitionsAssigned {}", partitions);
-                            // onAssign methods may perform seek. It is safe to use the consumer here since we are in a poll()
-                            if (!partitions.isEmpty()) {
-                                if (ConsumerEventLoop.this.pollEvent.pausedByUs.get()) {
-                                    log.debug("Rebalance during back pressure, re-pausing new assignments");
-                                    consumer.pause(partitions);
-                                }
-                                for (Consumer<Collection<ReceiverPartition>> onAssign :
-                                        receiverOptions.assignListeners()) {
-                                    onAssign.accept(toSeekable(partitions));
-                                }
-                                if (log.isTraceEnabled()) {
-                                    try {
-                                        List<String> positions = new ArrayList<>();
-                                        partitions.forEach(part -> positions.add(String.format("%s pos: %d", part,
-                                            ConsumerEventLoop.this.consumer.position(part, Duration.ofSeconds(5)))));
-                                        log.trace("positions: {}, committed: {}", positions,
-                                                ConsumerEventLoop.this.consumer.committed(new HashSet<>(partitions),
-                                                        Duration.ofSeconds(5)));
-                                    } catch (Exception ex) {
-                                        log.error("Failed to get positions or committed", ex);
+                            boolean repausedAll = false;
+                            if (!partitions.isEmpty() && ConsumerEventLoop.this.pollEvent.pausedByUs.get()) {
+                                log.debug("Rebalance during back pressure, re-pausing new assignments");
+                                consumer.pause(partitions);
+                                repausedAll = true;
+                            }
+                            if (!pausedByUser.isEmpty()) {
+                                List<TopicPartition> toRepause = new ArrayList<>();
+                                Iterator<TopicPartition> iterator = pausedByUser.iterator();
+                                while (iterator.hasNext()) {
+                                    TopicPartition next = iterator.next();
+                                    if (partitions.contains(next)) {
+                                        toRepause.add(next);
+                                    } else {
+                                        iterator.remove();
                                     }
+                                }
+                                if (!repausedAll && !toRepause.isEmpty()) {
+                                    consumer.pause(toRepause);
+                                }
+                            }
+                            // onAssign methods may perform seek. It is safe to use the consumer here since we are in a poll()
+                            for (Consumer<Collection<ReceiverPartition>> onAssign :
+                                    receiverOptions.assignListeners()) {
+                                onAssign.accept(toSeekable(partitions));
+                            }
+                            if (log.isTraceEnabled()) {
+                                try {
+                                    List<String> positions = new ArrayList<>();
+                                    partitions.forEach(part -> positions.add(String.format("%s pos: %d", part,
+                                        ConsumerEventLoop.this.consumer.position(part, Duration.ofSeconds(5)))));
+                                    log.trace("positions: {}, committed: {}", positions,
+                                            ConsumerEventLoop.this.consumer.committed(new HashSet<>(partitions),
+                                                    Duration.ofSeconds(5)));
+                                } catch (Exception ex) {
+                                    log.error("Failed to get positions or committed", ex);
                                 }
                             }
                         }
