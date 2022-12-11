@@ -21,6 +21,7 @@ import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.Test;
+import reactor.core.Disposable;
 import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOptions;
 
@@ -91,7 +92,7 @@ public class PauseRebalanceTests {
         ConsumerFactory factory = mock(ConsumerFactory.class);
         given(factory.createConsumer(any())).willReturn(consumer);
         KafkaReceiver receiver = KafkaReceiver.create(factory, options);
-        receiver.receive()
+        Disposable disposable = receiver.receive()
             .subscribe();
         assertTrue(consumeLatch.await(10, TimeUnit.SECONDS));
         receiver.doOnConsumer(con -> {
@@ -104,6 +105,7 @@ public class PauseRebalanceTests {
         assertTrue(rebalLatch.await(10, TimeUnit.SECONDS));
         verify(consumer).pause(justZero);
         checkUserPauses(receiver, justZero);
+        disposable.dispose();
     }
 
     @SuppressWarnings({ "rawtypes", "unchecked" })
