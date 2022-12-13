@@ -1,5 +1,5 @@
 [versions]
-reactorCore = "3.4.26-SNAPSHOT"
+reactorCore = "3.4.26"
 
 # Other shared versions
 asciidoctor = "3.3.2"
