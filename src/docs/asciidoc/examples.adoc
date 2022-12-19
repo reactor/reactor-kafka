@@ -71,7 +71,8 @@ senderOptions = senderOptions
 KafkaSender.create(senderOptions)
            .send(source.flux().map(r -> transform(r)))                      // <4>
            .doOnError(e-> log.error("Send failed, terminating.", e))        // <5>
-           .doOnNext(r -> source.commit(r.correlationMetadata()));          // <6>
+           .doOnNext(r -> source.commit(r.correlationMetadata()))           // <6>
+           .retry(When(Retry.backoff(3, Duration.of(10L, ChronoUnit.SECONDS))));
 --------
 <1> Send is acknowledged by Kafka for acks=all after message is delivered to all in-sync replicas
 <2> Large number of retries in the producer to cope with transient failures in brokers
@@ -98,7 +99,8 @@ KafkaReceiver.create(receiverOptions)
              .receive()
              .publishOn(aBoundedElasticScheduler) // <4>
              .concatMap(m -> sink.store(transform(m))                                   // <5>
-                               .doOnSuccess(r -> m.receiverOffset().commit().block())); // <6>
+                               .doOnSuccess(r -> m.receiverOffset().commit().block()))  // <6>
+             .retry(When(Retry.backoff(3, Duration.of(10L, ChronoUnit.SECONDS))))
 --------
 <1> Disable periodic commits
 <2> Disable commits by batch size

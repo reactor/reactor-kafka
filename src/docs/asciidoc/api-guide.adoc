@@ -118,7 +118,7 @@ public SenderOptions<K, V> stopOnError(boolean stopOnError);
 --------
 
 `SenderOptions#stopOnError()` specifies whether each send sequence should fail immediately if one
-record could not delivered to Kafka after the configured number of retries or wait until all records
+record could not be delivered to Kafka after the configured number of retries or wait until all records
 have been processed. This can be used along with `ProducerConfig#ACKS_CONFIG`
 and `ProducerConfig#RETRIES_CONFIG` to configure the required quality of service.
 
@@ -322,6 +322,25 @@ inboundFlux.subscribe(r -> {
 --------
 <1> Prints each consumer record from Kafka
 <2> Acknowledges that the record has been processed so that the offset may be committed
+
+==== Error handling
+
+Since in reactive streams an error represents a terminal signal, any error signal emitted in the inbound Flux will cause the subscription to be cancelled and
+effectively cause the consumer to shut down. This can be mitigated by using the `retry()` operator (or `retryWhen` for finer grained control),
+which will ensure that a new consumer is created:
+
+
+[source,java]
+--------
+Flux<ReceiverRecord<Integer, String>> inboundFlux =
+    KafkaReceiver.create(receiverOptions)
+                 .receive()
+                 .retry(When(Retry.backoff(3, Duration.of(10L, ChronoUnit.SECONDS))));
+--------
+
+Any errors related to the event processing rather than the `KafkaConsumer` itself should be handled as close to the source as possible
+and should ideally be prevented from propagating up to the inbound Flux. This is to ensure that the `KafkaConsumer` doesn't get restarted
+unnecessarily due to unrelated application errors.
 
 ==== Subscribing to wildcard patterns
 
