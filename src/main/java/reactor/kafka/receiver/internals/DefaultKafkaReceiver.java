@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package reactor.kafka.receiver.internals;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.RetriableCommitFailedException;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.RebalanceInProgressException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -42,7 +43,8 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
 
     private final ReceiverOptions<K, V> receiverOptions;
 
-    Predicate<Throwable> isRetriableException = RetriableCommitFailedException.class::isInstance;
+    Predicate<Throwable> isRetriableException = t -> RetriableCommitFailedException.class.isInstance(t)
+            || RebalanceInProgressException.class.isInstance(t);
 
     ConsumerHandler<K, V> consumerHandler;
 
