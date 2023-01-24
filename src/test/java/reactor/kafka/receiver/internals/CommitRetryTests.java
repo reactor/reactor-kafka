@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2022-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.consumer.OffsetCommitCallback;
 import org.apache.kafka.clients.consumer.RetriableCommitFailedException;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.RebalanceInProgressException;
 import org.junit.Test;
 import reactor.core.Disposable;
 import reactor.core.scheduler.Scheduler;
@@ -46,6 +47,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Predicate;
 
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -132,13 +134,25 @@ public class CommitRetryTests {
         verify(scheduler, times(4)).schedule(any(), eq(11L), eq(TimeUnit.MILLISECONDS));
     }
 
+    @Test
+    public void rebalanceInProgressExceptionIsRetryable() throws Exception {
+        ConsumerFactory cf = mock(ConsumerFactory.class);
+        Consumer consumer = mock(Consumer.class);
+        given(cf.createConsumer(any())).willReturn(consumer);
+        ReceiverOptions options = ReceiverOptions.create().subscription(Collections.singleton("foo"));
+        KafkaReceiver<?, ?> receiver = KafkaReceiver.create(cf, options);
+        Disposable disp = receiver.receive().subscribe();
+        Object loop = getEventLoop(receiver);
+        disp.dispose();
+        Field retryableField = ConsumerEventLoop.class.getDeclaredField("isRetriableException");
+        retryableField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Predicate<Throwable> retryable = (Predicate<Throwable>) retryableField.get(loop);
+        assertTrue(retryable.test(new RebalanceInProgressException()));
+    }
+
     private Scheduler injectMockScheduler(KafkaReceiver<?, ?> receiver) throws Exception {
-        Field handlerField = DefaultKafkaReceiver.class.getDeclaredField("consumerHandler");
-        handlerField.setAccessible(true);
-        Object eventLoop = handlerField.get(receiver);
-        Field loopField = ConsumerHandler.class.getDeclaredField("consumerEventLoop");
-        loopField.setAccessible(true);
-        Object loop = loopField.get(eventLoop);
+        Object loop = getEventLoop(receiver);
         Field schedulerField = ConsumerEventLoop.class.getDeclaredField("eventScheduler");
         schedulerField.setAccessible(true);
         Scheduler mock = mock(Scheduler.class);
@@ -154,6 +168,16 @@ public class CommitRetryTests {
         }).given(mock).schedule(any(), any(Long.class), any());
         schedulerField.set(loop, mock);
         return mock;
+    }
+
+    private Object getEventLoop(KafkaReceiver<?, ?> receiver) throws Exception {
+        Field handlerField = DefaultKafkaReceiver.class.getDeclaredField("consumerHandler");
+        handlerField.setAccessible(true);
+        Object eventLoop = handlerField.get(receiver);
+        Field loopField = ConsumerHandler.class.getDeclaredField("consumerEventLoop");
+        loopField.setAccessible(true);
+        Object loop = loopField.get(eventLoop);
+        return loop;
     }
 
 }

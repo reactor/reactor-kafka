@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2020-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.RebalanceInProgressException;
 import org.apache.kafka.common.errors.WakeupException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -320,7 +321,8 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                     long r = requested;
                     boolean pauseForDeferred = this.maxDeferredCommits > 0
                         && this.commitBatch.deferredCount() >= this.maxDeferredCommits;
-                    if (pauseForDeferred || commitEvent.retrying.get()) {
+                    boolean legacyRebalance = commitEvent.retrying.get() && !commitEvent.cooperativeRetry;
+                    if (pauseForDeferred || legacyRebalance) {
                         r = 0;
                     }
                     if (r > 0) {
@@ -343,7 +345,7 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                         consumer.pause(consumer.assignment());
                         if (pauseForDeferred) {
                             log.debug("Paused - too many deferred commits");
-                        } else if (commitEvent.retrying.get()) {
+                        } else if (legacyRebalance) {
                             log.debug("Paused - commits are retrying");
                         } else {
                             log.debug("Paused - back pressure");
@@ -364,7 +366,7 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
 
                     if (!records.isEmpty()) {
                         this.commitBatch.addUncommitted(records);
-                        Operators.produced(REQUESTED, ConsumerEventLoop.this, 1);
+                        r = Operators.produced(REQUESTED, ConsumerEventLoop.this, 1);
                         log.debug("Emitting {} records, requested now {}", records.count(), r);
                         sink.emitNext(records, ConsumerEventLoop.this);
                     }
@@ -383,7 +385,7 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
          */
         private boolean checkAndSetPausedByUs() {
             boolean pausedNow = !pausedByUs.getAndSet(true);
-            if (pausedNow && requested > 0 && !commitEvent.retrying.get()) {
+            if (pausedNow && requested > 0 && (!commitEvent.retrying.get() || commitEvent.cooperativeRetry)) {
                 consumer.wakeup();
             }
             return pausedNow;
@@ -406,6 +408,7 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
         private final AtomicInteger inProgress = new AtomicInteger();
         private final AtomicInteger consecutiveCommitFailures = new AtomicInteger();
         private final AtomicBoolean retrying = new AtomicBoolean();
+        private boolean cooperativeRetry;
 
         @Override
         public void run() {
@@ -501,6 +504,7 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                             + (receiverOptions.maxCommitAttempts() - consecutiveCommitFailures.get()));
                 isPending.set(true);
                 this.retrying.set(true);
+                this.cooperativeRetry = RebalanceInProgressException.class.isInstance(exception);
                 pollEvent.schedule();
                 eventScheduler.schedule(this, receiverOptions.commitRetryInterval().toMillis(), TimeUnit.MILLISECONDS);
             }
