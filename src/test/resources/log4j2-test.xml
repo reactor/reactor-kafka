@@ -32,6 +32,7 @@
     <Logger name="reactor.Flux.Interval" level="off"/>
     <Logger name="reactor.Flux.FlatMap.10" level="off"/>
     <Logger name="reactor.Flux.Map.8" level="off"/>
+    <Logger name="reactor.kafka.receiver" level="debug"/>
     <Root level="off">
       <AppenderRef ref="STDOUT" />
     </Root>

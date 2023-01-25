@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 package reactor.kafka.receiver;
 
 
-import javax.annotation.Nullable;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
@@ -36,6 +35,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.kafka.AbstractKafkaTest;
+import reactor.kafka.receiver.backpressure.PassThroughCoreSubscriber;
 import reactor.kafka.receiver.internals.ChaosConsumerFactory;
 import reactor.kafka.receiver.internals.ConsumerFactory;
 import reactor.kafka.receiver.internals.DefaultKafkaReceiver;
@@ -49,6 +49,7 @@ import reactor.kafka.util.TestUtils;
 import reactor.test.StepVerifier;
 import reactor.util.retry.Retry;
 
+import javax.annotation.Nullable;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -1392,6 +1393,32 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
 
         await().timeout(Duration.ofSeconds(10))
             .untilAsserted(() -> assertEquals(count, count(receivedMessages)));
+    }
+
+    @Test
+    public void addingReactorHookShouldNotBreakBackpressure() throws Exception {
+        PassThroughCoreSubscriber.enableHook();
+        int count = 20;
+        receiverOptions = receiverOptions
+            .pollTimeout(Duration.ofMinutes(1))
+            .schedulerSupplier(() -> Schedulers.newSingle("back-pressure-scheduler"));
+
+        sendMessages(0, count);
+
+        Disposable disposable = createReceiver().receive()
+            .flatMap(
+                r -> Mono
+                    .just(r)
+                    .delayElement(Duration.ofSeconds(5)) //simulate long running task
+                    .flatMap(rec -> rec.receiverOffset().commit()), /*concurrency*/1) //process 1 item at a time to enable backpressure
+            .subscribe();
+        subscribeDisposables.add(disposable);
+
+
+        TimeUnit.SECONDS.sleep(3);
+        await().timeout(Duration.ofSeconds(10))
+            //we expect 4 messages emmited, because each poll polls 2 messages, and only 2 polls are expected due to flatMap concurrency set to 1
+            .untilAsserted(() -> assertEquals(4, PassThroughCoreSubscriber.messagesOnNextCount()));
     }
 
     private Disposable sendAndWaitForMessages(Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux, int count) throws Exception {
