@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 package reactor.kafka.receiver;
 
 
-import javax.annotation.Nullable;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
@@ -50,6 +49,7 @@ import reactor.kafka.util.TestUtils;
 import reactor.test.StepVerifier;
 import reactor.util.retry.Retry;
 
+import javax.annotation.Nullable;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -1410,8 +1410,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
                 r -> Mono
                     .just(r)
                     .delayElement(Duration.ofSeconds(5)) //simulate long running task
-                    .flatMap(rec -> rec.receiverOffset().commit()) //commit offset
-                , /*concurrency*/1) //process 1 item at a time to enable backpressure
+                    .flatMap(rec -> rec.receiverOffset().commit()), /*concurrency*/1) //process 1 item at a time to enable backpressure
             .subscribe();
         subscribeDisposables.add(disposable);
 
