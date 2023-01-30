@@ -98,6 +98,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     @After
     public void tearDown() {
         cancelSubscriptions(true);
+        PassThroughCoreSubscriber.disableHook();
     }
 
     @Test
