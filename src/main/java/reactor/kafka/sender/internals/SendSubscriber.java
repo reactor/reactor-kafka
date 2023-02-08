@@ -97,7 +97,7 @@ class SendSubscriber<K, V, C> implements CoreSubscriber<ProducerRecord<K, V>> {
             }
 
             if (exception != null) {
-                DefaultKafkaSender.log.trace("Sender failed: $exception ");
+                DefaultKafkaSender.log.trace("Sender failed: $exception");
                 firstException.compareAndSet(null, exception);
                 if (senderOptions.stopOnError() || senderOptions.fatalException(exception)) {
                     onError(exception);
