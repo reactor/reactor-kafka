@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2020-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -97,7 +97,7 @@ class SendSubscriber<K, V, C> implements CoreSubscriber<ProducerRecord<K, V>> {
             }
 
             if (exception != null) {
-                DefaultKafkaSender.log.error("Sender failed", exception);
+                DefaultKafkaSender.log.trace("Sender failed: ", exception);
                 firstException.compareAndSet(null, exception);
                 if (senderOptions.stopOnError() || senderOptions.fatalException(exception)) {
                     onError(exception);
