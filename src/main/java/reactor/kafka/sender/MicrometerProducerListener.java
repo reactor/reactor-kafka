@@ -32,7 +32,7 @@ import java.util.Map;
  * A producer listener that manages {@link KafkaClientMetrics}.
  *
  * @author Gary Russell
- * @since 1.3.16
+ * @since 1.3.17
  *
  */
 public class MicrometerProducerListener implements SenderOptions.ProducerListener {

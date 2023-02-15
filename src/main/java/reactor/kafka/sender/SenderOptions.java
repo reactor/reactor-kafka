@@ -190,7 +190,7 @@ public interface SenderOptions<K, V> {
     /**
      * Returns the listener that will be applied after a producer is added and removed.
      * @return the listener.
-     * @since 1.3.16
+     * @since 1.3.17
      */
     @Nullable
     default ProducerListener producerListener() {
@@ -200,7 +200,7 @@ public interface SenderOptions<K, V> {
     /**
      * Set a listener that will be applied after a producer is added and removed.
      * @return options instance with the updated listener.
-     * @since 1.3.16
+     * @since 1.3.17
      */
     default SenderOptions<K, V> producerListener(@Nullable ProducerListener listener) {
         return this;
@@ -241,7 +241,7 @@ public interface SenderOptions<K, V> {
      * @param <K> the key type.
      * @param <V> the value type.
      *
-     * @since 1.3.16
+     * @since 1.3.17
      *
      */
     interface ProducerListener {

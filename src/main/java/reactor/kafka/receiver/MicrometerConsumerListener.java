@@ -32,7 +32,7 @@ import java.util.Map;
  * A consumer listener that manages {@link KafkaClientMetrics}.
  *
  * @author Gary Russell
- * @since 1.3.16
+ * @since 1.3.17
  *
  */
 public class MicrometerConsumerListener implements ReceiverOptions.ConsumerListener {
