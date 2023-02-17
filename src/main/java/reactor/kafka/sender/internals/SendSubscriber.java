@@ -16,6 +16,7 @@
 
 package reactor.kafka.sender.internals;
 
+import io.micrometer.observation.contextpropagation.ObservationThreadLocalAccessor;
 import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -25,6 +26,8 @@ import reactor.core.publisher.Operators;
 import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.SenderRecord;
 import reactor.kafka.sender.SenderResult;
+import reactor.kafka.sender.observation.KafkaRecordSenderContext;
+import reactor.kafka.sender.observation.KafkaSenderObservation;
 import reactor.util.context.Context;
 
 import java.util.concurrent.atomic.AtomicInteger;
@@ -111,7 +114,14 @@ class SendSubscriber<K, V, C> implements CoreSubscriber<ProducerRecord<K, V>> {
             }
         };
         try {
-            producer.send(record, callback);
+            KafkaSenderObservation.SENDER_OBSERVATION.observation(senderOptions.observationConvention(),
+                    KafkaSenderObservation.DefaultKafkaSenderObservationConvention.INSTANCE,
+                            () -> new KafkaRecordSenderContext(record,
+                                    senderOptions.clientId(),
+                                    senderOptions.bootstrapServers()),
+                    senderOptions.observationRegistry())
+                            .parentObservation(currentContext().getOrDefault(ObservationThreadLocalAccessor.KEY, null))
+                            .observe(() -> producer.send(record, callback));
         } catch (Exception e) {
             callback.onCompletion(null, e);
         }

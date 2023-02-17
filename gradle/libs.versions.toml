@@ -8,6 +8,8 @@ log4j = "2.17.1"
 micrometer = "1.10.4"
 powermock = "2.0.9"
 reactiveStreams = "1.0.3"
+micrometer = "1.11.0-M1"
+micrometerTracing = '1.1.0-M1'
 
 [libraries]
 kafka = "org.apache.kafka:kafka-clients:3.6.0"
@@ -29,6 +31,8 @@ powermock-junit = { module = "org.powermock:powermock-module-junit4", version.re
 powermock-mockito = { module = "org.powermock:powermock-api-mockito2", version.ref = "powermock" }
 slf4j = "org.slf4j:slf4j-api:1.7.36"
 testcontainers = "org.testcontainers:kafka:1.16.3"
+micrometer-observation = { module = "io.micrometer:micrometer-observation", version.ref = "micrometer" }
+micrometer-tracing-test = { module = "io.micrometer:micrometer-tracing-integration-test", version.ref = "micrometerTracing" }
 
 [plugins]
 artifactory = { id = "com.jfrog.artifactory", version = "4.27.1" }
