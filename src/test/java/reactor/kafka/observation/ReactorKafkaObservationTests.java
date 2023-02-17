@@ -18,7 +18,6 @@ package reactor.kafka.observation;
 
 import java.time.Duration;
 import java.util.Collections;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 import brave.Tracing;
@@ -37,8 +36,6 @@ import io.micrometer.tracing.handler.DefaultTracingObservationHandler;
 import io.micrometer.tracing.handler.PropagatingReceiverTracingObservationHandler;
 import io.micrometer.tracing.handler.PropagatingSenderTracingObservationHandler;
 import io.micrometer.tracing.test.simple.SpansAssert;
-import org.apache.kafka.clients.consumer.Consumer;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -47,9 +44,7 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.kafka.AbstractKafkaTest;
 import reactor.kafka.receiver.KafkaReceiver;
-import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.ReceiverRecord;
-import reactor.kafka.receiver.internals.ConsumerFactory;
 import reactor.kafka.receiver.observation.KafkaReceiverObservation;
 import reactor.kafka.receiver.observation.KafkaRecordReceiverContext;
 import reactor.kafka.sender.KafkaSender;
@@ -57,8 +52,6 @@ import reactor.kafka.sender.observation.KafkaSenderObservation;
 import reactor.test.StepVerifier;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 
 public class ReactorKafkaObservationTests extends AbstractKafkaTest {
 
@@ -135,28 +128,6 @@ public class ReactorKafkaObservationTests extends AbstractKafkaTest {
                 .hasASpanWithATag(KafkaSenderObservation.SenderLowCardinalityTags.CLIENT_ID, "producer-1")
                 .hasASpanWithName(topic + " send", spanAssert -> spanAssert.hasKindEqualTo(Span.Kind.PRODUCER))
                 .hasASpanWithName(topic + " receive", spanAssert -> spanAssert.hasKindEqualTo(Span.Kind.CONSUMER));
-    }
-
-    private Consumer<Integer, String> createConsumer() {
-        String groupId = testName.getMethodName();
-        Map<String, Object> consumerProps = consumerProps(groupId);
-        Consumer<Integer, String> consumer = ConsumerFactory.INSTANCE.createConsumer(ReceiverOptions.create(consumerProps));
-        consumer.subscribe(Collections.singletonList(topic));
-        consumer.poll(Duration.ofMillis(requestTimeoutMillis));
-        return consumer;
-    }
-
-    private void waitForMessages(Consumer<Integer, String> consumer, int expectedCount) {
-        int receivedCount = 0;
-        long endTimeMillis = System.currentTimeMillis() + receiveTimeoutMillis;
-        while (receivedCount < expectedCount && System.currentTimeMillis() < endTimeMillis) {
-            ConsumerRecords<Integer, String> records = consumer.poll(Duration.ofSeconds(1));
-            records.forEach(this::onReceive);
-            receivedCount += records.count();
-        }
-        assertEquals(expectedCount, receivedCount);
-        ConsumerRecords<Integer, String> records = consumer.poll(Duration.ofMillis(500));
-        assertTrue("Unexpected message received: " + records.count(), records.isEmpty());
     }
 
 }
