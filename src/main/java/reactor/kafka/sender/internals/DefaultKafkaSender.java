@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -72,6 +72,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V>, EmitFailureH
     private final AtomicBoolean hasProducer;
     final SenderOptions<K, V> senderOptions;
     private final TransactionManager transactionManager;
+    private final String producerId;
     private Producer<K, V> producerProxy;
 
     /**
@@ -79,11 +80,12 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V>, EmitFailureH
      * producer properties are supported. The underlying Kafka producer is created lazily when required.
      */
     public DefaultKafkaSender(ProducerFactory producerFactory, SenderOptions<K, V> options) {
+        producerId = "reactor-kafka-sender-" + System.identityHashCode(this);
         this.scheduler = Schedulers.newSingle(new ThreadFactory() {
             @Override
             public Thread newThread(Runnable r) {
                 Thread thread = new Thread(r);
-                thread.setName("reactor-kafka-sender-" + System.identityHashCode(this));
+                thread.setName(producerId);
                 return thread;
             }
         });
@@ -95,8 +97,10 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V>, EmitFailureH
 
         this.producerMono = Mono
                 .fromCallable(() -> {
-                    Producer<K, V> producer =
-                            producerFactory.createProducer(senderOptions);
+                    Producer<K, V> producer = producerFactory.createProducer(senderOptions);
+                    if (senderOptions.producerListener() != null) {
+                        senderOptions.producerListener().producerAdded(producerId, producer);
+                    }
                     if (senderOptions.isTransactional()) {
                         log.info("Initializing transactions for producer {}",
                                 senderOptions.transactionalId());
@@ -174,8 +178,13 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V>, EmitFailureH
         if (!hasProducer.getAndSet(false)) {
             return;
         }
-        producerMono.doOnNext(producer -> producer.close(senderOptions.closeTimeout()))
-                    .block();
+        producerMono.doOnNext(producer -> {
+            producer.close(senderOptions.closeTimeout());
+            if (senderOptions.producerListener() != null) {
+                senderOptions.producerListener().producerRemoved(producerId, producer);
+            }
+        })
+            .block();
         if (senderOptions.isTransactional()) {
             senderOptions.scheduler().dispose();
         }

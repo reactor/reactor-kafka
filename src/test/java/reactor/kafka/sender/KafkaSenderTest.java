@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package reactor.kafka.sender;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.Callback;
@@ -64,6 +66,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -82,9 +85,12 @@ public class KafkaSenderTest extends AbstractKafkaTest {
 
     private KafkaSender<Integer, String> kafkaSender;
     private Consumer<Integer, String> consumer;
+    private final MeterRegistry registry = new SimpleMeterRegistry();
+    private final MicrometerProducerListener listener = new MicrometerProducerListener(registry);
 
     @Before
     public void setUp() throws Exception {
+        senderOptions = senderOptions.producerListener(listener);
         kafkaSender = KafkaSender.create(senderOptions);
         consumer = createConsumer();
     }
@@ -95,6 +101,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
             consumer.close();
         if (kafkaSender != null)
             kafkaSender.close();
+        assertThat(registry.getMeters()).isEmpty();
     }
 
     /**
@@ -110,6 +117,9 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                    .block(Duration.ofMillis(receiveTimeoutMillis));
 
         waitForMessages(consumer, count, true);
+        assertThat(registry.get("kafka.producer.request.total")
+                .tagKeys("reactor-kafka.id")
+                .functionCounter()).isNotNull();
     }
 
     /**
