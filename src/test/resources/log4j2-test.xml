@@ -17,7 +17,7 @@
 <Configuration status="WARN">
   <Appenders>
     <Console name="STDOUT" target="SYSTEM_OUT">
-      <PatternLayout pattern="[%d] [%t] [%c] %p [%X{traceId:-},%X{spanId:-}] %m%n" />
+      <PatternLayout pattern="[%d] [%t] [%c] %p %m%n" />
     </Console>
   </Appenders>
   <Loggers>
@@ -29,7 +29,6 @@
     <Logger name="reactor" level="info"/>
     <Logger name="reactor.kafka" level="off"/>
     <Logger name="reactor.kafka.receiver.KafkaReceiverTest" level="info"/>
-    <Logger name="reactor.kafka.observation.ReactorKafkaObservationTests" level="info"/>
     <Logger name="reactor.Flux.Interval" level="off"/>
     <Logger name="reactor.Flux.FlatMap.10" level="off"/>
     <Logger name="reactor.Flux.Map.8" level="off"/>

@@ -26,6 +26,7 @@ import brave.test.TestSpanHandler;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationHandler;
 import io.micrometer.observation.ObservationRegistry;
+import io.micrometer.observation.contextpropagation.ObservationThreadLocalAccessor;
 import io.micrometer.tracing.Span;
 import io.micrometer.tracing.brave.bridge.BraveBaggageManager;
 import io.micrometer.tracing.brave.bridge.BraveCurrentTraceContext;
@@ -39,14 +40,12 @@ import io.micrometer.tracing.test.simple.SpansAssert;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.kafka.AbstractKafkaTest;
 import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverRecord;
-import reactor.kafka.receiver.observation.KafkaReceiverObservation;
-import reactor.kafka.receiver.observation.KafkaRecordReceiverContext;
+import reactor.kafka.receiver.observation.ReceiverObservations;
 import reactor.kafka.sender.KafkaSender;
 import reactor.kafka.sender.observation.KafkaSenderObservation;
 import reactor.test.StepVerifier;
@@ -54,8 +53,6 @@ import reactor.test.StepVerifier;
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class ReactorKafkaObservationTests extends AbstractKafkaTest {
-
-    private static final Logger log = LoggerFactory.getLogger(ReactorKafkaObservationTests.class);
 
     private static final TestSpanHandler SPANS = new TestSpanHandler();
 
@@ -94,26 +91,28 @@ public class ReactorKafkaObservationTests extends AbstractKafkaTest {
     }
 
     @Test
-    public void senderPropagatesObservation() {
+    public void senderPropagatesObservationToReceiver() {
         int count = 10;
         Flux<Integer> source = Flux.range(0, count);
-        Observation.createNotStarted("test parent observation", OBSERVATION_REGISTRY)
-                .observe(() ->
-                        kafkaSender.createOutbound().send(source.map(i -> createProducerRecord(i, true)))
-                                .then()
-                                .subscribe());
+        Observation parentObservation = Observation.createNotStarted("test parent observation", OBSERVATION_REGISTRY);
+        parentObservation.start();
+        kafkaSender.createOutbound().send(source.map(i -> createProducerRecord(i, true)))
+                .then()
+                .doOnTerminate(parentObservation::stop)
+                .doOnError(parentObservation::error)
+                .contextWrite(context -> context.put(ObservationThreadLocalAccessor.KEY, parentObservation))
+                .subscribe();
 
         Flux<ReceiverRecord<Integer, String>> receive =
                 KafkaReceiver.create(receiverOptions.subscription(Collections.singletonList(topic)))
                         .receive()
-                        .doOnNext(record -> {
-                            KafkaReceiverObservation.RECEIVER_OBSERVATION.observation(null,
-                                            KafkaReceiverObservation.DefaultKafkaReceiverObservationConvention.INSTANCE,
-                                            () -> new KafkaRecordReceiverContext(record, "reactor kafka receiver",
-                                                    bootstrapServers()),
-                                            OBSERVATION_REGISTRY)
-                                    .observe(() -> log.info("Received record " + record));
-                        });
+                        .flatMap(record ->
+                                Mono.deferContextual(cxt ->
+                                                Mono.just(record)
+                                                        .filter(data -> cxt.hasKey(ObservationThreadLocalAccessor.KEY)))
+                                        .transformDeferred(mono ->
+                                                ReceiverObservations.observe(mono, record, "reactor kafka receiver",
+                                                        bootstrapServers(), OBSERVATION_REGISTRY)));
 
         StepVerifier.create(receive)
                 .expectNextCount(count)
