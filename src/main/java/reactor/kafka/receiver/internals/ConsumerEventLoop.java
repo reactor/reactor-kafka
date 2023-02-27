@@ -424,7 +424,11 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                                 if (log.isDebugEnabled()) {
                                     log.debug("Sync committing: " + commitArgs.offsets());
                                 }
-                                consumer.commitSync(commitArgs.offsets());
+                                try {
+                                    consumer.commitSync(commitArgs.offsets());
+                                } catch (WakeupException ex) {
+                                    consumer.commitSync(commitArgs.offsets());
+                                }
                                 handleSuccess(commitArgs, commitArgs.offsets());
                                 atmostOnceOffsets.onCommit(commitArgs.offsets());
                                 break;
