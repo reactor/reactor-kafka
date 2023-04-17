@@ -108,8 +108,9 @@ public class ProducerPerformance {
     /** Get the command-line argument parser. */
     private static ArgumentParser argParser() {
         ArgumentParser parser = ArgumentParsers
-                .newArgumentParser("producer-performance")
-                .defaultHelp(true)
+                .newFor("producer-performance")
+                .addHelp(true)
+                .build()
                 .description("This tool is used to verify the producer performance.");
 
         parser.addArgument("--topic")
