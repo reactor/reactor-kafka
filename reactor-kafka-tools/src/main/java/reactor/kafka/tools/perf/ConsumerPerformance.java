@@ -104,7 +104,9 @@ public class ConsumerPerformance {
 
     /** Get the command-line argument parser. */
     private static ArgumentParser argParser() {
-        ArgumentParser parser = ArgumentParsers.newArgumentParser("consumer-performance").defaultHelp(true)
+        ArgumentParser parser = ArgumentParsers.newFor("consumer-performance")
+                .addHelp(true)
+                .build()
                 .description("This tool is used to verify the consumer performance.");
 
         parser.addArgument("--topic")

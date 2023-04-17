@@ -121,7 +121,9 @@ public class EndToEndLatency {
 
     /** Get the command-line argument parser. */
     private static ArgumentParser argParser() {
-        ArgumentParser parser = ArgumentParsers.newArgumentParser("end-to-end-latency").defaultHelp(true)
+        ArgumentParser parser = ArgumentParsers.newFor("end-to-end-latency")
+                .addHelp(true)
+                .build()
                 .description("This tool is used to verify end to end latency.");
 
         parser.addArgument("--bootstrap-servers")
