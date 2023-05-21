@@ -139,8 +139,8 @@ configure(allprojects) { project ->
     dependsOn test
     sourceSets sourceSets.main
     reports {
-      html.enabled = true
-      xml.enabled = true
+      html.required = true
+      xml.required = true
     }
   }
   jacocoTestReport.dependsOn test

@@ -1361,7 +1361,7 @@ public class MockReceiverTest {
     @SuppressWarnings("unchecked")
     private void verifyMessages(Flux<? extends ConsumerRecord<Integer, String>> inboundFlux, int receiveCount) {
         StepVerifier.create(inboundFlux)
-                .recordWith(() -> receivedMessages)
+                .recordWith(() -> (Collection) receivedMessages)
                 .expectNextCount(receiveCount)
                 .expectComplete()
                 .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
