@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -61,6 +61,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -110,6 +111,18 @@ public class MockSenderTest {
         assertEquals(Arrays.asList(producer), producerFactory.producersInUse());
         for (int i = 0; i < 10; i++)
             sender.doOnProducer(producer -> producer.partitionsFor(topic)).block(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
+        assertEquals(Arrays.asList(producer), producerFactory.producersInUse());
+    }
+
+    /**
+     * Tests that a transactional Kafka producer is created eagerly.
+     */
+    @Test
+    public void txProducerCreate() {
+        Map<String, Object> options = new HashMap<>();
+        options.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "tx-");
+        sender = new DefaultKafkaSender<>(producerFactory, SenderOptions.create(options));
+        await().untilAsserted(() -> assertEquals(1, producerFactory.producersInUse().size()));
         assertEquals(Arrays.asList(producer), producerFactory.producersInUse());
     }
 
@@ -843,7 +856,7 @@ public class MockSenderTest {
                 RecordMetadata metadata = null;
                 Exception e = null;
                 if (!fail)
-                    metadata = new RecordMetadata(partition, 0, partitionResponses.size(), 0, (Long) 0L, 0, 0);
+                    metadata = new RecordMetadata(partition, 0, partitionResponses.size(), 0, 0L, 0, 0);
                 else
                     e = new InvalidTopicException("Topic not found: " + topic);
                 partitionResponses.add(new Response<>(metadata, e, correlation));
