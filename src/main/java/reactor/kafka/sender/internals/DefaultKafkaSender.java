@@ -94,14 +94,14 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V>, EmitFailureH
                                         ? Schedulers.newSingle(options.transactionalId())
                                         : options.scheduler()
                                     );
-
+        boolean transactional = this.senderOptions.isTransactional();
         this.producerMono = Mono
                 .fromCallable(() -> {
                     Producer<K, V> producer = producerFactory.createProducer(senderOptions);
                     if (senderOptions.producerListener() != null) {
                         senderOptions.producerListener().producerAdded(producerId, producer);
                     }
-                    if (senderOptions.isTransactional()) {
+                    if (transactional) {
                         log.info("Initializing transactions for producer {}",
                                 senderOptions.transactionalId());
                         producer.initTransactions();
@@ -117,7 +117,10 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V>, EmitFailureH
                         : flux;
                 });
 
-        this.transactionManager = senderOptions.isTransactional()
+        if (transactional) {
+            this.producerMono.subscribe().dispose();
+        }
+        this.transactionManager = transactional
             ? new DefaultTransactionManager<>(producerMono, senderOptions)
             : null;
     }
