@@ -47,15 +47,16 @@ import reactor.kafka.sender.TransactionManager;
 import reactor.kafka.util.ConsumerDelegate;
 import reactor.kafka.util.TestUtils;
 import reactor.test.StepVerifier;
+import reactor.util.annotation.Nullable;
 import reactor.util.retry.Retry;
 
-import javax.annotation.Nullable;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -887,9 +888,15 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         int count = 10;
         for (int i = 0; i < 2; i++) {
             Collection<ReceiverPartition> seekablePartitions = new ArrayList<>();
+            Map<TopicPartition, Long> beginnings = new LinkedHashMap<>();
+            Map<TopicPartition, Long> endings = new LinkedHashMap<>();
             receiverOptions = receiverOptions
                 .addAssignListener(partitions -> {
                     seekablePartitions.addAll(partitions);
+                    partitions.forEach(part -> {
+                        beginnings.put(part.topicPartition(), part.beginningOffset());
+                        endings.put(part.topicPartition(), part.endOffset());
+                    });
                     assignSemaphore.release();
                 })
                 .subscription(Collections.singletonList(topic));
@@ -930,12 +937,19 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
 
             Disposable disposable = sendAndWaitForMessages(kafkaFlux, count);
             assertTrue("No partitions assigned", seekablePartitions.size() > 0);
-            if (i == 0)
+            if (i == 0) {
                 waitForCommits(receiver, count);
+            }
             disposable.dispose();
 
             // will close asynchronously
             await().atMost(10, TimeUnit.SECONDS).untilTrue(closed);
+            assertThat(beginnings.values()).containsExactly(0L, 0L, 0L, 0L);
+            if (i == 0) {
+                assertThat(endings.values()).containsExactly(0L, 0L, 0L, 0L);
+            } else {
+                endings.values().forEach(val -> assertThat(val).isGreaterThan(0));
+            }
         }
     }
 
