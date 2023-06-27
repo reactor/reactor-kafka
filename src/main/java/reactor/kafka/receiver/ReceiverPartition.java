@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package reactor.kafka.receiver;
 
 import org.apache.kafka.common.TopicPartition;
+import reactor.util.annotation.Nullable;
 
 /**
  * Topic partition interface that supports <code>seek</code> operations
@@ -63,4 +64,27 @@ public interface ReceiverPartition {
      * @return current offset of this partition
      */
     long position();
+
+    /**
+     * Return the beginning offset for this partition.
+     * @return the offset.
+     * @see org.apache.kafka.clients.consumer.Consumer#beginningOffsets(java.util.Collection)
+     * @since 1.3.19
+     */
+    @Nullable
+    default Long beginningOffset() {
+        return null;
+    }
+
+    /**
+     * Return the end offset for this partition.
+     * @return the offset.
+     * @see org.apache.kafka.clients.consumer.Consumer#endOffsets(java.util.Collection)
+     * @since 1.3.19
+     */
+    @Nullable
+    default Long endOffset() {
+        return null;
+    }
+
 }

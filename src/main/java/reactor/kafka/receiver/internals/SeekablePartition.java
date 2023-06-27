@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.OffsetAndTimestamp;
 import org.apache.kafka.common.TopicPartition;
 import reactor.kafka.receiver.ReceiverPartition;
+import reactor.util.annotation.Nullable;
 
 import java.util.Collections;
 import java.util.Map;
@@ -72,7 +73,23 @@ class SeekablePartition implements ReceiverPartition {
     }
 
     @Override
+    @Nullable
+    public Long beginningOffset() {
+        Map<TopicPartition, Long> beginningOffsets = this.consumer
+                .beginningOffsets(Collections.singleton(this.topicPartition));
+        return beginningOffsets == null ? null : beginningOffsets.get(this.topicPartition);
+    }
+
+    @Override
+    @Nullable
+    public Long endOffset() {
+        Map<TopicPartition, Long> endOffsets = this.consumer.endOffsets(Collections.singleton(this.topicPartition));
+        return endOffsets == null ? null : endOffsets.get(this.topicPartition);
+    }
+
+    @Override
     public String toString() {
         return String.valueOf(topicPartition);
     }
+
 }
