@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2022-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -110,9 +110,9 @@ public class PauseRebalanceTests {
 
     @SuppressWarnings({ "rawtypes", "unchecked" })
     private void checkUserPauses(KafkaReceiver receiver, Collection<TopicPartition> expected) throws Exception {
-        Field handlerField = DefaultKafkaReceiver.class.getDeclaredField("consumerHandler");
+        Field handlerField = DefaultKafkaReceiver.class.getDeclaredField("consumerHandlerRef");
         handlerField.setAccessible(true);
-        Object eventLoop = handlerField.get(receiver);
+        Object eventLoop = ((AtomicReference<?>) handlerField.get(receiver)).get();
         Field loopField = ConsumerHandler.class.getDeclaredField("consumerEventLoop");
         loopField.setAccessible(true);
         Object loop = loopField.get(eventLoop);

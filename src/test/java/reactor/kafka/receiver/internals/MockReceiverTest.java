@@ -73,6 +73,7 @@ import java.util.regex.Pattern;
 import static org.awaitility.Awaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.junit.Assume.assumeTrue;
@@ -1312,6 +1313,33 @@ public class MockReceiverTest {
                     .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
     }
 
+    @Test
+    public void shouldNotFailOnSubsequentSubscriptionsWhenUseDoOnConsumer() {
+        ConsumerFactory mockConsumerFactory = new ConsumerFactory() {
+
+            @Override
+            @SuppressWarnings("unchecked")
+            public <K, V> org.apache.kafka.clients.consumer.Consumer<K, V> createConsumer(ReceiverOptions<K, V> config) {
+                MockConsumer consumer = new MockConsumer(cluster);
+                consumer.configure((ReceiverOptions<Integer, String>) config);
+                return (org.apache.kafka.clients.consumer.Consumer<K, V>) consumer;
+            }
+        };
+        receiverOptions = receiverOptions.subscription(Collections.singleton(topic));
+        DefaultKafkaReceiver<Integer, String> receiver = new DefaultKafkaReceiver<>(mockConsumerFactory, receiverOptions);
+
+        sendMessages(topic, 0, 1);
+
+        for (int i = 0; i < 3; i++) {
+            Map<String, List<PartitionInfo>> partitions = receiver.receive()
+                .flatMap(rec -> receiver.doOnConsumer(consumer -> consumer.listTopics()))
+                .blockFirst(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
+
+            assertNotNull(partitions);
+            assertFalse(partitions.isEmpty());
+        }
+    }
+
     private void sendMessages(String topic, int startIndex, int count) {
         int partitions = cluster.cluster().partitionCountForTopic(topic);
         for (int i = 0; i < count; i++) {
@@ -1361,7 +1389,7 @@ public class MockReceiverTest {
     @SuppressWarnings("unchecked")
     private void verifyMessages(Flux<? extends ConsumerRecord<Integer, String>> inboundFlux, int receiveCount) {
         StepVerifier.create(inboundFlux)
-                .recordWith(() -> receivedMessages)
+                .recordWith(() -> (Collection) receivedMessages)
                 .expectNextCount(receiveCount)
                 .expectComplete()
                 .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));

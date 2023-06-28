@@ -31,6 +31,7 @@ import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.ReceiverRecord;
 import reactor.kafka.sender.TransactionManager;
 
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -46,7 +47,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
     Predicate<Throwable> isRetriableException = t -> RetriableCommitFailedException.class.isInstance(t)
             || RebalanceInProgressException.class.isInstance(t);
 
-    ConsumerHandler<K, V> consumerHandler;
+    final AtomicReference<ConsumerHandler<K, V>> consumerHandlerRef = new AtomicReference<>();
 
     public DefaultKafkaReceiver(ConsumerFactory consumerFactory, ReceiverOptions<K, V> receiverOptions) {
         this.consumerFactory = consumerFactory;
@@ -123,6 +124,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
 
     @Override
     public <T> Mono<T> doOnConsumer(Function<org.apache.kafka.clients.consumer.Consumer<K, V>, ? extends T> function) {
+        ConsumerHandler<K, V> consumerHandler = consumerHandlerRef.get();
         if (consumerHandler == null) {
             // TODO deprecate this method, expose ConsumerHandler
             return Mono.error(new IllegalStateException("You must call one of receive*() methods before using doOnConsumer"));
@@ -132,19 +134,23 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
 
     private <T> Flux<T> withHandler(AckMode ackMode, BiFunction<Scheduler, ConsumerHandler<K, V>, Flux<T>> function) {
         return Flux.usingWhen(
-            Mono.fromCallable(() -> consumerHandler = new ConsumerHandler<>(
-                receiverOptions,
-                consumerFactory.createConsumer(receiverOptions),
-                // Always use the currently set value
-                e -> isRetriableException.test(e),
-                ackMode
-            )),
+            Mono.fromCallable(() -> {
+                ConsumerHandler<K, V> consumerHandler = new ConsumerHandler<>(
+                    receiverOptions,
+                    consumerFactory.createConsumer(receiverOptions),
+                    // Always use the currently set value
+                    e -> isRetriableException.test(e),
+                    ackMode
+                );
+                consumerHandlerRef.set(consumerHandler);
+                return consumerHandler;
+            }),
             handler -> Flux.using(
                 () -> Schedulers.single(receiverOptions.schedulerSupplier().get()),
                 scheduler -> function.apply(scheduler, handler),
                 Scheduler::dispose
             ),
-            handler -> handler.close().doFinally(__ -> consumerHandler = null)
+            handler -> handler.close().doFinally(__ -> consumerHandlerRef.compareAndSet(handler, null))
         );
     }
 
