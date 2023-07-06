@@ -1,5 +1,5 @@
 [versions]
-reactorCore = "3.4.30-SNAPSHOT"
+reactorCore = "3.4.31-SNAPSHOT"
 
 # Other shared versions
 asciidoctor = "3.3.2"
@@ -10,7 +10,7 @@ powermock = "2.0.9"
 reactiveStreams = "1.0.3"
 
 [libraries]
-kafka = "org.apache.kafka:kafka-clients:2.8.1"
+kafka = "org.apache.kafka:kafka-clients:2.8.2"
 reactor-core = { module = "io.projectreactor:reactor-core", version.ref = "reactorCore" }
 reactor-test = { module = "io.projectreactor:reactor-test", version.ref = "reactorCore" }
 
