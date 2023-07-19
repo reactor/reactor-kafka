@@ -526,7 +526,8 @@ By default, receivers start consuming records from the last committed offset of 
 If a committed offset is not available, the offset reset strategy `ConsumerConfig#AUTO_OFFSET_RESET_CONFIG`
 configured for the `KafkaConsumer` is used to set the start offset to the earliest or latest offset on the partition.
 Applications can override offsets by seeking to new offsets in an assignment listener. Methods are provided on
-`ReceiverPartition` to seek to the earliest, latest or a specific offset in the partition.
+`ReceiverPartition` to seek to the earliest, latest, a specific offset in the partition, or to a record with 
+a timestamp later than a point in time.
 
 
 [source,java]
@@ -534,6 +535,7 @@ Applications can override offsets by seeking to new offsets in an assignment lis
 void seekToBeginning();
 void seekToEnd();
 void seek(long offset);
+void seekToTimestamp(long timestamp);
 --------
 
 For example, the following code block starts consuming messages from the latest offset.
@@ -548,6 +550,15 @@ KafkaReceiver.create(receiverOptions).receive().subscribe();
 --------
 <1> Seek to the last offset in each assigned partition
 
+Other methods are available on `ReceiverPartition` to determine the current position, the beginning offset, and
+ending offset, at the time the partition is assigned.
+
+[source,java]
+--------
+long position();
+Long beginningOffset();
+Long endOffset();
+--------
 
 ==== Consumer lifecycle
 
