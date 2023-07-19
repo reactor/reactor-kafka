@@ -60,7 +60,7 @@ public class TestableReceiver {
         TestUtils.waitUntil(
             "KafkaReceiver not closed",
             null,
-            ignored -> kafkaReceiver.consumerHandler == null,
+            ignored -> kafkaReceiver.consumerHandlerRef.get() == null,
             null,
             Duration.ofMillis(10000)
         );
