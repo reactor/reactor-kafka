@@ -110,9 +110,9 @@ public class PauseRebalanceTests {
 
     @SuppressWarnings({ "rawtypes", "unchecked" })
     private void checkUserPauses(KafkaReceiver receiver, Collection<TopicPartition> expected) throws Exception {
-        Field handlerField = DefaultKafkaReceiver.class.getDeclaredField("consumerHandler");
+        Field handlerField = DefaultKafkaReceiver.class.getDeclaredField("consumerHandlerRef");
         handlerField.setAccessible(true);
-        Object eventLoop = handlerField.get(receiver);
+        Object eventLoop = ((AtomicReference<?>) handlerField.get(receiver)).get();
         Field loopField = ConsumerHandler.class.getDeclaredField("consumerEventLoop");
         loopField.setAccessible(true);
         Object loop = loopField.get(eventLoop);
