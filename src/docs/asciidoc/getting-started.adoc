@@ -157,22 +157,22 @@ To build your own application using the Reactor Kafka API, you need to include a
 
 For gradle:
 
-[source]
+[source, groovy, subs="normal"]
 --------
 dependencies {
-    compile "io.projectreactor.kafka:reactor-kafka:1.1.0.RELEASE"
+    compile "io.projectreactor.kafka:reactor-kafka:{project-version}"
 }
 --------
 
 
 For maven:
 
-[source]
+[source, xml,  subs="normal"]
 --------
 <dependency>
     <groupId>io.projectreactor.kafka</groupId>
     <artifactId>reactor-kafka</artifactId>
-    <version>1.1.0.RELEASE</version>
+    <version>{project-version}</version>
 </dependency>
 --------
 

@@ -1,9 +1,13 @@
-= Reactor Kafka Reference Guide
-Rajini Sivaram, Mark Pollack, Oleh Dokuka
-:appversion: 1.1.0.RELEASE
-ifndef::host-github[:ext-relative: {outfilesuffix}]
-{appversion}
+:!revnumber:
 :doctype: book
+
+= Reactor Kafka Reference Guide
+
+Rajini Sivaram, Mark Pollack, Oleh Dokuka, Gary Russell
+
+{project-version}
+
+ifndef::host-github[:ext-relative: {outfilesuffix}]
 :toc:
 :toclevels: 4
 :source-highlighter: prettify
