@@ -518,6 +518,45 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
     }
 
     @Test
+    public void manualCommitBatchSync() throws Exception {
+        int count = 10;
+        CountDownLatch commitLatch = new CountDownLatch(count);
+        long[] committedOffsets = new long[partitions];
+        for (int i = 0; i < committedOffsets.length; i++)
+            committedOffsets[i] = 0;
+        receiverOptions = receiverOptions.commitInterval(Duration.ZERO).commitBatchSize(0);
+        KafkaReceiver<Integer, String> receiver = createReceiver();
+        Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux = receiver.receiveBatch()
+            .flatMap(v -> v)
+            .delayUntil(record -> {
+                assertEquals(committedOffsets[record.partition()], record.offset());
+                return record.receiverOffset().commit()
+                    .doOnSuccess(i -> onCommit(record, commitLatch, committedOffsets));
+            })
+            .doOnError(e -> log.error("KafkaFlux exception", e));
+
+        sendAndWaitForMessages(kafkaFlux, count);
+        checkCommitCallbacks(commitLatch, committedOffsets);
+    }
+
+    @Test
+    public void batchRecordsShouldNotBeAutoCommitted() throws Exception {
+        receiverOptions = receiverOptions.closeTimeout(Duration.ofMillis(1000))
+            .commitBatchSize(10)
+            .commitInterval(Duration.ofMillis(10))
+            .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        KafkaReceiver<Integer, String> receiver = createReceiver();
+        Flux<ReceiverRecord<Integer, String>> firstReceiveBatch = receiver.receiveBatch().flatMap(v -> v);
+        sendReceive(firstReceiveBatch, 0, 100, 0, 100);
+
+        // Check that close commits ack'ed records, does not commit un-ack'ed records
+        cancelSubscriptions(true);
+        clearReceivedMessages();
+        Flux<? extends ConsumerRecord<Integer, String>> secondReceiveBatch = createReceiver().receiveBatch().flatMap(r -> r);
+        sendReceive(secondReceiveBatch, 100, 100, 0, 200);
+    }
+
+    @Test
     public void manualCommitSyncNoPoll() throws Exception {
         CountDownLatch commitLatch = new CountDownLatch(1);
         long[] committedOffsets = new long[partitions];
