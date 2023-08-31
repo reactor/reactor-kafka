@@ -627,7 +627,7 @@ public class KafkaSenderTest extends AbstractKafkaTest {
                            throw Exceptions.bubble(e);
                        }
 
-                       boolean expectSuccess = hasRetry || i < failureIndex || (!failOnError && i >= restartIndex);
+                       boolean expectSuccess = hasRetry || i < failureIndex || !failOnError && i >= restartIndex;
                        return createProducerRecord(i, expectSuccess);
                    });
     }

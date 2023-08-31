@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -65,7 +65,7 @@ public abstract class AbstractKafkaTest {
 
     public static final int DEFAULT_TEST_TIMEOUT = 60_000;
 
-    private static final KafkaContainer KAFKA = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:6.2.1"))
+    private static final KafkaContainer KAFKA = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.4.0"))
         .withNetwork(null)
         .withEnv("KAFKA_TRANSACTION_STATE_LOG_MIN_ISR", "1")
         .withEnv("KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR", "1")
@@ -145,7 +145,7 @@ public abstract class AbstractKafkaTest {
 
     protected Flux<SenderRecord<Integer, String, Integer>> createSenderRecords(int startIndex, int count, boolean expectSuccess) {
         return Flux.range(startIndex, count)
-                   .map(i -> SenderRecord.create(createProducerRecord(i, expectSuccess), i));
+            .map(i -> SenderRecord.create(createProducerRecord(i, expectSuccess), i));
     }
 
     protected void onReceive(ConsumerRecord<Integer, String> record) {
@@ -156,6 +156,7 @@ public abstract class AbstractKafkaTest {
     protected void checkConsumedMessages() {
         assertEquals(expectedMessages, receivedMessages);
     }
+
     protected void checkConsumedMessages(int receiveStartIndex, int receiveCount) {
         for (int i = 0; i < partitions; i++) {
             checkConsumedMessages(i, receiveStartIndex, receiveStartIndex + receiveCount - 1);
@@ -190,8 +191,8 @@ public abstract class AbstractKafkaTest {
             )
         ) {
             adminClient.createTopics(Arrays.asList(new NewTopic(newTopic, partitions, (short) 1)))
-                    .all()
-                    .get(10, TimeUnit.SECONDS);
+                .all()
+                .get(10, TimeUnit.SECONDS);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }

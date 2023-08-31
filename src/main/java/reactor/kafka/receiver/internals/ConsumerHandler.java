@@ -117,7 +117,7 @@ class ConsumerHandler<K, V> {
             sink,
             awaitingTransaction
         );
-        eventScheduler.start();
+        eventScheduler.init();
     }
 
     public Flux<ConsumerRecords<K, V>> receive() {
@@ -128,7 +128,7 @@ class ConsumerHandler<K, V> {
         if (consumerListener != null) {
             consumerListener.consumerRemoved(consumerId, consumer);
         }
-        return consumerEventLoop.stop().doFinally(__ -> eventScheduler.dispose());
+        return consumerEventLoop.stop().doFinally(signalType -> eventScheduler.dispose());
     }
 
     public <T> Mono<T> doOnConsumer(Function<Consumer<K, V>, ? extends T> function) {
@@ -145,9 +145,9 @@ class ConsumerHandler<K, V> {
         });
     }
 
-    public Mono<Void> commit(ConsumerRecord<K, V> record) {
-        long offset = record.offset();
-        TopicPartition partition = new TopicPartition(record.topic(), record.partition());
+    public Mono<Void> commit(ConsumerRecord<K, V> consumerRecord) {
+        long offset = consumerRecord.offset();
+        TopicPartition partition = new TopicPartition(consumerRecord.topic(), consumerRecord.partition());
         long committedOffset = atmostOnceOffsets.committedOffset(partition);
         atmostOnceOffsets.onDispatch(partition, offset);
         long commitAheadSize = receiverOptions.atmostOnceCommitAheadSize();
@@ -165,14 +165,14 @@ class ConsumerHandler<K, V> {
         return Mono.empty();
     }
 
-    public void acknowledge(ConsumerRecord<K, V> record) {
-        toCommittableOffset(record).acknowledge();
+    public void acknowledge(ConsumerRecord<K, V> consumerRecord) {
+        toCommittableOffset(consumerRecord).acknowledge();
     }
 
-    public CommittableOffset<K, V> toCommittableOffset(ConsumerRecord<K, V> record) {
+    public CommittableOffset<K, V> toCommittableOffset(ConsumerRecord<K, V> consumerRecord) {
         return new CommittableOffset<>(
-            new TopicPartition(record.topic(), record.partition()),
-            record.offset(),
+            new TopicPartition(consumerRecord.topic(), consumerRecord.partition()),
+            consumerRecord.offset(),
             consumerEventLoop.commitEvent,
             receiverOptions.commitBatchSize()
         );
