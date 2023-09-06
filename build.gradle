@@ -178,7 +178,9 @@ configure(rootProject) {
   dependencies {
     api libs.micrometer.observation
 
-    testImplementation libs.micrometer.tracing.test
+    testImplementation (libs.micrometer.tracing.test) {
+      exclude group: 'org.mockito'
+    }
   }
 
   jar {

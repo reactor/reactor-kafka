@@ -34,8 +34,6 @@ public class KafkaRecordReceiverContext extends ReceiverContext<ConsumerRecord<?
 
     private final String receiverId;
 
-    private final ConsumerRecord<?, ?> record;
-
     public KafkaRecordReceiverContext(ConsumerRecord<?, ?> record, String receiverId, String kafkaServers) {
         super((carrier, key) -> {
             Header header = carrier.headers().lastHeader(key);
@@ -45,7 +43,6 @@ public class KafkaRecordReceiverContext extends ReceiverContext<ConsumerRecord<?
             return new String(header.value(), StandardCharsets.UTF_8);
         });
         setCarrier(record);
-        this.record = record;
         this.receiverId = receiverId;
         setRemoteServiceName("Apache Kafka: " + kafkaServers);
     }
@@ -59,7 +56,7 @@ public class KafkaRecordReceiverContext extends ReceiverContext<ConsumerRecord<?
      * @return the source.
      */
     public String getSource() {
-        return this.record.topic();
+        return getCarrier().topic();
     }
 
 }
