@@ -59,9 +59,10 @@ public enum KafkaSenderObservation implements ObservationDocumentation {
     public enum SenderLowCardinalityTags implements KeyName {
 
         /**
-         * The client id of the {@code KafkaProducer} behind {@link reactor.kafka.sender.KafkaSender}.
+         * The producer id of the {@link reactor.kafka.sender.KafkaSender}.
+         * Can be a {@link org.apache.kafka.clients.producer.ProducerConfig#CLIENT_ID_CONFIG} value if present.
          */
-        CLIENT_ID {
+        PRODUCER_ID {
             @Override
             public String asString() {
                 return "reactor.kafka.client.id";
@@ -91,13 +92,13 @@ public enum KafkaSenderObservation implements ObservationDocumentation {
          * A singleton instance of the convention.
          */
         public static final DefaultKafkaSenderObservationConvention INSTANCE =
-                new DefaultKafkaSenderObservationConvention();
+            new DefaultKafkaSenderObservationConvention();
 
         @Override
         public KeyValues getLowCardinalityKeyValues(KafkaRecordSenderContext context) {
             return KeyValues.of(
-                    SenderLowCardinalityTags.CLIENT_ID.withValue(context.getClientId()),
-                    SenderLowCardinalityTags.COMPONENT_TYPE.withValue("sender"));
+                SenderLowCardinalityTags.PRODUCER_ID.withValue(context.getProducerId()),
+                SenderLowCardinalityTags.COMPONENT_TYPE.withValue("sender"));
         }
 
     }

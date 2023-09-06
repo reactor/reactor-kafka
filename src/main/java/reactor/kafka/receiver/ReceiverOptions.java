@@ -16,16 +16,6 @@
 
 package reactor.kafka.receiver;
 
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.clients.consumer.RetriableCommitFailedException;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.serialization.Deserializer;
-import reactor.core.scheduler.Scheduler;
-import reactor.util.annotation.NonNull;
-import reactor.util.annotation.Nullable;
-
 import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
@@ -35,6 +25,19 @@ import java.util.Properties;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
+
+import io.micrometer.observation.ObservationRegistry;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.RetriableCommitFailedException;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.serialization.Deserializer;
+import reactor.core.scheduler.Scheduler;
+import reactor.kafka.receiver.observation.KafkaReceiverObservation;
+import reactor.kafka.receiver.observation.KafkaReceiverObservationConvention;
+import reactor.util.annotation.NonNull;
+import reactor.util.annotation.Nullable;
 
 public interface ReceiverOptions<K, V> {
 
@@ -310,6 +313,33 @@ public interface ReceiverOptions<K, V> {
     }
 
     /**
+     * Configure an {@link ObservationRegistry} to observe Kafka record consuming operation.
+     * @param observationRegistry {@link ObservationRegistry} to use.
+     * @return receiver options with updated observationRegistry
+     * @since 1.3.21
+     */
+    @NonNull
+    default ReceiverOptions<K, V> withObservation(@NonNull ObservationRegistry observationRegistry) {
+        return withObservation(observationRegistry, null);
+    }
+
+    /**
+     * Configure an {@link ObservationRegistry} to observe Kafka record receiving operation.
+     * This functionality makes sense only in simple use-cases where it needs to be closed gaps
+     * in tracing on this consumer side: an observation is opened and closed immediately to
+     * attach respective consumer span to the trace.
+     * For more complex (e.g. tracing continuation) the {@link KafkaReceiverObservation} API
+     * should be used: the tracing and parent span information is extracted from the consumer record.
+     * @param observationRegistry {@link ObservationRegistry} to use.
+     * @param observationConvention the {@link KafkaReceiverObservationConvention} to use.
+     * @return receiver options with updated observationRegistry
+     * @since 1.3.21
+     */
+    @NonNull
+    ReceiverOptions<K, V> withObservation(@NonNull ObservationRegistry observationRegistry,
+        @Nullable KafkaReceiverObservationConvention observationConvention);
+
+    /**
      * Returns the configuration properties of the underlying {@link KafkaConsumer}.
      * @return options to configure for Kafka consumer.
      */
@@ -462,7 +492,6 @@ public interface ReceiverOptions<K, V> {
     /**
      * Get the maximum amount of time to delay a rebalance until existing records in the
      * pipeline have been processed. Default 60s.
-     * @param maxDelay the max delay.
      * @return options updated with the max delay.
      * @since 1.3.12
      * @see #commitIntervalDuringDelay()
@@ -484,7 +513,6 @@ public interface ReceiverOptions<K, V> {
     /**
      * Get how often to commit offsets, in milliseconds, while a rebalance is being
      * delayed. Default 100ms.
-     * @param interval the interval.
      * @return options updated with the interval
      * @since 1.3.12
      * @see #maxDelayRebalance()
@@ -511,6 +539,39 @@ public interface ReceiverOptions<K, V> {
         return null;
     }
 
+    /**
+     * Return an {@link ObservationRegistry} to observe Kafka record consuming operation.
+     * @return the {@link ObservationRegistry}.
+     * @since 1.3.21
+     */
+    @NonNull
+    ObservationRegistry observationRegistry();
+
+    /**
+     * Return a {@link KafkaReceiverObservationConvention} to support a publishing operation observation.
+     * @return the {@link KafkaReceiverObservationConvention}.
+     * @since 1.3.21
+     */
+    @Nullable
+    KafkaReceiverObservationConvention observationConvention();
+
+    /**
+     * Return the client id provided by the {@link ConsumerConfig}.
+     * @return the client id
+     */
+    @Nullable
+    default String clientId() {
+        return (String) consumerProperty(ConsumerConfig.CLIENT_ID_CONFIG);
+    }
+
+    /**
+     * Return the bootstrap servers from the provided {@link ConsumerConfig}.
+     * @return the bootstrap servers list.
+     */
+    @NonNull
+    default String bootstrapServers() {
+        return (String) Objects.requireNonNull(consumerProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG));
+    }
 
     /**
      * Returns the {@link KafkaConsumer#subscribe(Collection, ConsumerRebalanceListener)},
@@ -537,9 +598,6 @@ public interface ReceiverOptions<K, V> {
 
     /**
      * Called whenever a consumer is added or removed.
-     *
-     * @param <K> the key type.
-     * @param <V> the value type.
      *
      * @since 1.3.17
      *

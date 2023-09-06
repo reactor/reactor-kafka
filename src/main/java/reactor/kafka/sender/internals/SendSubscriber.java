@@ -36,7 +36,7 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * This is basically an optimized flatMapDelayError(Function&lt;ProducerRecord,Mono&lt;SenderResult&gt;&gt;), without prefetching
  * and with an unlimited concurrency (implicitly limited by {@link Producer#send(ProducerRecord)}).
- *
+ * <p>
  * The requests are passed to the upstream "as is".
  *
  */
@@ -56,9 +56,14 @@ class SendSubscriber<K, V, C> implements CoreSubscriber<ProducerRecord<K, V>> {
     private final AtomicReference<State> state = new AtomicReference<>(State.INIT);
     private final SenderOptions<K, V> senderOptions;
 
-    SendSubscriber(SenderOptions<K, V> senderOptions, Producer<K, V> producer, CoreSubscriber<? super SenderResult<C>> actual) {
+    private final String producerId;
+
+    SendSubscriber(SenderOptions<K, V> senderOptions, Producer<K, V> producer, String producerId,
+                   CoreSubscriber<? super SenderResult<C>> actual) {
+
         this.senderOptions = senderOptions;
         this.producer = producer;
+        this.producerId = producerId;
         this.actual = actual;
     }
 
@@ -116,12 +121,12 @@ class SendSubscriber<K, V, C> implements CoreSubscriber<ProducerRecord<K, V>> {
         try {
             KafkaSenderObservation.SENDER_OBSERVATION.observation(senderOptions.observationConvention(),
                     KafkaSenderObservation.DefaultKafkaSenderObservationConvention.INSTANCE,
-                            () -> new KafkaRecordSenderContext(record,
-                                    senderOptions.clientId(),
-                                    senderOptions.bootstrapServers()),
+                    () -> new KafkaRecordSenderContext(record,
+                        producerId,
+                        senderOptions.bootstrapServers()),
                     senderOptions.observationRegistry())
-                            .parentObservation(currentContext().getOrDefault(ObservationThreadLocalAccessor.KEY, null))
-                            .observe(() -> producer.send(record, callback));
+                .parentObservation(currentContext().getOrDefault(ObservationThreadLocalAccessor.KEY, null))
+                .observe(() -> producer.send(record, callback));
         } catch (Exception e) {
             callback.onCompletion(null, e);
         }

@@ -43,7 +43,7 @@ public enum KafkaReceiverObservation implements ObservationDocumentation {
 
         @Override
         public String getPrefix() {
-            return "spring.kafka.receiver";
+            return "reactor.kafka.receiver";
         }
 
         @Override
@@ -60,8 +60,9 @@ public enum KafkaReceiverObservation implements ObservationDocumentation {
 
         /**
          * The client id of the {@code KafkaConsumer} behind {@link reactor.kafka.receiver.KafkaReceiver}.
+         * Can be a {@link org.apache.kafka.clients.consumer.ConsumerConfig#CLIENT_ID_CONFIG} value if present.
          */
-        CLIENT_ID {
+        RECEIVER_ID {
             @Override
             public String asString() {
                 return "reactor.kafka.client.id";
@@ -91,12 +92,12 @@ public enum KafkaReceiverObservation implements ObservationDocumentation {
          * A singleton instance of the convention.
          */
         public static final DefaultKafkaReceiverObservationConvention INSTANCE =
-                new DefaultKafkaReceiverObservationConvention();
+            new DefaultKafkaReceiverObservationConvention();
 
         @Override
         public KeyValues getLowCardinalityKeyValues(KafkaRecordReceiverContext context) {
-            return KeyValues.of(ReceiverLowCardinalityTags.CLIENT_ID.withValue(context.getClientId()),
-                    ReceiverLowCardinalityTags.COMPONENT_TYPE.withValue("receiver"));
+            return KeyValues.of(ReceiverLowCardinalityTags.RECEIVER_ID.withValue(context.getReceiverId()),
+                ReceiverLowCardinalityTags.COMPONENT_TYPE.withValue("receiver"));
         }
 
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,8 +42,8 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 
@@ -80,14 +80,17 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V>, EmitFailureH
      * producer properties are supported. The underlying Kafka producer is created lazily when required.
      */
     public DefaultKafkaSender(ProducerFactory producerFactory, SenderOptions<K, V> options) {
-        this.scheduler = Schedulers.newSingle(new ThreadFactory() {
-            @Override
-            public Thread newThread(Runnable r) {
+        producerId =
+            Optional.ofNullable(options.clientId())
+                .filter(clientId -> !clientId.isEmpty())
+                .orElse("reactor-kafka-sender-" + System.identityHashCode(this));
+
+        this.scheduler =
+            Schedulers.newSingle(r -> {
                 Thread thread = new Thread(r);
-                thread.setName("reactor-kafka-sender-" + System.identityHashCode(this));
+                thread.setName(producerId);
                 return thread;
-            }
-        });
+            });
         this.hasProducer = new AtomicBoolean();
         this.senderOptions = options.scheduler(options.isTransactional()
                                         ? Schedulers.newSingle(options.transactionalId())
@@ -97,8 +100,9 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V>, EmitFailureH
         this.producerMono = Mono
                 .fromCallable(() -> {
                     Producer<K, V> producer = producerFactory.createProducer(senderOptions);
-                    if (senderOptions.producerListener() != null) {
-                        senderOptions.producerListener().producerAdded(producerId, producer);
+                    SenderOptions.ProducerListener producerListener = senderOptions.producerListener();
+                    if (producerListener != null) {
+                        producerListener.producerAdded(producerId, producer);
                     }
                     if (transactional) {
                         log.info("Initializing transactions for producer {}",
@@ -110,11 +114,10 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V>, EmitFailureH
                 })
                 .publishOn(senderOptions.isTransactional() ? this.scheduler : senderOptions.scheduler())
                 .cache()
-                .as(flux -> {
-                    return senderOptions.isTransactional()
-                        ? flux.publishOn(senderOptions.isTransactional() ? this.scheduler : senderOptions.scheduler())
-                        : flux;
-                });
+            .as(flux ->
+                senderOptions.isTransactional()
+                    ? flux.publishOn(senderOptions.isTransactional() ? this.scheduler : senderOptions.scheduler())
+                    : flux);
 
         if (transactional) {
             this.producerMono.subscribe().dispose();
@@ -138,7 +141,7 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V>, EmitFailureH
                     .as(flux -> new FluxOperator<ProducerRecord<K, V>, SenderResult<T>>(flux) {
                         @Override
                         public void subscribe(CoreSubscriber<? super SenderResult<T>> s) {
-                            source.subscribe(new SendSubscriber<>(senderOptions, producer, s));
+                            source.subscribe(new SendSubscriber<>(senderOptions, producer, producerId, s));
                         }
                     });
             })

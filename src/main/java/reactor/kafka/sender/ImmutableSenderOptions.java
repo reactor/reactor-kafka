@@ -16,14 +16,6 @@
 
 package reactor.kafka.sender;
 
-import java.time.Duration;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Properties;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
-
 import io.micrometer.observation.ObservationRegistry;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
@@ -45,10 +37,8 @@ import java.util.stream.Collectors;
 
 class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
 
-    private static final AtomicInteger PRODUCER_CLIENT_ID_SEQUENCE = new AtomicInteger(1);
-
     private final Map<String, Object> properties;
-    private final ProducerListener    producerListener;
+    private final ProducerListener producerListener;
 
     private final Serializer<K> keySerializer;
 
@@ -72,19 +62,18 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
 
     ImmutableSenderOptions(Properties properties) {
         this(
-                properties
-                        .entrySet()
-                        .stream()
-                        .collect(Collectors.toMap(
-                                e -> e.getKey().toString(),
-                                Map.Entry::getValue
-                        ))
+            properties
+                .entrySet()
+                .stream()
+                .collect(Collectors.toMap(
+                    e -> e.getKey().toString(),
+                    Map.Entry::getValue
+                ))
         );
     }
 
     ImmutableSenderOptions(Map<String, Object> properties) {
         this.properties = new HashMap<>(properties);
-        maybeOverrideClientId();
         keySerializer = null;
         valueSerializer = null;
 
@@ -98,34 +87,17 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
         this.observationConvention = null;
     }
 
-    /**
-     * Simulate {@link ProducerConfig#CLIENT_ID_CONFIG} generation.
-     */
-    private void maybeOverrideClientId() {
-        String refinedClientId;
-        boolean userConfiguredClientId = this.properties.containsKey(ProducerConfig.CLIENT_ID_CONFIG);
-        if (userConfiguredClientId) {
-            refinedClientId = (String) this.properties.get(ProducerConfig.CLIENT_ID_CONFIG);
-        } else {
-            String transactionalId = (String) this.properties.get(ProducerConfig.TRANSACTIONAL_ID_CONFIG);
-            refinedClientId =
-                    "producer-" +
-                            (transactionalId != null ? transactionalId : PRODUCER_CLIENT_ID_SEQUENCE.getAndIncrement());
-        }
-        this.properties.put(ProducerConfig.CLIENT_ID_CONFIG, refinedClientId);
-    }
-
     ImmutableSenderOptions(
-            Map<String, Object> properties,
-            Serializer<K> serializer,
-            Serializer<V> valueSerializer,
-            Duration timeout,
-            Scheduler scheduler,
-            int flight,
-            boolean error,
-            ProducerListener producerListener,
-            ObservationRegistry observationRegistry,
-            KafkaSenderObservationConvention observationConvention
+        Map<String, Object> properties,
+        Serializer<K> serializer,
+        Serializer<V> valueSerializer,
+        Duration timeout,
+        Scheduler scheduler,
+        int flight,
+        boolean error,
+        ProducerListener producerListener,
+        ObservationRegistry observationRegistry,
+        KafkaSenderObservationConvention observationConvention
     ) {
         this.properties = properties;
         keySerializer = serializer;
@@ -172,16 +144,16 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
         properties.put(name, value);
 
         return new ImmutableSenderOptions<>(
-                properties,
-                keySerializer,
-                valueSerializer,
-                closeTimeout,
-                scheduler,
-                maxInFlight,
-                stopOnError,
-                producerListener,
-                observationRegistry,
-                observationConvention
+            properties,
+            keySerializer,
+            valueSerializer,
+            closeTimeout,
+            scheduler,
+            maxInFlight,
+            stopOnError,
+            producerListener,
+            observationRegistry,
+            observationConvention
         );
     }
 
@@ -204,16 +176,16 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
     @Override
     public SenderOptions<K, V> withKeySerializer(Serializer<K> keySerializer) {
         return new ImmutableSenderOptions<>(
-                properties,
-                Objects.requireNonNull(keySerializer),
-                valueSerializer,
-                closeTimeout,
-                scheduler,
-                maxInFlight,
-                stopOnError,
-                producerListener,
-                observationRegistry,
-                observationConvention
+            properties,
+            Objects.requireNonNull(keySerializer),
+            valueSerializer,
+            closeTimeout,
+            scheduler,
+            maxInFlight,
+            stopOnError,
+            producerListener,
+            observationRegistry,
+            observationConvention
         );
     }
 
@@ -236,16 +208,16 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
     @Override
     public SenderOptions<K, V> withValueSerializer(Serializer<V> valueSerializer) {
         return new ImmutableSenderOptions<>(
-                properties,
-                keySerializer,
-                Objects.requireNonNull(valueSerializer),
-                closeTimeout,
-                scheduler,
-                maxInFlight,
-                stopOnError,
-                producerListener,
-                observationRegistry,
-                observationConvention
+            properties,
+            keySerializer,
+            Objects.requireNonNull(valueSerializer),
+            closeTimeout,
+            scheduler,
+            maxInFlight,
+            stopOnError,
+            producerListener,
+            observationRegistry,
+            observationConvention
         );
     }
 
@@ -265,16 +237,16 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
     @Override
     public SenderOptions<K, V> scheduler(Scheduler scheduler) {
         return new ImmutableSenderOptions<>(
-                properties,
-                keySerializer,
-                valueSerializer,
-                closeTimeout,
-                Objects.requireNonNull(scheduler),
-                maxInFlight,
-                stopOnError,
-                producerListener,
-                observationRegistry,
-                observationConvention
+            properties,
+            keySerializer,
+            valueSerializer,
+            closeTimeout,
+            Objects.requireNonNull(scheduler),
+            maxInFlight,
+            stopOnError,
+            producerListener,
+            observationRegistry,
+            observationConvention
         );
     }
 
@@ -298,16 +270,16 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
     @Override
     public SenderOptions<K, V> maxInFlight(int maxInFlight) {
         return new ImmutableSenderOptions<>(
-                properties,
-                keySerializer,
-                valueSerializer,
-                closeTimeout,
-                scheduler,
-                maxInFlight,
-                stopOnError,
-                producerListener,
-                observationRegistry,
-                observationConvention
+            properties,
+            keySerializer,
+            valueSerializer,
+            closeTimeout,
+            scheduler,
+            maxInFlight,
+            stopOnError,
+            producerListener,
+            observationRegistry,
+            observationConvention
         );
     }
 
@@ -338,16 +310,16 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
     @Override
     public SenderOptions<K, V> stopOnError(boolean stopOnError) {
         return new ImmutableSenderOptions<>(
-                properties,
-                keySerializer,
-                valueSerializer,
-                closeTimeout,
-                scheduler,
-                maxInFlight,
-                stopOnError,
-                producerListener,
-                observationRegistry,
-                observationConvention
+            properties,
+            keySerializer,
+            valueSerializer,
+            closeTimeout,
+            scheduler,
+            maxInFlight,
+            stopOnError,
+            producerListener,
+            observationRegistry,
+            observationConvention
         );
     }
 
@@ -367,16 +339,16 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
     @Override
     public SenderOptions<K, V> closeTimeout(Duration timeout) {
         return new ImmutableSenderOptions<>(
-                properties,
-                keySerializer,
-                valueSerializer,
-                timeout,
-                scheduler,
-                maxInFlight,
-                stopOnError,
-                producerListener,
-                observationRegistry,
-                observationConvention
+            properties,
+            keySerializer,
+            valueSerializer,
+            timeout,
+            scheduler,
+            maxInFlight,
+            stopOnError,
+            producerListener,
+            observationRegistry,
+            observationConvention
         );
     }
 
@@ -388,34 +360,34 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
     @Override
     public SenderOptions<K, V> producerListener(ProducerListener producerListener) {
         return new ImmutableSenderOptions<>(
-                properties,
-                keySerializer,
-                valueSerializer,
-                closeTimeout,
-                scheduler,
-                maxInFlight,
-                stopOnError,
-                producerListener,
-                observationRegistry,
-                observationConvention
+            properties,
+            keySerializer,
+            valueSerializer,
+            closeTimeout,
+            scheduler,
+            maxInFlight,
+            stopOnError,
+            producerListener,
+            observationRegistry,
+            observationConvention
         );
     }
 
     @Override
     public SenderOptions<K, V> withObservation(@NonNull ObservationRegistry observationRegistry,
-            @Nullable KafkaSenderObservationConvention observationConvention) {
+                                               @Nullable KafkaSenderObservationConvention observationConvention) {
 
         return new ImmutableSenderOptions<>(
-                properties,
-                keySerializer,
-                valueSerializer,
-                closeTimeout,
-                scheduler,
-                maxInFlight,
-                stopOnError,
-                producerListener,
-                observationRegistry,
-                observationConvention
+            properties,
+            keySerializer,
+            valueSerializer,
+            closeTimeout,
+            scheduler,
+            maxInFlight,
+            stopOnError,
+            producerListener,
+            observationRegistry,
+            observationConvention
         );
     }
 
@@ -431,7 +403,8 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
         return observationConvention;
     }
 
-    @Override    public int hashCode() {
+    @Override
+    public int hashCode() {
         return Objects.hash(
             properties,
             keySerializer,
@@ -440,7 +413,9 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
             scheduler,
             maxInFlight,
             stopOnError,
-            producerListener
+            producerListener,
+            observationRegistry,
+            observationConvention
         );
     }
 
@@ -456,7 +431,9 @@ class ImmutableSenderOptions<K, V> implements SenderOptions<K, V> {
                 && Objects.equals(valueSerializer, that.valueSerializer)
                 && Objects.equals(closeTimeout, that.closeTimeout)
                 && Objects.equals(scheduler, that.scheduler)
-                && Objects.equals(producerListener, that.producerListener);
+                && Objects.equals(producerListener, that.producerListener)
+                && Objects.equals(observationRegistry, that.observationRegistry)
+                && Objects.equals(observationConvention, that.observationConvention);
         }
         return false;
     }

@@ -29,8 +29,11 @@ import reactor.core.scheduler.Schedulers;
 import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.ReceiverRecord;
+import reactor.kafka.receiver.observation.KafkaReceiverObservation;
+import reactor.kafka.receiver.observation.KafkaRecordReceiverContext;
 import reactor.kafka.sender.TransactionManager;
 
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -44,14 +47,20 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
 
     private final ReceiverOptions<K, V> receiverOptions;
 
+    private final String receiverId;
+
     Predicate<Throwable> isRetriableException = t -> RetriableCommitFailedException.class.isInstance(t)
-            || RebalanceInProgressException.class.isInstance(t);
+        || RebalanceInProgressException.class.isInstance(t);
 
     final AtomicReference<ConsumerHandler<K, V>> consumerHandlerRef = new AtomicReference<>();
 
     public DefaultKafkaReceiver(ConsumerFactory consumerFactory, ReceiverOptions<K, V> receiverOptions) {
         this.consumerFactory = consumerFactory;
         this.receiverOptions = receiverOptions;
+        receiverId =
+            Optional.ofNullable(receiverOptions.clientId())
+                .filter(clientId -> !clientId.isEmpty())
+                .orElse("reactor-kafka-receiver-" + System.identityHashCode(this));
     }
 
     @Override
@@ -62,6 +71,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
                 .receive()
                 .publishOn(scheduler, prefetchCalculated)
                 .flatMapIterable(it -> it, prefetchCalculated)
+                .doOnNext(this::observerRecord)
                 .map(record -> new ReceiverRecord<>(
                     record,
                     handler.toCommittableOffset(record)
@@ -93,6 +103,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
             .filter(it -> !it.isEmpty())
             .publishOn(scheduler, preparePublishOnQueueSize(prefetch))
             .map(consumerRecords -> Flux.fromIterable(consumerRecords)
+                .doOnNext(this::observerRecord)
                 .doAfterTerminate(() -> {
                     for (ConsumerRecord<K, V> r : consumerRecords) {
                         handler.acknowledge(r);
@@ -106,6 +117,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
             .receive()
             .concatMap(records -> Flux
                 .fromIterable(records)
+                .doOnNext(this::observerRecord)
                 .concatMap(r -> handler.commit(r).thenReturn(r))
                 .publishOn(scheduler, 1), preparePublishOnQueueSize(prefetch)));
     }
@@ -130,13 +142,24 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
                             }))
                             .concatWith(transactionManager
                                 .sendOffsets(offsetBatch
-                                    .getAndClearOffsets()
-                                    .offsets(),
+                                        .getAndClearOffsets()
+                                        .offsets(),
                                     handler.consumer.groupMetadata()))
+                            .doOnNext(this::observerRecord)
                             .doAfterTerminate(() -> handler.awaitingTransaction.set(false));
                     });
             return resultFlux.publishOn(transactionManager.scheduler(), preparePublishOnQueueSize(prefetch));
         });
+    }
+
+    private <R extends ConsumerRecord<K, V>> void observerRecord(R record) {
+        KafkaReceiverObservation.RECEIVER_OBSERVATION.observation(receiverOptions.observationConvention(),
+                KafkaReceiverObservation.DefaultKafkaReceiverObservationConvention.INSTANCE,
+                () -> new KafkaRecordReceiverContext(record,
+                    receiverId,
+                    receiverOptions.bootstrapServers()),
+                receiverOptions.observationRegistry())
+            .observe(() -> { });
     }
 
     @Override

@@ -32,11 +32,11 @@ import org.apache.kafka.common.header.Header;
  */
 public class KafkaRecordReceiverContext extends ReceiverContext<ConsumerRecord<?, ?>> {
 
-    private final String clientId;
+    private final String receiverId;
 
     private final ConsumerRecord<?, ?> record;
 
-    public KafkaRecordReceiverContext(ConsumerRecord<?, ?> record, String clientId, String kafkaServers) {
+    public KafkaRecordReceiverContext(ConsumerRecord<?, ?> record, String receiverId, String kafkaServers) {
         super((carrier, key) -> {
             Header header = carrier.headers().lastHeader(key);
             if (header == null) {
@@ -46,12 +46,12 @@ public class KafkaRecordReceiverContext extends ReceiverContext<ConsumerRecord<?
         });
         setCarrier(record);
         this.record = record;
-        this.clientId = clientId;
+        this.receiverId = receiverId;
         setRemoteServiceName("Apache Kafka: " + kafkaServers);
     }
 
-    public String getClientId() {
-        return this.clientId;
+    public String getReceiverId() {
+        return this.receiverId;
     }
 
     /**

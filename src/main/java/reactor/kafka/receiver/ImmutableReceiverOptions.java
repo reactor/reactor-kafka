@@ -16,12 +16,14 @@
 
 package reactor.kafka.receiver;
 
+import io.micrometer.observation.ObservationRegistry;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.serialization.Deserializer;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
+import reactor.kafka.receiver.observation.KafkaReceiverObservationConvention;
 import reactor.util.annotation.Nullable;
 
 import java.time.Duration;
@@ -68,6 +70,11 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
     private final ConsumerListener consumerListener;
     private final boolean pauseAllAfterRebalance;
 
+    private final ObservationRegistry observationRegistry;
+
+    @Nullable
+    private final KafkaReceiverObservationConvention observationConvention;
+
     ImmutableReceiverOptions() {
         this(new HashMap<>());
     }
@@ -107,6 +114,9 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
         schedulerSupplier = Schedulers::immediate;
         consumerListener = null;
         pauseAllAfterRebalance = false;
+
+        observationRegistry = ObservationRegistry.NOOP;
+        observationConvention = null;
     }
 
     ImmutableReceiverOptions(
@@ -130,7 +140,9 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
         Pattern pattern,
         Supplier<Scheduler> supplier,
         ConsumerListener consumerListener,
-        boolean pauseAllAfterRebalance
+        boolean pauseAllAfterRebalance,
+        ObservationRegistry observationRegistry,
+        KafkaReceiverObservationConvention observationConvention
     ) {
         this.properties = new HashMap<>(properties);
         this.assignListeners = new ArrayList<>(assignListeners);
@@ -153,7 +165,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
         this.schedulerSupplier = supplier;
         this.consumerListener = consumerListener;
         this.pauseAllAfterRebalance = pauseAllAfterRebalance;
-    }
+        this.observationRegistry = observationRegistry;
+        this.observationConvention = observationConvention;    }
 
     @Override
     public Map<String, Object> consumerProperties() {
@@ -194,7 +207,9 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribePattern,
                 schedulerSupplier,
                 consumerListener,
-                pauseAllAfterRebalance
+                pauseAllAfterRebalance,
+                observationRegistry,
+                observationConvention
         );
     }
 
@@ -221,7 +236,9 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribePattern,
                 schedulerSupplier,
                 consumerListener,
-                pauseAllAfterRebalance
+                pauseAllAfterRebalance,
+                observationRegistry,
+                observationConvention
         );
     }
 
@@ -253,7 +270,9 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribePattern,
                 schedulerSupplier,
                 consumerListener,
-                pauseAllAfterRebalance
+                pauseAllAfterRebalance,
+                observationRegistry,
+                observationConvention
         );
     }
 
@@ -293,7 +312,9 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribePattern,
                 schedulerSupplier,
                 consumerListener,
-                pauseAllAfterRebalance
+                pauseAllAfterRebalance,
+                observationRegistry,
+                observationConvention
         );
     }
 
@@ -328,7 +349,9 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribePattern,
                 schedulerSupplier,
                 consumerListener,
-                pauseAllAfterRebalance
+                pauseAllAfterRebalance,
+                observationRegistry,
+                observationConvention
         );
     }
 
@@ -360,7 +383,9 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribePattern,
                 schedulerSupplier,
                 consumerListener,
-                pauseAllAfterRebalance
+                pauseAllAfterRebalance,
+                observationRegistry,
+                observationConvention
         );
     }
 
@@ -392,7 +417,9 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribePattern,
                 schedulerSupplier,
                 consumerListener,
-                pauseAllAfterRebalance
+                pauseAllAfterRebalance,
+                observationRegistry,
+                observationConvention
         );
     }
 
@@ -419,7 +446,9 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribePattern,
                 schedulerSupplier,
                 consumerListener,
-                pauseAllAfterRebalance
+                pauseAllAfterRebalance,
+                observationRegistry,
+                observationConvention
         );
     }
 
@@ -446,7 +475,9 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribePattern,
                 schedulerSupplier,
                 consumerListener,
-                pauseAllAfterRebalance
+                pauseAllAfterRebalance,
+                observationRegistry,
+                observationConvention
         );
     }
 
@@ -483,7 +514,9 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 null,
                 schedulerSupplier,
                 consumerListener,
-                pauseAllAfterRebalance
+                pauseAllAfterRebalance,
+                observationRegistry,
+                observationConvention
         );
     }
 
@@ -510,7 +543,9 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 Objects.requireNonNull(pattern),
                 schedulerSupplier,
                 consumerListener,
-                pauseAllAfterRebalance
+                pauseAllAfterRebalance,
+                observationRegistry,
+                observationConvention
         );
     }
 
@@ -537,7 +572,9 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 null,
                 schedulerSupplier,
                 consumerListener,
-                pauseAllAfterRebalance
+                pauseAllAfterRebalance,
+                observationRegistry,
+                observationConvention
         );
     }
 
@@ -599,7 +636,9 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribePattern,
                 schedulerSupplier,
                 consumerListener,
-                pauseAllAfterRebalance
+                pauseAllAfterRebalance,
+                observationRegistry,
+                observationConvention
         );
     }
 
@@ -634,7 +673,9 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribePattern,
                 schedulerSupplier,
                 consumerListener,
-                pauseAllAfterRebalance
+                pauseAllAfterRebalance,
+                observationRegistry,
+                observationConvention
         );
     }
 
@@ -669,7 +710,9 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribePattern,
                 schedulerSupplier,
                 consumerListener,
-                pauseAllAfterRebalance
+                pauseAllAfterRebalance,
+                observationRegistry,
+                observationConvention
         );
     }
 
@@ -704,7 +747,9 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribePattern,
                 schedulerSupplier,
                 consumerListener,
-                pauseAllAfterRebalance
+                pauseAllAfterRebalance,
+                observationRegistry,
+                observationConvention
         );
     }
 
@@ -736,7 +781,9 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
             subscribePattern,
             schedulerSupplier,
             consumerListener,
-            pauseAllAfterRebalance
+            pauseAllAfterRebalance,
+            observationRegistry,
+            observationConvention
         );
     }
 
@@ -768,7 +815,9 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribePattern,
                 schedulerSupplier,
                 consumerListener,
-                pauseAllAfterRebalance
+                pauseAllAfterRebalance,
+                observationRegistry,
+                observationConvention
             );
     }
 
@@ -808,6 +857,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
     public long commitIntervalDuringDelay() {
         return this.commitIntervalDuringDelay;
     }
+
     @Override
     public ReceiverOptions<K, V> commitIntervalDuringDelay(long interval) {
         return new ImmutableReceiverOptions<>(
@@ -831,7 +881,9 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribePattern,
                 schedulerSupplier,
                 consumerListener,
-                pauseAllAfterRebalance
+                pauseAllAfterRebalance,
+                observationRegistry,
+                observationConvention
             );
     }
 
@@ -863,7 +915,9 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribePattern,
                 Objects.requireNonNull(schedulerSupplier),
                 consumerListener,
-                pauseAllAfterRebalance
+                pauseAllAfterRebalance,
+                observationRegistry,
+                observationConvention
         );
     }
 
@@ -890,7 +944,9 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
             subscribePattern,
             schedulerSupplier,
             consumerListener,
-            pauseAllAfterRebalance
+            pauseAllAfterRebalance,
+            observationRegistry,
+            observationConvention
         );
     }
 
@@ -916,9 +972,42 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 subscribePattern,
                 schedulerSupplier,
                 consumerListener,
-                pauseAllAfterRebalance
+                pauseAllAfterRebalance,
+                observationRegistry,
+                observationConvention
         );
     }
+
+    @Override
+    public ReceiverOptions<K, V> withObservation(ObservationRegistry observationRegistry,
+                                                 KafkaReceiverObservationConvention observationConvention) {
+
+        return new ImmutableReceiverOptions<>(
+            properties,
+            assignListeners,
+            revokeListeners,
+            keyDeserializer,
+            valueDeserializer,
+            pollTimeout,
+            closeTimeout,
+            commitInterval,
+            commitBatchSize,
+            atmostOnceCommitAheadSize,
+            maxCommitAttempts,
+            commitRetryInterval,
+            maxDeferredCommits,
+            maxDelayRebalance,
+            commitIntervalDuringDelay,
+            subscribeTopics,
+            assignTopicPartitions,
+            subscribePattern,
+            schedulerSupplier,
+            consumerListener,
+            observationRegistry,
+            observationConvention
+        );
+    }
+
 
     @Override
     public Duration commitRetryInterval() {
@@ -929,6 +1018,17 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
     @Nullable
     public ConsumerListener consumerListener() {
         return consumerListener;
+    }
+
+    @Override
+    public ObservationRegistry observationRegistry() {
+        return observationRegistry;
+    }
+
+    @Nullable
+    @Override
+    public KafkaReceiverObservationConvention observationConvention() {
+        return observationConvention;
     }
 
     private long getLongOption(String optionName, long defaultValue) {
@@ -970,7 +1070,9 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
             subscribeTopics,
             assignTopicPartitions,
             subscribePattern,
-            consumerListener) +
+            consumerListener,
+            observationRegistry,
+            observationConvention) +
             (this.pauseAllAfterRebalance ? 1 : 0);
     }
 
@@ -999,6 +1101,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 && Objects.equals(assignTopicPartitions, that.assignTopicPartitions)
                 && Objects.equals(subscribePattern, that.subscribePattern)
                 && Objects.equals(consumerListener, that.consumerListener)
+                && Objects.equals(observationRegistry, that.observationRegistry)
+                && Objects.equals(observationConvention, that.observationConvention)
                 && pauseAllAfterRebalance == that.pauseAllAfterRebalance;
         }
         return false;

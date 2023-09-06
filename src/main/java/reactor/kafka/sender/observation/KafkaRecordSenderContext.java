@@ -30,20 +30,20 @@ import org.apache.kafka.clients.producer.ProducerRecord;
  */
 public class KafkaRecordSenderContext extends SenderContext<ProducerRecord<?, ?>> {
 
-    private final String clientId;
+    private final String producerId;
 
     private final String destination;
 
-    public KafkaRecordSenderContext(ProducerRecord<?, ?> record, String clientId, String kafkaServers) {
+    public KafkaRecordSenderContext(ProducerRecord<?, ?> record, String producerId, String kafkaServers) {
         super((carrier, key, value) -> record.headers().add(key, value.getBytes(StandardCharsets.UTF_8)));
         setCarrier(record);
-        this.clientId = clientId;
+        this.producerId = producerId;
         this.destination = record.topic();
         setRemoteServiceName("Apache Kafka: " + kafkaServers);
     }
 
-    public String getClientId() {
-        return this.clientId;
+    public String getProducerId() {
+        return this.producerId;
     }
 
     /**

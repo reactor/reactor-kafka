@@ -41,6 +41,6 @@ public interface KafkaSenderObservationConvention extends ObservationConvention<
 
     @Override
     default String getContextualName(KafkaRecordSenderContext context) {
-        return context.getDestination() + " send";
+        return context.getDestination() + " publish";
     }
 }
