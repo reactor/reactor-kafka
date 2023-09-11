@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -95,6 +95,35 @@ public interface KafkaReceiver<K, V> {
      */
     default Flux<ReceiverRecord<K, V>> receive() {
         return receive(null);
+    }
+
+    /**
+     * Returns a {@link Flux} containing each batch of consumer records returned by {@link Consumer#poll(long)}.
+     * The maximum number of records returned in each batch can be configured on {@link ReceiverOptions} by setting
+     * the consumer property {@link ConsumerConfig#MAX_POLL_RECORDS_CONFIG}. Each batch is returned as one Flux.
+     * Every record must be acknowledged using ReceiverOffset.acknowledge() in order to commit the offset
+     * corresponding to the record. Acknowledged records are committed based on the configured commit interval
+     * and commit batch size in ReceiverOptions. Records may also be committed manually using ReceiverOffset.commit().
+     *
+     * @param prefetch amount of prefetched batches
+     * @return Flux of consumer record batches from Kafka that are committed only after acknowledgement
+     * @since 1.3.21
+     */
+    Flux<Flux<ReceiverRecord<K, V>>> receiveBatch(Integer prefetch);
+
+    /**
+     * Returns a {@link Flux} containing each batch of consumer records returned by {@link Consumer#poll(long)}.
+     * The maximum number of records returned in each batch can be configured on {@link ReceiverOptions} by setting
+     * the consumer property {@link ConsumerConfig#MAX_POLL_RECORDS_CONFIG}. Each batch is returned as one Flux.
+     * Every record must be acknowledged using ReceiverOffset.acknowledge() in order to commit the offset
+     * corresponding to the record. Acknowledged records are committed based on the configured commit interval
+     * and commit batch size in ReceiverOptions. Records may also be committed manually using ReceiverOffset.commit().
+     *
+     * @return Flux of consumer record batches from Kafka that are committed only after acknowledgement
+     * @since 1.3.21
+     */
+    default Flux<Flux<ReceiverRecord<K, V>>> receiveBatch() {
+        return receiveBatch(null);
     }
 
     /**

@@ -70,6 +70,23 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
     }
 
     @Override
+    public Flux<Flux<ReceiverRecord<K, V>>> receiveBatch(Integer prefetch) {
+        return withHandler(AckMode.MANUAL_ACK, (scheduler, handler) -> {
+            int prefetchCalculated = preparePublishOnQueueSize(prefetch);
+            return handler
+                .receive()
+                .filter(it -> !it.isEmpty())
+                .publishOn(scheduler, prefetchCalculated)
+                .map(records -> Flux.fromIterable(records)
+                    .map(record -> new ReceiverRecord<>(
+                        record,
+                        handler.toCommittableOffset(record)
+                    ))
+                );
+        });
+    }
+
+    @Override
     public Flux<Flux<ConsumerRecord<K, V>>> receiveAutoAck(Integer prefetch) {
         return withHandler(AckMode.AUTO_ACK, (scheduler, handler) -> handler
             .receive()
