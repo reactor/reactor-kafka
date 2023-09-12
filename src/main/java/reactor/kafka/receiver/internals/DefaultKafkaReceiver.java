@@ -159,7 +159,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
                     receiverId,
                     receiverOptions.bootstrapServers()),
                 receiverOptions.observationRegistry())
-            .observe(() -> { });
+            .observe(() -> log.trace("[{}] received: {}", receiverId, record));
     }
 
     @Override
