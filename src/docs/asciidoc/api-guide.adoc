@@ -604,3 +604,4 @@ methods can be invoked after the receive Flux corresponding to the last receive 
 === Micrometer Metrics
 
 To enable micrometer metrics for the underlying Kafka Consumers and Producers, add a `MicrometerConsumerListener` to the `ReceiverOptions` or a `MicrometerProducerListener` to the `SenderOptions` respectively.
+
