@@ -107,7 +107,6 @@ public class PauseRebalanceTests {
         }).given(consumer).pause(any());
         ReceiverOptions options = ReceiverOptions.create()
                 .subscription(Collections.singleton("topic"));
-     //   ConsumerFactory factory = mock(ConsumerFactory.class);
         given(factory.createConsumer(any())).willReturn(consumer);
         KafkaReceiver receiver = KafkaReceiver.create(factory, options);
         Disposable disposable = receiver.receive()
