@@ -66,6 +66,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
     private final Pattern subscribePattern;
     private final Supplier<Scheduler> schedulerSupplier;
     private final ConsumerListener consumerListener;
+    private final Boolean pauseAllAfterRebalance;
 
     ImmutableReceiverOptions() {
         this(new HashMap<>());
@@ -105,6 +106,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
         this.properties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
         schedulerSupplier = Schedulers::immediate;
         consumerListener = null;
+        pauseAllAfterRebalance = Boolean.FALSE;
     }
 
     ImmutableReceiverOptions(
@@ -127,7 +129,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
         Collection<TopicPartition> partitions,
         Pattern pattern,
         Supplier<Scheduler> supplier,
-        ConsumerListener consumerListener
+        ConsumerListener consumerListener,
+        Boolean pauseAllAfterRebalance
     ) {
         this.properties = new HashMap<>(properties);
         this.assignListeners = new ArrayList<>(assignListeners);
@@ -149,6 +152,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
         this.subscribePattern = pattern;
         this.schedulerSupplier = supplier;
         this.consumerListener = consumerListener;
+        this.pauseAllAfterRebalance = pauseAllAfterRebalance;
     }
 
     @Override
@@ -189,7 +193,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 assignTopicPartitions,
                 subscribePattern,
                 schedulerSupplier,
-                consumerListener
+                consumerListener,
+                pauseAllAfterRebalance
         );
     }
 
@@ -215,7 +220,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 assignTopicPartitions,
                 subscribePattern,
                 schedulerSupplier,
-                consumerListener
+                consumerListener,
+                pauseAllAfterRebalance
         );
     }
 
@@ -246,7 +252,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 assignTopicPartitions,
                 subscribePattern,
                 schedulerSupplier,
-                consumerListener
+                consumerListener,
+                pauseAllAfterRebalance
         );
     }
 
@@ -285,7 +292,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 assignTopicPartitions,
                 subscribePattern,
                 schedulerSupplier,
-                consumerListener
+                consumerListener,
+                pauseAllAfterRebalance
         );
     }
 
@@ -319,7 +327,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 assignTopicPartitions,
                 subscribePattern,
                 schedulerSupplier,
-                consumerListener
+                consumerListener,
+                pauseAllAfterRebalance
         );
     }
 
@@ -350,7 +359,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 assignTopicPartitions,
                 subscribePattern,
                 schedulerSupplier,
-                consumerListener
+                consumerListener,
+                pauseAllAfterRebalance
         );
     }
 
@@ -381,7 +391,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 assignTopicPartitions,
                 subscribePattern,
                 schedulerSupplier,
-                consumerListener
+                consumerListener,
+                pauseAllAfterRebalance
         );
     }
 
@@ -407,7 +418,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 assignTopicPartitions,
                 subscribePattern,
                 schedulerSupplier,
-                consumerListener
+                consumerListener,
+                pauseAllAfterRebalance
         );
     }
 
@@ -433,7 +445,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 assignTopicPartitions,
                 subscribePattern,
                 schedulerSupplier,
-                consumerListener
+                consumerListener,
+                pauseAllAfterRebalance
         );
     }
 
@@ -469,7 +482,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 null,
                 null,
                 schedulerSupplier,
-                consumerListener
+                consumerListener,
+                pauseAllAfterRebalance
         );
     }
 
@@ -495,7 +509,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 null,
                 Objects.requireNonNull(pattern),
                 schedulerSupplier,
-                consumerListener
+                consumerListener,
+                pauseAllAfterRebalance
         );
     }
 
@@ -521,7 +536,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 Objects.requireNonNull(partitions),
                 null,
                 schedulerSupplier,
-                consumerListener
+                consumerListener,
+                pauseAllAfterRebalance
         );
     }
 
@@ -582,7 +598,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 assignTopicPartitions,
                 subscribePattern,
                 schedulerSupplier,
-                consumerListener
+                consumerListener,
+                pauseAllAfterRebalance
         );
     }
 
@@ -616,7 +633,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 assignTopicPartitions,
                 subscribePattern,
                 schedulerSupplier,
-                consumerListener
+                consumerListener,
+                pauseAllAfterRebalance
         );
     }
 
@@ -650,7 +668,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 assignTopicPartitions,
                 subscribePattern,
                 schedulerSupplier,
-                consumerListener
+                consumerListener,
+                pauseAllAfterRebalance
         );
     }
 
@@ -684,7 +703,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 assignTopicPartitions,
                 subscribePattern,
                 schedulerSupplier,
-                consumerListener
+                consumerListener,
+                pauseAllAfterRebalance
         );
     }
 
@@ -715,7 +735,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
             assignTopicPartitions,
             subscribePattern,
             schedulerSupplier,
-            consumerListener
+            consumerListener,
+            pauseAllAfterRebalance
         );
     }
 
@@ -746,8 +767,41 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 assignTopicPartitions,
                 subscribePattern,
                 schedulerSupplier,
-                consumerListener
+                consumerListener,
+                pauseAllAfterRebalance
             );
+    }
+
+    @Override
+    public Boolean pauseAllAfterRebalance() {
+        return this.pauseAllAfterRebalance;
+    }
+
+    @Override
+    public ReceiverOptions<K, V> pauseAllAfterRebalance(Boolean pauseAll) {
+        return new ImmutableReceiverOptions<>(
+            properties,
+            assignListeners,
+            revokeListeners,
+            keyDeserializer,
+            valueDeserializer,
+            pollTimeout,
+            closeTimeout,
+            commitInterval,
+            commitBatchSize,
+            atmostOnceCommitAheadSize,
+            maxCommitAttempts,
+            commitRetryInterval,
+            maxDeferredCommits,
+            maxDelayRebalance,
+            commitIntervalDuringDelay,
+            subscribeTopics,
+            assignTopicPartitions,
+            subscribePattern,
+            schedulerSupplier,
+            consumerListener,
+            pauseAll
+        );
     }
 
     @Override
@@ -776,7 +830,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 assignTopicPartitions,
                 subscribePattern,
                 schedulerSupplier,
-                consumerListener
+                consumerListener,
+                pauseAllAfterRebalance
             );
     }
 
@@ -807,7 +862,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 assignTopicPartitions,
                 subscribePattern,
                 Objects.requireNonNull(schedulerSupplier),
-                consumerListener
+                consumerListener,
+                pauseAllAfterRebalance
         );
     }
 
@@ -833,7 +889,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
             assignTopicPartitions,
             subscribePattern,
             schedulerSupplier,
-            consumerListener
+            consumerListener,
+            pauseAllAfterRebalance
         );
     }
 
@@ -858,7 +915,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 assignTopicPartitions,
                 subscribePattern,
                 schedulerSupplier,
-                consumerListener
+                consumerListener,
+                pauseAllAfterRebalance
         );
     }
 
@@ -912,7 +970,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
             subscribeTopics,
             assignTopicPartitions,
             subscribePattern,
-            consumerListener
+            consumerListener,
+            pauseAllAfterRebalance
         );
     }
 
@@ -940,7 +999,8 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
                 && Objects.equals(subscribeTopics, that.subscribeTopics)
                 && Objects.equals(assignTopicPartitions, that.assignTopicPartitions)
                 && Objects.equals(subscribePattern, that.subscribePattern)
-                && Objects.equals(consumerListener, that.consumerListener);
+                && Objects.equals(consumerListener, that.consumerListener)
+                && Objects.equals(pauseAllAfterRebalance, that.pauseAllAfterRebalance);
         }
         return false;
     }

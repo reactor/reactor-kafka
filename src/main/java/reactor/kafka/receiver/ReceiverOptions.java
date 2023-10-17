@@ -271,6 +271,16 @@ public interface ReceiverOptions<K, V> {
     }
 
     /**
+     * When true, pause all partitions on assignment after rebalance,
+     * if any partitions were paused by User before the rebalance. Default false
+     * @param pauseAll
+     * @return
+     */
+    default ReceiverOptions<K, V> pauseAllAfterRebalance(Boolean pauseAll) {
+        return this;
+    }
+
+    /**
      * Set how often to commit offsets, in milliseconds, while a rebalance is being
      * delayed. Default 100ms.
      * @param interval the interval.
@@ -459,6 +469,16 @@ public interface ReceiverOptions<K, V> {
      */
     default Duration maxDelayRebalance() {
         return Duration.ofSeconds(60);
+    }
+
+    /**
+     * When true, pause all partitions on assignment after rebalance,
+     * if any partitions were paused by User before the rebalance.
+     * Default false
+     * @return
+     */
+    default Boolean pauseAllAfterRebalance() {
+        return false;
     }
 
     /**

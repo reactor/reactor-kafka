@@ -20,6 +20,7 @@ import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.common.TopicPartition;
+import org.junit.Before;
 import org.junit.Test;
 import reactor.core.Disposable;
 import reactor.kafka.receiver.KafkaReceiver;
@@ -50,23 +51,40 @@ import static org.mockito.Mockito.verify;
  */
 public class PauseRebalanceTests {
 
+    AtomicBoolean first;
+    AtomicBoolean rebal;
+    AtomicReference<ConsumerRebalanceListener> rebalListener;
+    TopicPartition tp0;
+    TopicPartition tp1;
+    List<TopicPartition> initial;
+    List<TopicPartition> justZero;
+    CountDownLatch consumeLatch;
+    CountDownLatch pauseLatch;
+    CountDownLatch rebalLatch;
+    ConsumerFactory factory = mock(ConsumerFactory.class);
+
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    @Before
+    public void setup() {
+        first = new AtomicBoolean(true);
+        rebal = new AtomicBoolean();
+        rebalListener = new AtomicReference<>();
+        tp0 = new TopicPartition("topic", 0);
+        tp1 = new TopicPartition("topic", 1);
+        initial = new ArrayList<>();
+        justZero = new ArrayList<>();
+        initial.add(tp0);
+        initial.add(tp1);
+        justZero.add(tp0);
+        consumeLatch = new CountDownLatch(1);
+        pauseLatch = new CountDownLatch(1);
+        rebalLatch = new CountDownLatch(1);
+    }
+
     @SuppressWarnings({ "rawtypes", "unchecked" })
     @Test
     public void testNoResumeOnRebalance() throws Exception {
         Consumer consumer = mock(Consumer.class);
-        AtomicBoolean first = new AtomicBoolean(true);
-        AtomicBoolean rebal = new AtomicBoolean();
-        AtomicReference<ConsumerRebalanceListener> rebalListener = new AtomicReference<>();
-        TopicPartition tp0 = new TopicPartition("topic", 0);
-        TopicPartition tp1 = new TopicPartition("topic", 1);
-        List<TopicPartition> initial = new ArrayList<>();
-        List<TopicPartition> justZero = new ArrayList<>();
-        initial.add(tp0);
-        initial.add(tp1);
-        justZero.add(tp0);
-        CountDownLatch consumeLatch = new CountDownLatch(1);
-        CountDownLatch pauseLatch = new CountDownLatch(1);
-        CountDownLatch rebalLatch = new CountDownLatch(1);
         willAnswer(inv -> {
             rebalListener.set(inv.getArgument(1));
             return null;
@@ -89,7 +107,7 @@ public class PauseRebalanceTests {
         }).given(consumer).pause(any());
         ReceiverOptions options = ReceiverOptions.create()
                 .subscription(Collections.singleton("topic"));
-        ConsumerFactory factory = mock(ConsumerFactory.class);
+     //   ConsumerFactory factory = mock(ConsumerFactory.class);
         given(factory.createConsumer(any())).willReturn(consumer);
         KafkaReceiver receiver = KafkaReceiver.create(factory, options);
         Disposable disposable = receiver.receive()
@@ -105,6 +123,55 @@ public class PauseRebalanceTests {
         assertTrue(rebalLatch.await(10, TimeUnit.SECONDS));
         verify(consumer).pause(justZero);
         checkUserPauses(receiver, justZero);
+        disposable.dispose();
+    }
+
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    @Test
+    public void testPauseAllAfterRebalance() throws Exception {
+        Consumer consumer = mock(Consumer.class);
+        willAnswer(inv -> {
+            rebalListener.set(inv.getArgument(1));
+            return null;
+        }).given(consumer).subscribe(any(Collection.class), any());
+        willAnswer(inv -> {
+            if (first.getAndSet(false)) {
+                rebalListener.get().onPartitionsAssigned(initial);
+                consumeLatch.countDown();
+            }
+            if (rebal.getAndSet(false)) {
+                rebalListener.get().onPartitionsRevoked(initial);
+                rebalListener.get().onPartitionsAssigned(Collections.singletonList(tp0));
+                rebalLatch.countDown();
+            }
+            return ConsumerRecords.empty();
+        }).given(consumer).poll(any());
+        willAnswer(inv -> {
+            pauseLatch.countDown();
+            return null;
+        }).given(consumer).pause(any());
+
+        ReceiverOptions options = ReceiverOptions.create().pauseAllAfterRebalance(Boolean.TRUE)
+            .subscription(Collections.singleton("topic"));
+
+        given(factory.createConsumer(any())).willReturn(consumer);
+        KafkaReceiver receiver = KafkaReceiver.create(factory, options);
+        Disposable disposable = receiver.receive()
+            .subscribe();
+        assertTrue(consumeLatch.await(10, TimeUnit.SECONDS));
+        receiver.doOnConsumer(con -> {
+            ((Consumer) con).pause(initial);
+            return null;
+        }).subscribe();
+        assertTrue(pauseLatch.await(10, TimeUnit.SECONDS));
+        checkUserPauses(receiver, initial);
+        rebal.set(true);
+        assertTrue(rebalLatch.await(10, TimeUnit.SECONDS));
+        //all paused after rebalance
+        verify(consumer).pause(initial);
+        Collection<TopicPartition> expected = new ArrayList<>();
+        expected.addAll(initial);
+        checkUserPauses(receiver, expected);
         disposable.dispose();
     }
 
