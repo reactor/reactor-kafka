@@ -276,7 +276,7 @@ public interface ReceiverOptions<K, V> {
      * @param pauseAll
      * @return
      */
-    default ReceiverOptions<K, V> pauseAllAfterRebalance(Boolean pauseAll) {
+    default ReceiverOptions<K, V> pauseAllAfterRebalance(boolean pauseAll) {
         return this;
     }
 
@@ -477,7 +477,7 @@ public interface ReceiverOptions<K, V> {
      * Default false
      * @return
      */
-    default Boolean pauseAllAfterRebalance() {
+    default boolean pauseAllAfterRebalance() {
         return false;
     }
 

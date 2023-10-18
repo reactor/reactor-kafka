@@ -36,6 +36,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
@@ -146,9 +148,18 @@ public class PauseRebalanceTests {
             return null;
         }).given(consumer).pause(any());
         ConsumerFactory factory = mock(ConsumerFactory.class);
-        ReceiverOptions options = ReceiverOptions.create().pauseAllAfterRebalance(Boolean.TRUE)
-            .subscription(Collections.singleton("topic"));
 
+        ReceiverOptions options1 = ReceiverOptions.create().pauseAllAfterRebalance(false)
+            .subscription(Collections.singleton("topic"));
+        ReceiverOptions options2 = ReceiverOptions.create()
+            .subscription(Collections.singleton("topic"));
+        assertTrue(options1.equals(options2));
+        assertEquals(options1.hashCode(), options2.hashCode());
+
+        ReceiverOptions options = ReceiverOptions.create().pauseAllAfterRebalance(true)
+            .subscription(Collections.singleton("topic"));
+        assertTrue(options.hashCode() - options1.hashCode() == 1);
+        assertFalse(options1.equals(options));
         given(factory.createConsumer(any())).willReturn(consumer);
         KafkaReceiver receiver = KafkaReceiver.create(factory, options);
         Disposable disposable = receiver.receive()
