@@ -65,7 +65,8 @@ class ConsumerHandler<K, V> {
         "resume",
         "offsetsForTimes",
         "beginningOffsets",
-        "endOffsets"
+        "endOffsets",
+        "currentLag"
     ));
 
     private static final AtomicInteger COUNTER = new AtomicInteger();
