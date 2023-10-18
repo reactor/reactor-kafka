@@ -254,6 +254,9 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                                     // pause all partitions if any partitions are paused by user before rebalance
                                     log.debug("User requested re-pausing all assignments");
                                     toRepause.addAll(partitions);
+                                    pausedByUser.clear();
+                                    pausedByUser.addAll(partitions);
+
                                 } else {
                                     Iterator<TopicPartition> iterator = pausedByUser.iterator();
                                     while (iterator.hasNext()) {
