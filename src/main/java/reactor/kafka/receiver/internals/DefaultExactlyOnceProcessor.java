@@ -15,6 +15,7 @@ import reactor.kafka.sender.KafkaSender;
 import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.SenderRecord;
 import reactor.kafka.sender.SenderResult;
+import reactor.kafka.sender.TransactionManager;
 import reactor.util.function.Tuple2;
 
 import java.util.HashMap;
@@ -26,15 +27,16 @@ public class DefaultExactlyOnceProcessor<K, V, SK, SV> {
     private final KafkaReceiver<K, V> receiver;
     private final Map<TopicPartition, KafkaSender<SK, SV>> sendersForPartions;
 
-    public DefaultExactlyOnceProcessor(ReceiverOptions<K, V> receiverOptions, SenderOptions<SK, SV> senderOptions) {
+    public DefaultExactlyOnceProcessor(final String transactionalIdPrefix,
+        final ReceiverOptions<K, V> receiverOptions,
+        final SenderOptions<SK, SV> senderOptions) {
         this.sendersForPartions = new HashMap<>();
-        // TODO: Append existing listeners
         receiverOptions.addRevokeListener(
             receiverPartitions -> receiverPartitions.stream().map(ReceiverPartition::topicPartition).forEach(sendersForPartions::remove));
         receiverOptions.addAssignListener(
             receiverPartitions -> receiverPartitions.stream().map(ReceiverPartition::topicPartition).forEach(topicPartition -> {
-                SenderOptions<SK, SV> localSenderOptions = senderOptions.producerProperty(ProducerConfig.TRANSACTIONAL_ID_CONFIG,
-                    topicPartition.toString());
+                final String transactionalId = String.format("%s-%s", transactionalIdPrefix, topicPartition.toString());
+                SenderOptions<SK, SV> localSenderOptions = senderOptions.producerProperty(ProducerConfig.TRANSACTIONAL_ID_CONFIG, transactionalId);
 
                 sendersForPartions.put(topicPartition, KafkaSender.create(localSenderOptions));
             }));
@@ -52,13 +54,13 @@ public class DefaultExactlyOnceProcessor<K, V, SK, SV> {
                         offsetBatch.updateOffset(groupedBatch.key(), r.offset());
                     }
                     KafkaSender<SK, SV> batchSender = sendersForPartions.get(groupedBatch.key());
+                    TransactionManager transactionManager = batchSender.transactionManager();
 
-                    return batchSender.send(batchSender.transactionManager()
-                        .begin()
+                    return batchSender.send(transactionManager.begin()
                         .thenMany(Flux.defer(() -> Flux.fromIterable(receiverRecords)))
-                        .concatWith(batchSender.transactionManager().sendOffsets(offsetBatch.getAndClearOffsets().offsets(), groupMetadata))
-                        .flatMap(processor)).concatWith(batchSender.transactionManager().commit()).onErrorResume(e -> {
-                        return batchSender.transactionManager().abort().then(Mono.error(e));
+                        .concatWith(transactionManager.sendOffsets(offsetBatch.getAndClearOffsets().offsets(), groupMetadata))
+                        .flatMap(processor)).concatWith(transactionManager.commit()).onErrorResume(e -> {
+                        return transactionManager.abort().then(Mono.error(e));
                     });
                 })));
     }
