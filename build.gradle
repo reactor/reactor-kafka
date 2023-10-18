@@ -152,6 +152,7 @@ configure(allprojects) { project ->
 
     compileOnly libs.jsr305
     testCompileOnly libs.jsr305
+    compileOnly libs.slf4j
 //    compile "org.slf4j:slf4j-api:$slf4jVersion"
 
     testImplementation libs.junit4
@@ -163,8 +164,7 @@ configure(allprojects) { project ->
     testImplementation libs.log4j.api
     testImplementation libs.log4j.core
     testImplementation libs.log4j.slf4j
-    // move to compile for 3.0.0 clients
-    testCompileOnly libs.slf4j
+
     testImplementation libs.testcontainers
     testImplementation libs.awaitility
     testImplementation libs.assertj

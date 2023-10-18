@@ -10,7 +10,7 @@ powermock = "2.0.9"
 reactiveStreams = "1.0.3"
 
 [libraries]
-kafka = "org.apache.kafka:kafka-clients:2.8.2"
+kafka = "org.apache.kafka:kafka-clients:3.6.0"
 reactor-core = { module = "io.projectreactor:reactor-core", version.ref = "reactorCore" }
 reactor-test = { module = "io.projectreactor:reactor-test", version.ref = "reactorCore" }
 

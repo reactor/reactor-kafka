@@ -953,13 +953,6 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
                                 super.close();
                             }
 
-                            @SuppressWarnings("deprecation")
-                            @Override
-                            public void close(long timeout, TimeUnit unit) {
-                                closed.set(true);
-                                super.close(timeout, unit);
-                            }
-
                             @Override
                             public void close(Duration timeout) {
                                 closed.set(true);
