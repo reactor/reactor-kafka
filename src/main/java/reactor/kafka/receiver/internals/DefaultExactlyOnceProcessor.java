@@ -7,6 +7,7 @@ import org.apache.kafka.common.TopicPartition;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.kafka.receiver.ExactlyOnceProcessor;
 import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.ReceiverPartition;
@@ -22,7 +23,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;
 
-public class DefaultExactlyOnceProcessor<K, V, SK, SV> {
+public class DefaultExactlyOnceProcessor<K, V, SK, SV> implements ExactlyOnceProcessor<K, V, SK, SV> {
 
     private final KafkaReceiver<K, V> receiver;
     private final Map<TopicPartition, KafkaSender<SK, SV>> sendersForPartions;
