@@ -59,6 +59,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -288,12 +289,17 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         receiverOptions = receiverOptions.commitInterval(Duration.ZERO)
                 .commitBatchSize(0)
                 .assignment(getTopicPartitions());
+        KafkaReceiver<Integer, String> receiver = KafkaReceiver.create(receiverOptions);
         Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux =
-                KafkaReceiver.create(receiverOptions)
+                receiver
                         .receive()
                         .delayUntil(r -> r.receiverOffset().commit())
                         .doOnSubscribe(s -> assignSemaphore.release());
         sendReceiveWithSendDelay(kafkaFlux, Duration.ofMillis(1000), 0, 10);
+        OptionalLong lag = receiver
+                .doOnConsumer(consumer -> consumer.currentLag(getTopicPartitions().iterator().next()))
+                .block(Duration.ofSeconds(10));
+        assertThat(lag.isPresent()).isTrue();
     }
 
     @Test
