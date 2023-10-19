@@ -544,6 +544,9 @@ When group management is used, assignment listeners are invoked whenever partiti
 to the consumer after a rebalance operation.  When manual assignment is used, assignment listeners
 are invoked when the consumer is started. Assignment listeners can be used to seek to particular offsets
 in the assigned partitions so that messages are consumed from the specified offset.
+When a user pauses topics/partitions before rebalancing, the behavior depends on the value of
+`pauseAllAfterRebalance`. If it is set to `false`, the paused topics/partitions will remain paused after the rebalance.
+However, if it is set to `true`, all assigned topics/partitions will be paused after the rebalance.
 
 When group management is used, revocation listeners are invoked whenever partitions are revoked
 from a consumer after a rebalance operation. When manual assignment is used, revocation listeners

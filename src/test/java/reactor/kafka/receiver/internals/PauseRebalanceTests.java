@@ -36,6 +36,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
@@ -105,6 +107,75 @@ public class PauseRebalanceTests {
         assertTrue(rebalLatch.await(10, TimeUnit.SECONDS));
         verify(consumer).pause(justZero);
         checkUserPauses(receiver, justZero);
+        disposable.dispose();
+    }
+
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    @Test
+    public void testPauseAllAfterRebalance() throws Exception {
+        Consumer consumer = mock(Consumer.class);
+        AtomicBoolean first = new AtomicBoolean(true);
+        AtomicBoolean rebal = new AtomicBoolean();
+        AtomicReference<ConsumerRebalanceListener> rebalListener = new AtomicReference<>();
+        TopicPartition tp0 = new TopicPartition("topic", 0);
+        TopicPartition tp1 = new TopicPartition("topic", 1);
+        List<TopicPartition> initial = new ArrayList<>();
+        List<TopicPartition> afterRebal = new ArrayList<>();
+        initial.add(tp0);
+        afterRebal.add(tp0);
+        afterRebal.add(tp1);
+        CountDownLatch consumeLatch = new CountDownLatch(1);
+        CountDownLatch pauseLatch = new CountDownLatch(1);
+        CountDownLatch rebalLatch = new CountDownLatch(1);
+        willAnswer(inv -> {
+            rebalListener.set(inv.getArgument(1));
+            return null;
+        }).given(consumer).subscribe(any(Collection.class), any());
+        willAnswer(inv -> {
+            if (first.getAndSet(false)) {
+                rebalListener.get().onPartitionsAssigned(initial);
+                consumeLatch.countDown();
+            }
+            if (rebal.getAndSet(false)) {
+                rebalListener.get().onPartitionsRevoked(initial);
+                rebalListener.get().onPartitionsAssigned(afterRebal);
+                rebalLatch.countDown();
+            }
+            return ConsumerRecords.empty();
+        }).given(consumer).poll(any());
+        willAnswer(inv -> {
+            pauseLatch.countDown();
+            return null;
+        }).given(consumer).pause(any());
+        ConsumerFactory factory = mock(ConsumerFactory.class);
+
+        ReceiverOptions options1 = ReceiverOptions.create().pauseAllAfterRebalance(false)
+            .subscription(Collections.singleton("topic"));
+        ReceiverOptions options2 = ReceiverOptions.create()
+            .subscription(Collections.singleton("topic"));
+        assertTrue(options1.equals(options2));
+        assertEquals(options1.hashCode(), options2.hashCode());
+
+        ReceiverOptions options = ReceiverOptions.create().pauseAllAfterRebalance(true)
+            .subscription(Collections.singleton("topic"));
+        assertTrue(options.hashCode() - options1.hashCode() == 1);
+        assertFalse(options1.equals(options));
+        given(factory.createConsumer(any())).willReturn(consumer);
+        KafkaReceiver receiver = KafkaReceiver.create(factory, options);
+        Disposable disposable = receiver.receive()
+            .subscribe();
+        assertTrue(consumeLatch.await(10, TimeUnit.SECONDS));
+        receiver.doOnConsumer(con -> {
+            ((Consumer) con).pause(initial);
+            return null;
+        }).subscribe();
+        assertTrue(pauseLatch.await(10, TimeUnit.SECONDS));
+        checkUserPauses(receiver, initial);
+        rebal.set(true);
+        assertTrue(rebalLatch.await(10, TimeUnit.SECONDS));
+
+        verify(consumer).pause(afterRebal);
+        checkUserPauses(receiver, afterRebal);
         disposable.dispose();
     }
 
