@@ -849,7 +849,9 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
             subscribePattern,
             schedulerSupplier,
             consumerListener,
-            pauseAll
+            pauseAll,
+            observationRegistry,
+            observationConvention
         );
     }
 
@@ -1003,6 +1005,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
             subscribePattern,
             schedulerSupplier,
             consumerListener,
+            pauseAllAfterRebalance,
             observationRegistry,
             observationConvention
         );

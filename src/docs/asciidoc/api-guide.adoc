@@ -608,3 +608,39 @@ methods can be invoked after the receive Flux corresponding to the last receive 
 
 To enable micrometer metrics for the underlying Kafka Consumers and Producers, add a `MicrometerConsumerListener` to the `ReceiverOptions` or a `MicrometerProducerListener` to the `SenderOptions` respectively.
 
+=== Micrometer Observation
+
+To enable Micrometer observations for produced and consumed records, add an `ObservationRegistry` to the `SenderOptions` and `ReceiverOptions` using `withObservation()` API.
+A custom `KafkaSenderObservationConvention` (and `KafkaReceiverObservationConvention`) can also be set.
+See their default implementations in the `KafkaSenderObservation` and `KafkaReceiverObservation`, respectively.
+The `DefaultKafkaSenderObservationConvention` exposes two low-cardinality tags: `reactor.kafka.type = sender`  and `reactor.kafka.client.id` with the `ProducerConfig.CLIENT_ID_CONFIG` option or identity hash code of the `DefaultKafkaSender` instance prefixed with the `reactor-kafka-sender-`.
+The `DefaultKafkaReceiverObservationConvention` exposes two low-cardinality tags: `reactor.kafka.type = receiver`  and `reactor.kafka.client.id` with the `ConsumerConfig.CLIENT_ID_CONFIG` option or identity hash code of the `DefaultKafkaReceiver` instance prefixed with the `reactor-kafka-receiver-`.
+
+If a `PropagatingSenderTracingObservationHandler` is configured on the `ObservationRegistry`, the tracing information from the context around producer record is stored into its headers before publishing this record to Kafka topic.
+If a `PropagatingReceiverTracingObservationHandler` is configured on the `ObservationRegistry`, the tracing information from the mentioned Kafka record headers, is restored into the context on a receiver side with a child span.
+
+Because the reverse order nature of the Reactor context, an observation functionality on the `KafkaReceiver` is limited just to a single `trace` logging message for received record.
+A restored tracing information will be correlated into logs if configured so for logging system.
+If there are requirements to continue an observation on the consumer side, the `KafkaReceiverObservation.RECEIVER_OBSERVATION` API must be used manually in the record processing operator:
+
+[source,java]
+--------
+KafkaReceiver.create(receiverOptions.subscription(List.of(topic)))
+        .receive()
+        .flatMap(record -> {
+            Observation receiverObservation =
+                KafkaReceiverObservation.RECEIVER_OBSERVATION.start(null,
+                        KafkaReceiverObservation.DefaultKafkaReceiverObservationConvention.INSTANCE,
+                        () ->
+                                new KafkaRecordReceiverContext(
+                                    record, "user.receiver", receiverOptions.bootstrapServers()),
+                            observationRegistry);
+
+            return Mono.just(record)
+                    .flatMap(TARGET_RECORD_HANDLER)
+                    .doOnTerminate(receiverObservation::stop)
+                    .doOnError(receiverObservation::error)
+                    .contextWrite(context -> context.put(ObservationThreadLocalAccessor.KEY, receiverObservation));
+        })
+        .subscribe();
+--------
