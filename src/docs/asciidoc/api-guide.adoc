@@ -334,8 +334,8 @@ which will ensure that a new consumer is created:
 --------
 Flux<ReceiverRecord<Integer, String>> inboundFlux =
     KafkaReceiver.create(receiverOptions)
-                 .receive()
-                 .retry(When(Retry.backoff(3, Duration.of(10L, ChronoUnit.SECONDS))));
+        .receive()
+        .retryWhen(Retry.backoff(3, Duration.of(10L, ChronoUnit.SECONDS)));
 --------
 
 Any errors related to the event processing rather than the `KafkaConsumer` itself should be handled as close to the source as possible
