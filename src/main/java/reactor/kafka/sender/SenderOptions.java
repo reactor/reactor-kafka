@@ -16,19 +16,23 @@
 
 package reactor.kafka.sender;
 
+import java.time.Duration;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Properties;
+
 import javax.naming.AuthenticationException;
+
+import io.micrometer.observation.ObservationRegistry;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.errors.ProducerFencedException;
 import org.apache.kafka.common.serialization.Serializer;
 import reactor.core.scheduler.Scheduler;
+import reactor.kafka.sender.observation.KafkaSenderObservationConvention;
 import reactor.util.annotation.NonNull;
 import reactor.util.annotation.Nullable;
-
-import java.time.Duration;
-import java.util.Map;
-import java.util.Properties;
 
 public interface SenderOptions<K, V> {
 
@@ -207,7 +211,44 @@ public interface SenderOptions<K, V> {
     }
 
     /**
-     * Senders created from this options will be transactional if a transactional id is
+     * Configure an {@link ObservationRegistry} to observe Kafka record publishing operation.
+     * @param observationRegistry {@link ObservationRegistry} to use.
+     * @return sender options with updated observationRegistry
+     * @since 1.3.21
+     */
+    @NonNull
+    default SenderOptions<K, V> withObservation(@NonNull ObservationRegistry observationRegistry) {
+        return withObservation(observationRegistry, null);
+    }
+
+    /**
+     * Configure an {@link ObservationRegistry} to observe Kafka record publishing operation.
+     * @param observationRegistry {@link ObservationRegistry} to use.
+     * @param observationConvention the {@link KafkaSenderObservationConvention} to use.
+     * @return sender options with updated observationRegistry
+     * @since 1.3.21
+     */
+    @NonNull
+    SenderOptions<K, V> withObservation(@NonNull ObservationRegistry observationRegistry,
+            @Nullable KafkaSenderObservationConvention observationConvention);
+
+    /**
+     * Return an {@link ObservationRegistry} to observe Kafka record publishing operation.
+     * @return the {@link ObservationRegistry}.
+     * @since 1.3.21
+     */
+    @NonNull
+    ObservationRegistry observationRegistry();
+
+    /**
+     * Return a {@link KafkaSenderObservationConvention} to support a publishing operation observation.
+     * @return the {@link KafkaSenderObservationConvention}.
+     * @since 1.3.21
+     */
+    @Nullable
+    KafkaSenderObservationConvention observationConvention();
+
+    /**     * Senders created from this options will be transactional if a transactional id is
      * configured using {@link ProducerConfig#TRANSACTIONAL_ID_CONFIG}. If transactional,
      * {@link KafkaProducer#initTransactions()} is invoked on the producer to initialize
      * transactions before any operations are performed on the sender. If scheduler is overridden
@@ -222,12 +263,30 @@ public interface SenderOptions<K, V> {
     }
 
     /**
+     * Return the client id provided by the {@link ProducerConfig}.
+     * @return the client id
+     */
+    @Nullable
+    default String clientId() {
+        return (String) producerProperty(ProducerConfig.CLIENT_ID_CONFIG);
+    }
+
+    /**
      * Returns the configured transactional id
      * @return transactional id
      */
     @Nullable
     default String transactionalId() {
         return (String) producerProperty(ProducerConfig.TRANSACTIONAL_ID_CONFIG);
+    }
+
+    /**
+     * Return the bootstrap servers from the provided {@link ProducerConfig}.
+     * @return the bootstrap servers list.
+     */
+    @NonNull
+    default String bootstrapServers() {
+        return (String) Objects.requireNonNull(producerProperty(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG));
     }
 
     @NonNull
@@ -238,11 +297,7 @@ public interface SenderOptions<K, V> {
     /**
      * Called whenever a producer is added or removed.
      *
-     * @param <K> the key type.
-     * @param <V> the value type.
-     *
      * @since 1.3.17
-     *
      */
     interface ProducerListener {
 

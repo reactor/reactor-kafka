@@ -1386,7 +1386,7 @@ public class MockReceiverTest {
         verifyMessages(flux.take(receiveCount), receiveCount);
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({ "unchecked", "rawtypes"})
     private void verifyMessages(Flux<? extends ConsumerRecord<Integer, String>> inboundFlux, int receiveCount) {
         StepVerifier.create(inboundFlux)
                 .recordWith(() -> (Collection) receivedMessages)

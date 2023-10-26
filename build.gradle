@@ -175,6 +175,14 @@ configure(rootProject) {
   archivesBaseName = 'reactor-kafka'
   description = 'Reactor Kafka: A reactive API for Apache Kafka'
 
+  dependencies {
+    api libs.micrometer.observation
+
+    testImplementation (libs.micrometer.tracing.test) {
+      exclude group: 'org.mockito'
+    }
+  }
+
   jar {
     manifest {
       attributes 'Automatic-Module-Name': 'reactor.kafka'

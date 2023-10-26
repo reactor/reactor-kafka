@@ -118,7 +118,7 @@ class ConsumerHandler<K, V> {
             sink,
             awaitingTransaction
         );
-        eventScheduler.start();
+        eventScheduler.init();
     }
 
     public Flux<ConsumerRecords<K, V>> receive() {
