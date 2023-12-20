@@ -570,7 +570,15 @@ public interface ReceiverOptions<K, V> {
      */
     @NonNull
     default String bootstrapServers() {
-        return (String) Objects.requireNonNull(consumerProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG));
+        Object bootstrapServers = Objects.requireNonNull(consumerProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG));
+
+        if (bootstrapServers instanceof List) {
+            @SuppressWarnings("unchecked")
+            List<String> listOfBootstrapServers = (List<String>) bootstrapServers;
+            return String.join(",", listOfBootstrapServers);
+        }
+
+        return (String) bootstrapServers;
     }
 
     /**
