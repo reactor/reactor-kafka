@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2023 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2024 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package reactor.kafka.sender;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
+import java.util.List;
 import java.util.Properties;
 
 import javax.naming.AuthenticationException;
@@ -286,7 +287,15 @@ public interface SenderOptions<K, V> {
      */
     @NonNull
     default String bootstrapServers() {
-        return (String) Objects.requireNonNull(producerProperty(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG));
+        Object bootstrapServers = Objects.requireNonNull(producerProperty(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG));
+
+        if (bootstrapServers instanceof List) {
+            @SuppressWarnings("unchecked")
+            List<String> listOfBootstrapServers = (List<String>) bootstrapServers;
+            return String.join(",", listOfBootstrapServers);
+        }
+
+        return (String) bootstrapServers;
     }
 
     @NonNull

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2023 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2024 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -570,7 +570,15 @@ public interface ReceiverOptions<K, V> {
      */
     @NonNull
     default String bootstrapServers() {
-        return (String) Objects.requireNonNull(consumerProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG));
+        Object bootstrapServers = Objects.requireNonNull(consumerProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG));
+
+        if (bootstrapServers instanceof List) {
+            @SuppressWarnings("unchecked")
+            List<String> listOfBootstrapServers = (List<String>) bootstrapServers;
+            return String.join(",", listOfBootstrapServers);
+        }
+
+        return (String) bootstrapServers;
     }
 
     /**
