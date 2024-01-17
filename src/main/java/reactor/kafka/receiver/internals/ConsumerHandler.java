@@ -20,6 +20,8 @@ import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.common.TopicPartition;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -47,6 +49,8 @@ import java.util.function.Predicate;
  * To be exposed as a public class in the next major version (a subject to the API review).
  */
 class ConsumerHandler<K, V> {
+
+    private static final Logger log = LoggerFactory.getLogger(ConsumerHandler.class);
 
     /** Note: Methods added to this set should also be included in javadoc for {@link KafkaReceiver#doOnConsumer(Function)} */
     private static final Set<String> DELEGATE_METHODS = new HashSet<>(Arrays.asList(
@@ -126,10 +130,15 @@ class ConsumerHandler<K, V> {
     }
 
     public Mono<Void> close() {
+        if (!consumerEventLoop.isActive.get()) {
+            return Mono.empty();
+        }
+
         if (consumerListener != null) {
             consumerListener.consumerRemoved(consumerId, consumer);
         }
-        return consumerEventLoop.stop().doFinally(__ -> eventScheduler.dispose());
+
+        return consumerEventLoop.stop().doFinally(__ -> eventScheduler.disposeGracefully().subscribe());
     }
 
     public <T> Mono<T> doOnConsumer(Function<Consumer<K, V>, ? extends T> function) {
