@@ -1482,13 +1482,15 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         CountDownLatch latch = new CountDownLatch(receiveCount);
 
         KafkaReceiver<Integer, String> receiver = createReceiver();
-        Disposable disposable = subscribe(receiver.receive().delayElements(Duration.ofMillis(100)), latch);
+        Flux<ReceiverRecord<Integer, String>> flux = receiver.receive()
+            .delayElements(Duration.ofMillis(100L))
+            .flatMap(record -> Mono.delay(Duration.ofMillis(100)).then(Mono.just(record)));
+        Disposable disposable = subscribe(flux, latch);
         sendMessages(receiveStartIndex, receiveCount);
 
         Thread.sleep(1000L);
         receiver.stop().subscribe(
-            __ -> {
-                /* do nothing */
+            ignored -> {
             },
             e -> fail(e.getMessage()),
             () -> shutdown.set(true)
