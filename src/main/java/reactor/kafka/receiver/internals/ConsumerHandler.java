@@ -49,9 +49,6 @@ import java.util.function.Predicate;
  * To be exposed as a public class in the next major version (a subject to the API review).
  */
 class ConsumerHandler<K, V> {
-
-    private static final Logger log = LoggerFactory.getLogger(ConsumerHandler.class);
-
     /** Note: Methods added to this set should also be included in javadoc for {@link KafkaReceiver#doOnConsumer(Function)} */
     private static final Set<String> DELEGATE_METHODS = new HashSet<>(Arrays.asList(
         "assignment",

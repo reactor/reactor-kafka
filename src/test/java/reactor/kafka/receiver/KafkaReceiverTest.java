@@ -1538,7 +1538,7 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
         return disposable;
     }
 
-    private void waitFoPartitionAssignment() throws InterruptedException { // todo : typo
+    private void waitFoPartitionAssignment() throws InterruptedException {
         assertTrue("Partitions not assigned", assignSemaphore.tryAcquire(sessionTimeoutMillis + 1000, TimeUnit.MILLISECONDS));
     }
 
