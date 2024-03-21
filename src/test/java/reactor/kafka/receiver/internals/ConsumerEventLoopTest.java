@@ -22,7 +22,6 @@ import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.record.TimestampType;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Sinks.Many;
@@ -39,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -73,16 +73,13 @@ public class ConsumerEventLoopTest {
             t.printStackTrace();
             return null;
         }).given(sink).emitError(any(), any());
-        ConsumerEventLoop loop = new ConsumerEventLoop<>(AckMode.MANUAL_ACK, null, opts,
-                scheduler, consumer, t -> false, sink, new AtomicBoolean());
         Set<String> topics = new HashSet<>();
         topics.add("test");
         Collection<TopicPartition> partitions = new ArrayList<>();
         TopicPartition tp = new TopicPartition("test", 0);
         partitions.add(tp);
         Map<TopicPartition, List<ConsumerRecord>> record = new HashMap<>();
-        record.put(tp, Collections.singletonList(
-                new ConsumerRecord("test", 0, 0, 0, TimestampType.NO_TIMESTAMP_TYPE, 0, 0, 0, null, null)));
+        record.put(tp, Collections.singletonList(new ConsumerRecord("test", 0, 0, null, null)));
         ConsumerRecords records = new ConsumerRecords(record);
         CountDownLatch latch = new CountDownLatch(2);
         AtomicBoolean paused = new AtomicBoolean();
@@ -102,6 +99,8 @@ public class ConsumerEventLoopTest {
             paused.set(false);
             return null;
         }).given(consumer).resume(any());
+        ConsumerEventLoop loop = new ConsumerEventLoop<>(AckMode.MANUAL_ACK, null, opts,
+            scheduler, consumer, t -> false, sink, new AtomicBoolean());
         loop.onRequest(1);
         loop.onRequest(1);
         CommittableBatch batch = loop.commitEvent.commitBatch;
@@ -113,6 +112,71 @@ public class ConsumerEventLoopTest {
         rebal.getValue().onPartitionsRevoked(partitions);
         await().until(() -> batch.uncommitted.size() == 0);
         assertThat(batch.deferred).hasSize(0);
+    }
+
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    @Test
+    public void revokePartitionsForExactlyOnce() throws InterruptedException {
+        AtomicBoolean isPartitionRevokeFinished = new AtomicBoolean();
+        ReceiverOptions opts = ReceiverOptions.create(
+                Collections.singletonMap(ConsumerConfig.GROUP_ID_CONFIG, "deferredCommitsWithRevoke"))
+                .maxDelayRebalance(Duration.ofSeconds(30))
+                .addRevokeListener(p -> isPartitionRevokeFinished.set(true))
+                .subscription(Collections.singletonList("test"));
+        Consumer consumer = mock(Consumer.class);
+        Scheduler scheduler = KafkaSchedulers.newEvent(opts.groupId());
+        Many sink = mock(Many.class);
+        willAnswer(inv -> {
+            Throwable t = inv.getArgument(0);
+            t.printStackTrace();
+            return null;
+        }).given(sink).emitError(any(), any());
+        Set<String> topics = new HashSet<>();
+        topics.add("test");
+        Collection<TopicPartition> partitions = new ArrayList<>();
+        TopicPartition tp = new TopicPartition("test", 0);
+        partitions.add(tp);
+        Map<TopicPartition, List<ConsumerRecord>> record = new HashMap<>();
+        record.put(tp, Collections.singletonList(new ConsumerRecord("test", 0, 0, null, null)));
+        ConsumerRecords records = new ConsumerRecords(record);
+        CountDownLatch latch = new CountDownLatch(2);
+        AtomicBoolean paused = new AtomicBoolean();
+        willAnswer(inv -> {
+            Thread.sleep(10);
+            latch.countDown();
+            if (paused.get()) {
+                return ConsumerRecords.empty();
+            }
+            return records;
+        }).given(consumer).poll(any());
+        willAnswer(inv -> {
+            paused.set(true);
+            return null;
+        }).given(consumer).pause(any());
+        willAnswer(inv -> {
+            paused.set(false);
+            return null;
+        }).given(consumer).resume(any());
+
+        ConsumerEventLoop loop = new ConsumerEventLoop<>(AckMode.EXACTLY_ONCE, null, opts,
+            scheduler, consumer, t -> false, sink, new AtomicBoolean());
+
+        loop.onRequest(1);
+        loop.onRequest(1);
+
+        CommittableBatch batch = loop.commitEvent.commitBatch;
+        assertThat(latch.await(10, TimeUnit.SECONDS)).isTrue();
+        assertThat(batch.uncommitted).hasSize(0);
+
+        loop.awaitingTransaction.set(true);
+        ArgumentCaptor<ConsumerRebalanceListener> rebal = ArgumentCaptor.forClass(ConsumerRebalanceListener.class);
+        verify(consumer).subscribe(any(Collection.class), rebal.capture());
+
+        Executors.newSingleThreadExecutor().execute(() -> rebal.getValue().onPartitionsRevoked(partitions));
+        await().pollDelay(Duration.ofSeconds(5)).until(() -> true);
+        assertThat(isPartitionRevokeFinished.get()).isFalse();
+        loop.awaitingTransaction.set(false);
+        await().atMost(Duration.ofSeconds(10)).until(isPartitionRevokeFinished::get);
     }
 
 }
