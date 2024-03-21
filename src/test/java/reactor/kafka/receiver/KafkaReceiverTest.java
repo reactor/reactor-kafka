@@ -1474,6 +1474,35 @@ public class KafkaReceiverTest extends AbstractKafkaTest {
             .untilAsserted(() -> assertEquals(4, PassThroughCoreSubscriber.messagesOnNextCount()));
     }
 
+    @Test
+    public void stop() throws Exception {
+        int receiveStartIndex = 0;
+        int receiveCount = 20;
+        AtomicBoolean shutdown = new AtomicBoolean();
+        CountDownLatch latch = new CountDownLatch(receiveCount);
+
+        KafkaReceiver<Integer, String> receiver = createReceiver();
+        Flux<ReceiverRecord<Integer, String>> flux = receiver.receive()
+            .delayElements(Duration.ofMillis(100L))
+            .flatMap(record -> Mono.delay(Duration.ofMillis(100)).then(Mono.just(record)));
+        Disposable disposable = subscribe(flux, latch);
+        sendMessages(receiveStartIndex, receiveCount);
+
+        Thread.sleep(1000L);
+        receiver.stop().subscribe(
+            ignored -> {
+            },
+            e -> fail(e.getMessage()),
+            () -> shutdown.set(true)
+        );
+
+        assertFalse(shutdown.get());
+        waitForMessages(latch);
+        checkConsumedMessages(receiveStartIndex, receiveCount);
+        assertTrue(shutdown.get());
+        assertTrue(disposable.isDisposed());
+    }
+
     private Disposable sendAndWaitForMessages(Flux<? extends ConsumerRecord<Integer, String>> kafkaFlux, int count) throws Exception {
         CountDownLatch receiveLatch = new CountDownLatch(count);
         Disposable disposable = subscribe(kafkaFlux, receiveLatch);
