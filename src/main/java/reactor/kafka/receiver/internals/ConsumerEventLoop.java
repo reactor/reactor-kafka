@@ -215,7 +215,8 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
 
                 this.consumer.wakeup();
                 return Mono.<Void>fromRunnable(new CloseEvent(receiverOptions.closeTimeout()))
-                    .as(flux -> flux.subscribeOn(eventScheduler));
+                    .as(flux -> flux.subscribeOn(eventScheduler))
+                    .doOnTerminate(() -> sink.emitComplete(ConsumerEventLoop.this));
             })
             .onErrorResume(e -> {
                 log.warn("Cancel exception: " + e);
