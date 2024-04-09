@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2020-2024 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -172,7 +172,11 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                         long end = maxDelayRebalance + System.currentTimeMillis();
                         do {
                             try {
-                                log.debug("Rebalancing; waiting for {} records in pipeline", inPipeline);
+                                log.debug(
+                                    "Rebalancing; waiting for {} records in pipeline or awaitingTransaction: {}",
+                                    inPipeline,
+                                    this.awaitingTransaction.get()
+                                );
                                 Thread.sleep(interval);
                                 commitEvent.runIfRequired(true);
                             } catch (InterruptedException e) {
@@ -374,7 +378,10 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                     }
 
                     if (!records.isEmpty()) {
-                        this.commitBatch.addUncommitted(records);
+                        // Handled separately using transactional KafkaSender
+                        if (ackMode != AckMode.EXACTLY_ONCE) {
+                            this.commitBatch.addUncommitted(records);
+                        }
                         r = Operators.produced(REQUESTED, ConsumerEventLoop.this, 1);
                         log.debug("Emitting {} records, requested now {}", records.count(), r);
                         sink.emitNext(records, ConsumerEventLoop.this);
