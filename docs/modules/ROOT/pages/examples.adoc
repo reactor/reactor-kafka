@@ -1,17 +1,19 @@
-== Sample Scenarios
+[[sample-scenarios]]
+= Sample Scenarios
 
 This section shows sample code segments for typical scenarios where Reactor Kafka API
 may be used. Full code listing for these scenarios are included in the
 https://github.com/reactor/reactor-kafka/tree/main/reactor-kafka-samples[samples sub-project].
 
 [[sample-producer]]
-=== Sending records to Kafka
+== Sending records to Kafka
 
-See <<api-guide-sender,KafkaSender API>> for details on the KafkaSender API for sending outbound records
+See xref:api-guide.adoc#api-guide-sender[KafkaSender API] for details on the KafkaSender API for sending outbound records
 to Kafka. The following code segment creates a simple pipeline that sends records to Kafka and
 processes the responses. The outbound flow is triggered when the returned Flux is subscribed to.
 
 [source,java]
+[%unbreakable]
 --------
 KafkaSender.create(SenderOptions.<Integer, String>create(producerProps).maxInFlight(512))   // <1>
            .send(outbound.map(r -> senderRecord(r)))                                        // <2>
@@ -24,15 +26,16 @@ KafkaSender.create(SenderOptions.<Integer, String>create(producerProps).maxInFli
 <3> Process send result when onNext is triggered
 
 [[sample-consumer]]
-=== Replaying records from Kafka topics
+== Replaying records from Kafka topics
 
-See <<api-guide-receiver,KafkaReceiver API>> for details on the KafkaReceiver API for consuming records
+See xref:api-guide.adoc#api-guide-receiver[KafkaReceiver API] for details on the KafkaReceiver API for consuming records
 from Kafka topics. The following code segment creates a Flux that replays all records on a topic
 and commits offsets after processing the messages. Manual acknowledgement provides
 at-least-once delivery semantics.
 
 
 [source,java]
+[%unbreakable]
 --------
 ReceiverOptions<Integer, String> options =
     ReceiverOptions.<Integer, String>create(consumerProps)
@@ -55,7 +58,7 @@ KafkaReceiver.create(options)
 
 
 [[kafka-sink]]
-=== Reactive pipeline with Kafka sink
+== Reactive pipeline with Kafka sink
 
 The code segment below consumes messages from an external source, performs some transformation
 and stores the output records in Kafka. Large number of retry attempts are configured
@@ -63,6 +66,7 @@ on the Kafka producer so that transient failures don't impact the pipeline. Sour
 performed only after records are successfully written to Kafka.
 
 [source,java]
+[%unbreakable]
 --------
 senderOptions = senderOptions
     .producerProperty(ProducerConfig.ACKS_CONFIG, "all")                  // <1>
@@ -83,13 +87,14 @@ KafkaSender.create(senderOptions)
 
 
 [[kafka-source]]
-=== Reactive pipeline with Kafka source
+== Reactive pipeline with Kafka source
 
 The code segment below consumes records from Kafka topics, transforms the record
 and sends the output to an external sink. Kafka consumer offsets are committed after
 records are successfully output to sink.
 
 [source,java]
+[%unbreakable]
 --------
 receiverOptions = receiverOptions
     .commitInterval(Duration.ZERO)              // <1>
@@ -110,7 +115,7 @@ KafkaReceiver.create(receiverOptions)
 <6> Synchronous commit after record is successfully delivered to sink
 
 [[kafka-source-sink]]
-=== Reactive pipeline with Kafka source and sink
+== Reactive pipeline with Kafka source and sink
 
 The code segment below consumes messages from Kafka topic, performs some transformation
 on the incoming messages and stores the result in some Kafka topics. Manual acknowledgement
@@ -119,6 +124,7 @@ are delivered to Kafka. Acknowledged offsets are committed periodically based on
 configured commit interval.
 
 [source,java]
+[%unbreakable]
 --------
 receiverOptions = receiverOptions
     .commitInterval(Duration.ofSeconds(10))        // <1>
@@ -133,7 +139,7 @@ sender.send(KafkaReceiver.create(receiverOptions)
 <3> Acknowledge the inbound offset using the offset instance in correlation metadata after outbound record is delivered to Kafka
 
 [[at-most-once]]
-=== At-most-once delivery
+== At-most-once delivery
 
 The code segment below demonstrates a flow with at-most once delivery. Producer does not wait for acks and
 does not perform any retries. Messages that cannot be delivered to Kafka on the first attempt
@@ -142,6 +148,7 @@ restarts, messages are not redelivered. With replication factor 1 for topic part
 this code can be used for at-most-once delivery.
 
 [source,java]
+[%unbreakable]
 --------
 senderOptions = senderOptions
     .producerProperty(ProducerConfig.ACKS_CONFIG, "0")     // <1>
@@ -160,7 +167,7 @@ KafkaSender.create(senderOptions)
 <4> At-most-once receive
 
 [[fan-out]]
-=== Fan-out with Multiple Streams
+== Fan-out with Multiple Streams
 
 The code segment below demonstrates fan-out with the same records processed in multiple independent
 streams. Each stream is processed on a different thread and which transforms the input record
@@ -170,6 +177,7 @@ Reactor's https://projectreactor.io/docs/core/release/api/reactor/core/publisher
 is used to broadcast the input records from Kafka to multiple subscribers.
 
 [source,java]
+[%unbreakable]
 --------
 
 EmitterProcessor<Person> processor = EmitterProcessor.create();         // <1>
@@ -194,7 +202,7 @@ Flux.merge(sender.send(outputRecords1), sender.send(outputRecords2))
 
 
 [[concurrent-ordered]]
-=== Concurrent Processing with Partition-Based Ordering
+== Concurrent Processing with Partition-Based Ordering
 
 The code segment below demonstrates a flow where messages are consumed from a Kafka topic, processed
 by multiple threads and the results stored in another Kafka topic. Messages are grouped
@@ -202,6 +210,7 @@ by partition to guarantee ordering in message processing and commit operations. 
 from each partition are processed on a single thread.
 
 [source,java]
+[%unbreakable]
 --------
 
 Scheduler scheduler = Schedulers.newElastic("sample", 60, true);
@@ -219,12 +228,13 @@ KafkaReceiver.create(receiverOptions)
 <3> Commit in sequence using concatMap
 
 [[transactional-sender]]
-=== Transactional send
+== Transactional send
 
 The code segment below consumes messages from an external source, performs some transformation
 and stores multiple transformed records in different Kafka topics within a transaction.
 
 [source,java]
+[%unbreakable]
 --------
 senderOptions = senderOptions
     .producerProperty(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "SampleTxn");       // <1>
@@ -238,7 +248,7 @@ KafkaSender.create(senderOptions)
 <2> Send multiple records generated from each source record within a transaction
 
 [[exactly-once]]
-=== Exactly-once delivery
+== Exactly-once delivery
 
 The code segment below demonstrates a flow with exactly once delivery. Source records
 received from a Kafka topic are transformed and sent to Kafka. Each batch of records
@@ -249,6 +259,7 @@ successfully delivered to the destination topic. Next batch of records is delive
 to the application in a new transaction after the current transaction is committed.
 
 [source,java]
+[%unbreakable]
 --------
 senderOptions = senderOptions
     .producerProperty(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "SampleTxn");    // <1>

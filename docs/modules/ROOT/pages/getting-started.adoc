@@ -1,7 +1,8 @@
-== Getting Started
+[[getting-started]]
+= Getting Started
 
 [[requirements]]
-=== Requirements
+== Requirements
 
 You need Java JRE installed (Java 8 or later).
 
@@ -9,18 +10,21 @@ You need https://kafka.apache.org[Apache Kafka] installed (1.0.0 or later). Kafk
 from https://kafka.apache.org/downloads.html. Note that the Apache Kafka client library used with
 Reactor Kafka should be 2.0.0 or later and the broker version should be 1.0.0 or higher.
 
-=== Quick Start
+[[quick-start]]
+== Quick Start
 
 This quick start tutorial sets up a single node Zookeeper and Kafka and runs the sample reactive producer and
 consumer. Instructions to set up multi-broker clusters are available https://kafka.apache.org/documentation#quickstart_multibroker[here].
 
-==== Start Kafka
+[[start-kafka]]
+=== Start Kafka
 
 If you haven't yet downloaded Kafka, download Kafka version https://www.apache.org/dyn/closer.cgi?path=/kafka/2.0.0/kafka_2.11-2.0.0.tgz[2.0.0] or higher.
 
 Unzip the release and set KAFKA_DIR to the installation directory. For example,
 
 [source]
+[%unbreakable]
 --------
 > tar -zxf kafka_2.11-2.0.0.tgz -C /opt
 > export KAFKA_DIR=/opt/kafka_2.11-2.0.0
@@ -29,6 +33,7 @@ Unzip the release and set KAFKA_DIR to the installation directory. For example,
 Start a single-node Zookeeper instance using the Zookeeper installation included in the Kafka download:
 
 [source]
+[%unbreakable]
 --------
 > $KAFKA_DIR/bin/zookeeper-server-start.sh $KAFKA_DIR/config/zookeeper.properties > /tmp/zookeeper.log &
 --------
@@ -36,6 +41,7 @@ Start a single-node Zookeeper instance using the Zookeeper installation included
 Start a single-node Kafka instance:
 
 [source]
+[%unbreakable]
 --------
 > $KAFKA_DIR/bin/kafka-server-start.sh $KAFKA_DIR/config/server.properties > /tmp/kafka.log &
 --------
@@ -43,6 +49,7 @@ Start a single-node Kafka instance:
 Create a Kafka topic:
 
 [source]
+[%unbreakable]
 --------
 > $KAFKA_DIR/bin/kafka-topics.sh --zookeeper localhost:2181 --create --replication-factor 1 --partitions 2 --topic demo-topic
 Created topic "demo-topic".
@@ -51,6 +58,7 @@ Created topic "demo-topic".
 Check that Kafka topic was created successfully:
 
 [source]
+[%unbreakable]
 --------
 > $KAFKA_DIR/bin/kafka-topics.sh --zookeeper localhost:2181 --describe
 Topic: demo-topic	PartitionCount:2		ReplicationFactor:1	Configs:
@@ -59,11 +67,13 @@ Topic: demo-topic	Partition: 1	Leader: 0	Replicas: 0		Isr: 0
 --------
 
 
-==== Run Reactor Kafka Samples
+[[run-reactor-kafka-samples]]
+=== Run Reactor Kafka Samples
 
 Download and build Reactor Kafka from https://github.com/reactor/reactor-kafka/.
 
 [source]
+[%unbreakable]
 --------
 > git clone https://github.com/reactor/reactor-kafka
 > cd reactor-kafka
@@ -73,18 +83,21 @@ Download and build Reactor Kafka from https://github.com/reactor/reactor-kafka/.
 Set `CLASSPATH` for running reactor-kafka samples. `CLASSPATH` can be obtained using the classpath task of the samples sub-project.
 
 [source]
+[%unbreakable]
 --------
 > export CLASSPATH=`./gradlew -q :reactor-kafka-samples:classpath`
 --------
 
 
-===== Sample Producer
+[[sample-producer]]
+==== Sample Producer
 
 See https://github.com/reactor/reactor-kafka/blob/main/reactor-kafka-samples/src/main/java/reactor/kafka/samples/SampleProducer.java for sample producer code.
 
 Run sample producer:
 
 [source]
+[%unbreakable]
 --------
 > $KAFKA_DIR/bin/kafka-run-class.sh reactor.kafka.samples.SampleProducer
 Message 2 sent successfully, topic-partition=demo-topic-1 offset=0 timestamp=13:33:16:716 GMT 30 Nov 2016
@@ -115,13 +128,15 @@ results may be different from the order of messages published. Results are deliv
 but results from different partitions may be interleaved. In the sample, message index is included as
 correlation metadata to match each result to its corresponding message.
 
-===== Sample Consumer
+[[sample-consumer]]
+==== Sample Consumer
 
 See https://github.com/reactor/reactor-kafka/blob/main/reactor-kafka-samples/src/main/java/reactor/kafka/samples/SampleConsumer.java for sample consumer code.
 
 Run sample consumer:
 
 [source]
+[%unbreakable]
 --------
 > $KAFKA_DIR/bin/kafka-run-class.sh reactor.kafka.samples.SampleConsumer
 Received message: topic-partition=demo-topic-1 offset=0 timestamp=13:33:16:716 GMT 30 Nov 2016 key=2 value=Message_2
@@ -151,7 +166,8 @@ published by the Producer sample should appear on the console. As shown in the o
 in order for each partition, but messages from different partitions may be interleaved.
 
 
-==== Building Reactor Kafka Applications
+[[building-reactor-kafka-applications]]
+=== Building Reactor Kafka Applications
 
 To build your own application using the Reactor Kafka API, you need to include a dependency to Reactor Kafka.
 
