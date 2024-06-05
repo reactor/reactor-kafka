@@ -1,7 +1,8 @@
-== Additional Resources
+[[additional-resources]]
+= Additional Resources
 
 [[support]]
-=== Getting help
+== Getting help
 
 If you are having trouble with Reactor Kafka, we'd like to help.
 
@@ -11,7 +12,7 @@ Reactor Kafka is open source and the code and documentation are available at htt
 
 
 [[resources]]
-=== Resources
+== Resources
 
 * https://github.com/reactor/reactor-kafka[Reactor Kafka on github]
 

@@ -1,7 +1,13 @@
-== Overview
+[[overview]]
+= Overview
+
+Rajini Sivaram, Mark Pollack, Oleh Dokuka, Gary Russell
+
+{project-version}
+
 
 [[apache-kafka]]
-=== Apache Kafka
+== Apache Kafka
 
 https://kafka.apache.org[Kafka] is a scalable, high-performance distributed messaging engine.
 Low latency, high throughput messaging capability combined with fault-tolerance have made Kafka a popular
@@ -13,7 +19,8 @@ Apache Kafka provides three main APIs:
 * Connector API to pull data from existing data storage systems to Kafka or push data from Kafka topics to other data systems
 * Streams API for transforming and analyzing real-time streams of events published to Kafka
 
-=== Project Reactor
+[[project-reactor]]
+== Project Reactor
 
 https://projectreactor.io[Reactor] is a highly optimized reactive library for building efficient, non-blocking
 applications on the JVM based on the https://github.com/reactive-streams/reactive-streams-jvm[Reactive Streams Specification].
@@ -24,7 +31,8 @@ Reactor implements two publishers https://projectreactor.io/docs/core/release/ap
 https://projectreactor.io/docs/core/release/api/reactor/core/publisher/Mono.html[Mono<T>], both of which support non-blocking back-pressure.
 This enables exchange of data between threads with well-defined memory usage, avoiding unnecessary intermediate buffering or blocking.
 
-=== Reactive API for Kafka
+[[reactive-api-for-kafka]]
+== Reactive API for Kafka
 
 link:../api/index.html[Reactor Kafka] is a reactive API for Kafka based on Reactor and the Kafka Producer/Consumer API.
 Reactor Kafka API enables messages to be published to Kafka and consumed from Kafka using functional APIs

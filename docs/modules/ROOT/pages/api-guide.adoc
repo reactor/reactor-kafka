@@ -1,7 +1,8 @@
-== Reactor Kafka API
+[[reactor-kafka-api]]
+= Reactor Kafka API
 
 [[api-guide-overview]]
-=== Overview
+== Overview
 
 This section describes the reactive API for producing and consuming messages using Apache Kafka.
 There are two main interfaces in Reactor Kafka:
@@ -15,7 +16,7 @@ The project uses https://github.com/reactor/reactor-core[Reactor Core] to expose
 
 
 [[api-guide-sender]]
-=== Reactive Kafka Sender
+== Reactive Kafka Sender
 
 Outbound messages are sent to Kafka using `reactor.kafka.sender.KafkaSender`. Senders are thread-safe and can be shared
 across multiple threads to improve throughput. A `KafkaSender` is associated with one `KafkaProducer` that is used
@@ -34,6 +35,7 @@ the KafkaSender is created.
 
 
 [source,java]
+[%unbreakable]
 --------
 Map<String, Object> producerProps = new HashMap<>();
 producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
@@ -51,6 +53,7 @@ Once the required options have been configured on the options instance, a new `K
 can be created with the options already configured in `senderOptions`.
 
 [source,java]
+[%unbreakable]
 --------
 KafkaSender<Integer, String> sender = KafkaSender.create(senderOptions);
 --------
@@ -76,6 +79,7 @@ provides a hands-on tutorial on using the Reactor classes `Flux` and `Mono`.
 
 
 [source,java]
+[%unbreakable]
 --------
 Flux<SenderRecord<Integer, String, Integer>> outboundFlux =
     Flux.range(1, 10)
@@ -96,6 +100,7 @@ When records are sent to multiple partitions, responses arrive in order
 for each partition, but responses from different partitions may be interleaved.
 
 [source,java]
+[%unbreakable]
 --------
 sender.send(outboundFlux)                          // <1>
       .doOnError(e-> log.error("Send failed", e))  // <2>
@@ -110,9 +115,11 @@ sender.send(outboundFlux)                          // <1>
 
 See https://github.com/reactor/reactor-kafka/blob/main/reactor-kafka-samples/src/main/java/reactor/kafka/samples/SampleProducer.java  for the full code listing of a sample producer.
 
-==== Error handling
+[[sender-error-handling]]
+=== Error handling
 
 [source,java]
+[%unbreakable]
 --------
 public SenderOptions<K, V> stopOnError(boolean stopOnError);
 --------
@@ -123,6 +130,7 @@ have been processed. This can be used along with `ProducerConfig#ACKS_CONFIG`
 and `ProducerConfig#RETRIES_CONFIG` to configure the required quality of service.
 
 [source,java]
+[%unbreakable]
 --------
 <T> Flux<SenderResult<T>> send(Publisher<SenderRecord<K, V, T>> outboundRecords);
 --------
@@ -138,13 +146,15 @@ immediately with an error. Since multiple outbound messages may be in-flight at 
 some messages are delivered successfully to Kafka after the first failure is detected. `SenderOptions#maxInFlight()`
 option may be configured to limit the number of messages in-flight at any time.
 
-==== Send without result metadata
+[[send-without-result-metadata]]
+=== Send without result metadata
 
 If individual results are not required for each send request, `ProducerRecord` can be sent to Kafka
 without providing correlation metadata using the `KafkaOutbound` interface. `KafkaOutbound` is a fluent
 interface that enables sends to be chained together.
 
 [source,java]
+[%unbreakable]
 --------
 KafkaOutbound<K, V> send(Publisher<? extends ProducerRecord<K, V>> outboundRecords);
 --------
@@ -155,6 +165,7 @@ terminates on the first send failure. If `outboundRecords` is a non-terminating 
 be sent to Kafka unless a send fails or the returned Mono is cancelled.
 
 [source,java]
+[%unbreakable]
 --------
 sender.createOutbound()
       .send(Flux.range(1,  10)
@@ -176,6 +187,7 @@ in sequence in the declaration order. The sequence is cancelled if any of the se
 after the configured number of retries.
 
 [source,java]
+[%unbreakable]
 --------
 sender.createOutbound()
       .send(flux1)                                               // <1>
@@ -198,7 +210,8 @@ the reactive `KafkaSender` indicate a failure to send after the configured numbe
 can result in messages being delivered out of order. The producer property
 `ProducerConfig#MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION` may be set to one to avoid re-ordering.
 
-==== Threading model
+[[threading-model]]
+=== Threading model
 
 `KafkaProducer` uses a separate network thread for sending requests and processing responses. To ensure
 that the producer network thread is never blocked by applications while processing results, `KafkaSender`
@@ -209,11 +222,13 @@ instance before the KafkaSender instance is created using:
 
 
 [source,java]
+[%unbreakable]
 --------
 public SenderOptions<K, V> scheduler(Scheduler scheduler);
 --------
 
-==== Non-blocking back-pressure
+[[non-blocking-back-pressure]]
+=== Non-blocking back-pressure
 
 The number of in-flight sends can be controlled using the `maxInFlight` option. Requests for more elements from
 upstream are limited by the configured `maxInFlight` to ensure that the total number of requests at any time for which
@@ -224,21 +239,25 @@ can be configured on `SenderOptions` before the KafkaSender is created. Default 
 
 
 [source,java]
+[%unbreakable]
 --------
 public SenderOptions<K, V> maxInFlight(int maxInFlight);
 --------
 
-==== Closing the KafkaSender
+[[closing-the-kafkasender]]
+=== Closing the KafkaSender
 
 When the KafkaSender is no longer required, the KafkaSender instance can be closed. The underlying `KafkaProducer` is closed,
 closing all client connections and freeing all memory used by the producer.
 
 [source,java]
+[%unbreakable]
 --------
 sender.close();
 --------
 
-==== Access to the underlying `KafkaProducer`
+[[access-to-the-underlying-kafkaproducer]]
+=== Access to the underlying `KafkaProducer`
 
 Reactive applications may sometimes require access to the underlying producer instance to perform actions that are not
 exposed by the `KafkaSender` interface. For example, an application might need to know the number of partitions in a topic
@@ -246,6 +265,7 @@ in order to choose the partition to send a record to. Operations that are not pr
 can be run on the underlying `KafkaProducer` using `KafkaSender#doOnProducer`.
 
 [source,java]
+[%unbreakable]
 --------
 sender.doOnProducer(producer -> producer.partitionsFor(topic))
       .doOnSuccess(partitions -> System.out.println("Partitions " + partitions))
@@ -257,7 +277,7 @@ A `Mono` is returned by `doOnProducer` which completes with the value returned b
 
 
 [[api-guide-receiver]]
-=== Reactive Kafka Receiver
+== Reactive Kafka Receiver
 
 Messages stored in Kafka topics are consumed using the reactive receiver `reactor.kafka.receiver.KafkaReceiver`.
 Each instance of `KafkaReceiver` is associated with a single instance of `KafkaConsumer`. `KafkaReceiver` is not thread-safe
@@ -275,6 +295,7 @@ consumed using the receiver and corresponding de-serializers must be set on the 
 the KafkaReceiver is created.
 
 [source,java]
+[%unbreakable]
 --------
 Map<String, Object> consumerProps = new HashMap<>();
 consumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
@@ -296,6 +317,7 @@ The underlying `KafkaConsumer` instance is created lazily later when the inbound
 
 
 [source,java]
+[%unbreakable]
 --------
 Flux<ReceiverRecord<Integer, String>> inboundFlux =
     KafkaReceiver.create(receiverOptions)
@@ -314,6 +336,7 @@ operations is required.
 
 
 [source,java]
+[%unbreakable]
 --------
 inboundFlux.subscribe(r -> {
     System.out.printf("Received message: %s\n", r);           // <1>
@@ -323,7 +346,8 @@ inboundFlux.subscribe(r -> {
 <1> Prints each consumer record from Kafka
 <2> Acknowledges that the record has been processed so that the offset may be committed
 
-==== Error handling
+[[receiver-error-handling]]
+=== Error handling
 
 Since in reactive streams an error represents a terminal signal, any error signal emitted in the inbound Flux will cause the subscription to be cancelled and
 effectively cause the consumer to shut down. This can be mitigated by using the `retry()` operator (or `retryWhen` for finer grained control),
@@ -331,6 +355,7 @@ which will ensure that a new consumer is created:
 
 
 [source,java]
+[%unbreakable]
 --------
 Flux<ReceiverRecord<Integer, String>> inboundFlux =
     KafkaReceiver.create(receiverOptions)
@@ -342,7 +367,8 @@ Any errors related to the event processing rather than the `KafkaConsumer` itsel
 and should ideally be prevented from propagating up to the inbound Flux. This is to ensure that the `KafkaConsumer` doesn't get restarted
 unnecessarily due to unrelated application errors.
 
-==== Subscribing to wildcard patterns
+[[subscribing-to-wildcard-patterns]]
+=== Subscribing to wildcard patterns
 
 The example above subscribed to a single Kafka topic. The same API can be used to subscribe to
 more than one topic by specifying multiple topics in the collection provided to `ReceiverOptions#subscription()`.
@@ -351,6 +377,7 @@ management in `KafkaConsumer` dynamically updates topic assignment when topics m
 are created or deleted and assigns partitions of matching topics to available consumer instances.
 
 [source,java]
+[%unbreakable]
 --------
 receiverOptions = receiverOptions.subscription(Pattern.compile("demo.*"));  // <1>
 --------
@@ -359,11 +386,13 @@ receiverOptions = receiverOptions.subscription(Pattern.compile("demo.*"));  // <
 Changes to `ReceiverOptions` must be made before the receiver instance is created. Altering the subscription
 deletes any existing subscriptions on the options instance.
 
-==== Manual assignment of topic partitions
+[[manual-assignment-of-topic-partitions]]
+=== Manual assignment of topic partitions
 
 Partitions may be manually assigned to the receiver without using Kafka consumer group management.
 
 [source,java]
+[%unbreakable]
 --------
 receiverOptions = receiverOptions.assignment(Collections.singleton(new TopicPartition(topic, 0))); // <1>
 --------
@@ -373,7 +402,8 @@ Existing subscriptions and assignments on the options instance are deleted when 
 is specified. Every receiver created from this options instance with manual assignment consumes messages
 from all the specified partitions.
 
-==== Controlling commit frequency
+[[controlling-commit-frequency]]
+=== Controlling commit frequency
 
 Commit frequency can be controlled using a combination of commit interval
 and commit batch size. Commits are performed when either the interval or batch size is reached. One or both
@@ -397,6 +427,7 @@ on the returned Mono to implement synchronous commits. Applications may batch co
 messages as they are consumed and invoking commit() periodically to commit acknowledged offsets.
 
 [source,java]
+[%unbreakable]
 --------
 receiver.receive()
         .doOnNext(r -> {
@@ -415,7 +446,8 @@ While the delay is in process, any offsets available for committal will be commi
 This allows orderly completion of processing the records that have already been received.
 `maxDelayRebalance` should be less than `max.poll.interval.ms` to avoid a forced rebalance due to a non-responsive consumer.
 
-==== Out of Order Commits
+[[out-of-order-commits]]
+=== Out of Order Commits
 
 Starting with version 1.3.8, commits can be performed out of order and the framework will defer the commits as needed, until any "gaps" are filled.
 This removes the need for applications to keep track of offsets and commit them in the right order.
@@ -435,12 +467,14 @@ The number is an aggregate of deferred commits across all the assigned topics/pa
 
 Leaving the property at its default `0` disables the feature and commits are performed whenever called.
 
-==== Auto-acknowledgement of batches of records
+[[auto-acknowledgement-of-batches-of-records]]
+=== Auto-acknowledgement of batches of records
 
 `KafkaReceiver#receiveAutoAck` returns a `Flux` of batches of records returned by each `KafkaConsumer#poll()`.
 The records in each batch are automatically acknowledged when the Flux corresponding to the batch terminates.
 
 [source,java]
+[%unbreakable]
 --------
 KafkaReceiver.create(receiverOptions)
              .receiveAutoAck()
@@ -458,11 +492,13 @@ based on the configured commit interval and batch size. This mode is simple to u
 do not need to perform any acknowledge or commit actions. It is efficient as well but can not be used
 for at-least-once delivery of messages.
 
-==== Manual acknowledgement of batches of records
+[[manual-acknowledgement-of-batches-of-records]]
+=== Manual acknowledgement of batches of records
 
 `KafkaReceiver#receiveBatch` returns a `Flux` of batches of records returned by each `KafkaConsumer#poll()`.
 The records in each batch should be manually acknowledged or committed.
 [source,java]
+[%unbreakable]
 --------
 KafkaReceiver.create(receiverOptions)
              .receiveBatch()
@@ -489,12 +525,14 @@ which has a committable `ReceiverOffset` instance.
 acknowledgement/commit mode of `KafkaReceiver#receive`. This batching mode is efficient and is easy to use
 for at-least-once delivery of messages.
 
-==== Disabling automatic commits
+[[disabling-automatic-commits]]
+=== Disabling automatic commits
 
 Applications which don't require offset commits to Kafka may disable automatic commits by not acknowledging
 any records consumed using `KafkaReceiver#receive()`.
 
 [source,java]
+[%unbreakable]
 --------
 receiverOptions = ReceiverOptions.<Integer, String>create()
         .commitInterval(Duration.ZERO)             // <1>
@@ -508,7 +546,8 @@ KafkaReceiver.create(receiverOptions)
 <3> Process records, but don't acknowledge
 
 
-==== At-most-once delivery
+[[at-most-once-delivery]]
+=== At-most-once delivery
 Applications may disable automatic commits to avoid re-delivery of records. `ConsumerConfig#AUTO_OFFSET_RESET_CONFIG`
 can be configured to "latest" to consume only new records. But this could mean that an unpredictable
 number of records are not consumed if an application fails and restarts.
@@ -528,6 +567,7 @@ lost per-partition is `ReceiverOptions#atmostOnceCommitCommitAheadSize + 1`.
 
 
 [source,java]
+[%unbreakable]
 --------
 KafkaReceiver.create(receiverOptions)
              .receiveAtmostOnce()
@@ -535,7 +575,8 @@ KafkaReceiver.create(receiverOptions)
 --------
 <1> Process each consumer record, this record is not re-delivered if the processing fails
 
-==== Partition assignment and revocation listeners
+[[partition-assignment-and-revocation-listeners]]
+=== Partition assignment and revocation listeners
 
 Applications can enable assignment and revocation listeners to perform any actions when
 partitions are assigned or revoked from a consumer.
@@ -554,7 +595,8 @@ are invoked before the consumer is closed. Revocation listeners can be used to c
 offsets when manual commits are used. Acknowledged offsets are automatically committed on revocation
 if automatic commits are enabled.
 
-==== Controlling start offsets for consuming records
+[[controlling-start-offsets-for-consuming-records]]
+=== Controlling start offsets for consuming records
 
 By default, receivers start consuming records from the last committed offset of each assigned partition.
 If a committed offset is not available, the offset reset strategy `ConsumerConfig#AUTO_OFFSET_RESET_CONFIG`
@@ -565,6 +607,7 @@ a timestamp later than a point in time.
 
 
 [source,java]
+[%unbreakable]
 --------
 void seekToBeginning();
 void seekToEnd();
@@ -576,6 +619,7 @@ For example, the following code block starts consuming messages from the latest 
 
 
 [source,java]
+[%unbreakable]
 --------
 receiverOptions = receiverOptions
             .addAssignListener(partitions -> partitions.forEach(p -> p.seekToEnd())) // <1>
@@ -588,13 +632,15 @@ Other methods are available on `ReceiverPartition` to determine the current posi
 ending offset, at the time the partition is assigned.
 
 [source,java]
+[%unbreakable]
 --------
 long position();
 Long beginningOffset();
 Long endOffset();
 --------
 
-==== Consumer lifecycle
+[[consumer-lifecycle]]
+=== Consumer lifecycle
 
 Each `KafkaReceiver` instance is associated with a `KafkaConsumer` that is created when the inbound
 Flux returned by one of the receive methods in `KafkaReceiver` is subscribed to. The consumer is kept alive until
@@ -604,11 +650,13 @@ underlying consumer is closed.
 Only one receive operation may be active in a `KafkaReceiver` at any one time. Any of the receive
 methods can be invoked after the receive Flux corresponding to the last receive is terminated.
 
-=== Micrometer Metrics
+[[micrometer-metrics]]
+== Micrometer Metrics
 
 To enable micrometer metrics for the underlying Kafka Consumers and Producers, add a `MicrometerConsumerListener` to the `ReceiverOptions` or a `MicrometerProducerListener` to the `SenderOptions` respectively.
 
-=== Micrometer Observation
+[[micrometer-observation]]
+== Micrometer Observation
 
 To enable Micrometer observation for produced and consumed records, add an `ObservationRegistry` to the `SenderOptions` and `ReceiverOptions` using the `withObservation()` API.
 A custom `KafkaSenderObservationConvention` (and `KafkaReceiverObservationConvention`) can also be set.
@@ -624,6 +672,7 @@ Restored tracing information will be correlated into logs if so configured for t
 If there are requirements to continue an observation on the consumer side, the `KafkaReceiverObservation.RECEIVER_OBSERVATION` API must be used manually in the record processing operator:
 
 [source,java]
+[%unbreakable]
 --------
 KafkaReceiver.create(receiverOptions.subscription(List.of(topic)))
         .receive()

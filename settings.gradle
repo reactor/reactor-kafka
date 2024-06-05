@@ -1,2 +1,5 @@
 rootProject.name = 'reactor-kafka'
 include 'reactor-kafka-tools', 'reactor-kafka-samples'
+if (JavaVersion.current().isCompatibleWith(JavaVersion.VERSION_17)) {
+  include 'docs'
+}
