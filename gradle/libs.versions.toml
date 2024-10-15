@@ -9,6 +9,15 @@ micrometer = "1.10.10"
 powermock = "2.0.9"
 reactiveStreams = "1.0.3"
 micrometerTracing = '1.1.4'
+antora = "1.0.0"
+antora-yml = "0.0.1"
+antora-version = "3.2.0-alpha.4"
+antora-atlas-extension = "1.0.0-alpha.1"
+antora-pdf-extension = "1.0.0-alpha.7"
+antora-collector-extension = "1.0.0-alpha.3"
+antora-tabs-extension = "1.0.0-beta.6"
+antora-springio-antora-extension = "1.8.2"
+antora-asciidoctor-extension = "1.0.0-alpha.9"
 
 [libraries]
 kafka = "org.apache.kafka:kafka-clients:3.6.0"
@@ -38,3 +47,5 @@ artifactory = { id = "com.jfrog.artifactory", version = "4.27.1" }
 asciidoctor-convert = { id = "org.asciidoctor.jvm.convert", version.ref = "asciidoctor" }
 asciidoctor-pdf = { id = "org.asciidoctor.jvm.pdf", version.ref = "asciidoctor" }
 spotless = { id = "com.diffplug.spotless", version = "6.3.0" }
+antora = { id = "org.antora", version.ref = "antora" }
+antora-yml = { id = "io.spring.antora.generate-antora-yml", version.ref = "antora-yml" }
