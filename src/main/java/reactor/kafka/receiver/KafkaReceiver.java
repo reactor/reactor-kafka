@@ -283,4 +283,12 @@ public interface KafkaReceiver<K, V> {
      * @return Mono that completes with the value returned by <code>function</code>
      */
     <T> Mono<T> doOnConsumer(Function<Consumer<K, V>, ? extends T> function);
+
+    /**
+     * Explicitly shutdowns this {@link KafkaReceiver} and underlying Kafka {@link Consumer} asynchronously.
+     * Invoking this method initiates to stop fetching records from Kafka {@link Consumer} and emit completion signal downstream.
+     *
+     * @return Mono that stop current {@link KafkaReceiver}
+     */
+    Mono<Void> stop();
 }
