@@ -2,8 +2,7 @@ version: 2
 updates:
   - package-ecosystem: gradle
     target-branch: 1.3.x
-    directories:
-      - '**/*'
+    directory: /
     schedule:
       interval: weekly
       day: sunday
@@ -11,6 +10,8 @@ updates:
       - dependency-name: org.apache.kafka:kafka-clients
       - dependency-name: io.micrometer:micrometer-core
     ignore:
+      - dependency-name: com.google.code.findbugs:jsr305
+      - dependency-name: io.micrometer:micrometer-observation
       - dependency-name: '*'
         update-types:
           - version-update:semver-major
@@ -18,19 +19,6 @@ updates:
     open-pull-requests-limit: 10
     labels:
       - 'type/dependency-upgrade'
-
-  - package-ecosystem: gradle
-    target-branch: 1.3.x
-    directory: /
-    schedule:
-      interval: weekly
-      day: sunday
-    ignore:
-      - dependency-name: org.apache.kafka:kafka-clients
-      - dependency-name: io.micrometer:micrometer-core
-      - dependency-name: com.google.code.findbugs:jsr305
-    labels:
-      - 'type/chores'
     groups:
       development-dependencies:
         update-types:
