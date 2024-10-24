@@ -33,7 +33,7 @@ updates:
         update-types:
           - patch
         patterns:
-          - *
+          - '*'
         exclude-patterns:
           - org.apache.kafka*
           - io.micrometer:micrometer-core
