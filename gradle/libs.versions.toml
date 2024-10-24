@@ -5,13 +5,13 @@ reactorCore = "3.4.36-SNAPSHOT"
 asciidoctor = "3.3.2"
 kafka-doc = "28"
 log4j = "2.17.1"
-micrometer = "1.10.10"
+micrometer = "1.10.13"
 powermock = "2.0.9"
 reactiveStreams = "1.0.3"
 micrometerTracing = '1.1.4'
 
 [libraries]
-kafka = "org.apache.kafka:kafka-clients:3.6.0"
+kafka = "org.apache.kafka:kafka-clients:3.6.2"
 reactor-core = { module = "io.projectreactor:reactor-core", version.ref = "reactorCore" }
 reactor-test = { module = "io.projectreactor:reactor-test", version.ref = "reactorCore" }
 
