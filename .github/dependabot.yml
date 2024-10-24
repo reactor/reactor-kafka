@@ -6,8 +6,10 @@ updates:
     schedule:
       interval: weekly
       day: sunday
+    allow:
+      - dependency-name: org.apache.kafka:kafka-clients
+      - dependency-name: io.micrometer:micrometer-core
     ignore:
-      - dependency-name: com.google.code.findbugs:jsr305
       - dependency-name: '*'
         update-types:
           - version-update:semver-major
@@ -15,23 +17,28 @@ updates:
     open-pull-requests-limit: 10
     labels:
       - 'type/dependency-upgrade'
+
+  - package-ecosystem: gradle
+    target-branch: 1.3.x
+    directory: /
+    schedule:
+      interval: weekly
+      day: sunday
+    ignore:
+      - dependency-name: '*'
+    labels:
+      - 'type/chores'
     groups:
       development-dependencies:
         update-types:
           - patch
         patterns:
-          - com.gradle*
-          - org.asciidoctor*
-          - com.jfrog.artifactory
-          - com.diffplug.spotless
-          - org.powermock*
-          - org.awaitility:awaitility
-          - org.testcontainers*
-          - junit:junit
-          - org.assertj:assertj-core
-          - org.apache.logging.log4j*
-          - org.slf4j:slf4j-api
-          - io.micrometer:micrometer-tracing-integration-test
+          - *
+        exclude-patterns:
+          - org.apache.kafka*
+          - io.micrometer:micrometer-core
+          - io.micrometer:micrometer-observation
+          - com.google.code.findbugs:jsr305
 
   - package-ecosystem: github-actions
     target-branch: 1.3.x
@@ -40,7 +47,7 @@ updates:
       interval: weekly
       day: sunday
     labels:
-      - 'type/task'
+      - 'type/chores'
     groups:
       development-dependencies:
         patterns:
