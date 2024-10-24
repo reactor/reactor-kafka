@@ -2,7 +2,7 @@ version: 2
 updates:
   - package-ecosystem: gradle
     target-branch: 1.3.x
-    directory: /
+    directory: /gradle
     schedule:
       interval: weekly
       day: sunday
