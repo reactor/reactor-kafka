@@ -1,14 +1,14 @@
 [versions]
-reactorCore = "3.4.36-SNAPSHOT"
+reactorCore = "3.4.42-SNAPSHOT"
 
 # Other shared versions
 asciidoctor = "3.3.2"
 kafka-doc = "28"
-log4j = "2.17.1"
+log4j = "2.17.2"
 micrometer = "1.10.10"
 powermock = "2.0.9"
 reactiveStreams = "1.0.3"
-micrometerTracing = '1.1.4'
+micrometerTracing = '1.1.13'
 
 [libraries]
 kafka = "org.apache.kafka:kafka-clients:3.6.0"
@@ -29,7 +29,7 @@ powermock-core = { module = "org.powermock:powermock-core", version.ref = "power
 powermock-junit = { module = "org.powermock:powermock-module-junit4", version.ref = "powermock" }
 powermock-mockito = { module = "org.powermock:powermock-api-mockito2", version.ref = "powermock" }
 slf4j = "org.slf4j:slf4j-api:1.7.36"
-testcontainers = "org.testcontainers:kafka:1.19.0"
+testcontainers = "org.testcontainers:kafka:1.19.8"
 micrometer-observation = { module = "io.micrometer:micrometer-observation", version.ref = "micrometer" }
 micrometer-tracing-test = { module = "io.micrometer:micrometer-tracing-integration-test", version.ref = "micrometerTracing" }
 
