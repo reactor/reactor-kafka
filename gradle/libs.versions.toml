@@ -11,7 +11,7 @@ reactiveStreams = "1.0.3"
 micrometerTracing = '1.1.4'
 
 [libraries]
-kafka = "org.apache.kafka:kafka-clients:3.6.0"
+kafka = "org.apache.kafka:kafka-clients:3.6.2"
 reactor-core = { module = "io.projectreactor:reactor-core", version.ref = "reactorCore" }
 reactor-test = { module = "io.projectreactor:reactor-test", version.ref = "reactorCore" }
 
