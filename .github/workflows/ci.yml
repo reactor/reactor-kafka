@@ -7,14 +7,14 @@ jobs:
     name: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579 # renovate: tag=v2
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # renovate: tag=v2
       with:
         fetch-depth: 0 #needed by spotless
-    - uses: actions/setup-java@f0bb91606209742fe3ea40199be2f3ef195ecabf # renovate: tag=v2
+    - uses: actions/setup-java@8df1039502a15bceb9433410b1a100fbe190c53b # renovate: tag=v2
       with:
         distribution: 'temurin'
         java-version: 8
-    - uses: gradle/gradle-build-action@937999e9cc2425eddc7fd62d1053baf041147db7 # renovate: tag=v2
+    - uses: gradle/gradle-build-action@ac2d340dc04d9e1113182899e983b5400c17cda1 # renovate: tag=v2
       name: spotless (license header)
       with:
         # the --continue helps spotless find both java and gradle issues
@@ -29,13 +29,13 @@ jobs:
         echo -e "   \033[38;5;0;48;5;255m ./gradlew spotlessApply \033[0m"
         echo ""
         exit -1
-    - uses: gradle/gradle-build-action@937999e9cc2425eddc7fd62d1053baf041147db7 # renovate: tag=v2
+    - uses: gradle/gradle-build-action@ac2d340dc04d9e1113182899e983b5400c17cda1 # renovate: tag=v2
       name: gradle
       with:
         arguments: build javadoc
     - name: Capture Test Results
       if: failure() && steps.gradle.outcome == 'failure'
-      uses: actions/upload-artifact@82c141cc518b40d92cc801eee768e7aafc9c2fa2 # renovate: tag=v2
+      uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # renovate: tag=v2
       with:
         name: test-results
         path: |
