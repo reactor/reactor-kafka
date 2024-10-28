@@ -1,0 +1,94 @@
+/*
+ * Copyright (c) 2024 VMware Inc. or its affiliates, All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+plugins {
+  alias(libs.plugins.antora)
+  alias(libs.plugins.antora.yml)
+}
+
+def isCommandAvailable(String command) {
+  def result = exec {
+    commandLine 'which', command
+    ignoreExitValue true
+    standardOutput = new ByteArrayOutputStream()
+    errorOutput = new ByteArrayOutputStream()
+  }
+  return result.exitValue == 0
+}
+
+antora {
+  version = libs.versions.antora.version
+  playbook = findProperty('antora.playbook') ?: "antora-playbook.yml"
+  options = ['--clean', '--stacktrace']
+
+  def version = project.version
+  def forcePdf = project.hasProperty('forcePdf')
+
+  if (!version.endsWith("-SNAPSHOT") || forcePdf) {
+    if (isCommandAvailable('asciidoctor-pdf')) {
+      logger.log(LogLevel.DEBUG, "enabling antora pdf-extension")
+      options.add('--extension=pdf-extension')
+    } else {
+      throw new GradleException("PDF cannot be generated, asciidoctor-pdf not found from the PATH.")
+    }
+  }
+
+  environment = [
+    'ALGOLIA_API_KEY'   : 'd4bf9918bfc7d63ae68fbf92d69c2f49',
+    'ALGOLIA_APP_ID'    : '82SNR5M8HE',
+    'ALGOLIA_INDEX_NAME': 'projectreactor'
+  ]
+
+  dependencies = [
+    '@antora/atlas-extension'         : "${libs.versions.antora.atlas.extension.get()}",
+    '@antora/pdf-extension'           : "${libs.versions.antora.pdf.extension.get()}",
+    '@antora/collector-extension'     : "${libs.versions.antora.collector.extension.get()}",
+    '@asciidoctor/tabs'               : "${libs.versions.antora.tabs.extension.get()}",
+    '@springio/antora-extensions'     : "${libs.versions.antora.springio.antora.extension.get()}",
+    '@springio/asciidoctor-extensions': "${libs.versions.antora.asciidoctor.extension.get()}"
+  ]
+}
+
+jar {
+  enabled = false
+}
+
+javadoc {
+  enabled = false
+}
+
+tasks.withType(AbstractPublishToMaven).configureEach {
+  enabled = false
+}
+
+tasks.named("generateAntoraYml") {
+  asciidocAttributes = project.provider({ generateAttributes() })
+  baseAntoraYmlFile = file("antora.yml")
+}
+
+tasks.create('generateAntoraResources') {
+  dependsOn 'generateAntoraYml'
+}
+
+def generateAttributes() {
+  return ['is-snapshot-version': project.version.endsWith("-SNAPSHOT"),
+          'project-version'    : project.version
+  ]
+}
+
+description = "Reactor Kafka Antora Docs"
+
+// docsZip is added to reactor-kafka root project using gradle/antoradoc.gradle

@@ -1,7 +1,8 @@
-== Motivation
+[[motivation]]
+= Motivation
 
 [[motivation-functional]]
-=== Functional interface for Kafka
+== Functional interface for Kafka
 
 Reactor Kafka is a functional Java API for Kafka. For applications that are written in functional style,
 this API enables Kafka interactions to be integrated easily without requiring non-functional
@@ -9,7 +10,7 @@ asynchronous produce or consume APIs to be incorporated into the application log
 
 
 [[back-pressure]]
-=== Non-blocking Back-pressure
+== Non-blocking Back-pressure
 
 The Reactor Kafka API benefits from non-blocking back-pressure provided by Reactor. For example, in a pipeline, where
 messages received from an external source (e.g. an HTTP proxy) are published to Kafka, back-pressure can be applied easily to the
@@ -18,7 +19,7 @@ the pipeline as they are available, with Reactor taking care of limiting the flo
 keeping application logic simple.
 
 [[end-to-end-reactive]]
-=== End-to-end Reactive Pipeline
+== End-to-end Reactive Pipeline
 
 The value proposition for Reactor Kafka is the efficient utilization of resources in applications with multiple
 external interactions where Kafka is one of the external systems. End-to-end reactive pipelines benefit from
@@ -27,12 +28,13 @@ processed efficiently. The optimizations provided by Project Reactor enable deve
 with very low overheads and predictable capacity planning to deliver low-latency, high-throughput pipelines.
 
 [[comparison]]
-=== Comparisons with other Kafka APIs
+== Comparisons with other Kafka APIs
 
 Reactor Kafka is not intended to replace any of the existing Kafka APIs. Instead, it is aimed at providing
 an alternative API for reactive event-driven applications.
 
-==== Kafka Producer and Consumer APIs
+[[kafka-producer-and-consumer-apis]]
+=== Kafka Producer and Consumer APIs
 
 For non-reactive applications, Kafka's Producer/Consumer API provides a low latency interface to publish
 messages to Kafka and consume messages from Kafka.
@@ -40,7 +42,8 @@ messages to Kafka and consume messages from Kafka.
 Applications using Kafka as a message bus using this API may consider switching to Reactor Kafka if
 the application is implemented in a functional style.
 
-==== Kafka Connect API
+[[kafka-connect-api]]
+=== Kafka Connect API
 
 https://kafka.apache.org/documentation#connect[Kafka Connect] provides a simple interface to migrate messages
 from an external data system (e.g. a database) to one or more Kafka topics. Using existing connectors,
@@ -54,7 +57,8 @@ partitions can be processed in parallel, improving throughput by avoiding blocki
 The pull model in Reactor controls the pace of messages flowing through the pipeline, enabling efficient
 use of threads and memory without the need for overflow handling in the application.
 
-==== Kafka Streams API
+[[kafka-streams-api]]
+=== Kafka Streams API
 
 https://kafka.apache.org/documentation#streams[Kafka Streams] provides lightweight APIs to build stream processing
 applications that process data stored in Kafka using standard streaming concepts and transformation primitives.

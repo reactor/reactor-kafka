@@ -1,0 +1,27 @@
+name: reactor-kafka
+version: true
+title: Reactor Kafka Reference Guide
+start_page: overview.adoc
+nav:
+  - modules/ROOT/nav.adoc
+ext:
+  collector:
+    run:
+      command: gradlew -q "-Dorg.gradle.jvmargs=-Xmx3g -XX:+HeapDumpOnOutOfMemoryError" :docs:generateAntoraResources
+      local: true
+    scan:
+      dir: ./build/generated-antora-resources
+
+asciidoc:
+  attributes:
+    attribute-missing: 'warn'
+    chomp: 'all'
+    source-language: java
+    github-repo: reactor/reactor-kafka
+    github-code: https://github.com/{github-repo}
+    javadoc: 'https://projectreactor.io/docs/kafka/{project-version}/api'
+    author:
+      - Rajini Sivaram
+      - Mark Pollack
+      - Oleh Dokuka
+      - Gary Russell
