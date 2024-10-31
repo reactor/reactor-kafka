@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2023 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2024 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -70,6 +70,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -1188,7 +1189,8 @@ public class MockReceiverTest {
         testConsumerMethod(c -> {
             Collection<TopicPartition> partitions = Collections.singleton(new TopicPartition(topic, 1));
             c.pause(partitions);
-            assertEquals(partitions, c.paused());
+            // Due to backpressure other partitions can be paused at the same moment in time
+            assertThat(c.paused()).containsAll(partitions);
             c.resume(partitions);
         });
         testConsumerMethod(c -> {
