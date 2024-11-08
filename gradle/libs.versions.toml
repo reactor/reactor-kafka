@@ -1,5 +1,6 @@
 [versions]
-reactorCore = "3.4.36-SNAPSHOT"
+# Reactor Core 3.4.41 is the last OSS release for 3.4.x series
+reactorCore = "3.4.41"
 
 # Other shared versions
 asciidoctor = "3.3.2"
