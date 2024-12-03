@@ -724,7 +724,7 @@ class ImmutableReceiverOptions<K, V> implements ReceiverOptions<K, V> {
     @Override
     public ReceiverOptions<K, V> maxCommitAttempts(int maxAttempts) {
         if (maxAttempts < 0)
-            throw new IllegalArgumentException("the number of attempts must be >= 0");
+            throw new IllegalArgumentException("the number of attempts must be > 0");
 
         return new ImmutableReceiverOptions<>(
                 properties,
