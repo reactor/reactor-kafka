@@ -377,32 +377,40 @@ public class MockReceiverTest {
         Map<TopicPartition, Long> consumedOffsets = new HashMap<>();
         Flux<ConsumerRecord<Integer, String>> inboundFlux = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions)
                 .receiveAtmostOnce()
-                .filter(r -> {
-                    long committed = cluster.committedOffset(groupId, topicPartition(r));
-                    return committed >= r.offset() && committed <= r.offset() + commitAhead + 1;
-                })
                 .doOnNext(r -> consumedOffsets.put(new TopicPartition(r.topic(), r.partition()), r.offset()));
         int consumeCount = 17;
         StepVerifier.create(inboundFlux, consumeCount)
             .recordWith(() -> receivedMessages)
             .expectNextCount(consumeCount)
+            .expectRecordedMatches(ignored -> verifyCommittedAhead(consumedOffsets, commitAhead))
             .thenCancel()
             .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
         verifyMessages(consumeCount);
-        for (int i = 0; i < cluster.partitions(topic).size(); i++) {
-            TopicPartition topicPartition = new TopicPartition(topic, i);
+        verifyUndoCommitAhead(consumedOffsets);
+    }
+
+    private boolean verifyCommittedAhead(Map<TopicPartition, Long> consumedOffsets, int commitAhead) {
+        return cluster.partitions(topic).stream().allMatch(topicPartition -> {
+            long consumed = consumedOffsets.get(topicPartition);
+            long committedOffset = cluster.committedOffset(groupId, topicPartition);
+            return committedOffset > consumed && committedOffset <= consumed + commitAhead + 1;
+        });
+    }
+
+    private void verifyUndoCommitAhead(Map<TopicPartition, Long> consumedOffsets) {
+        cluster.partitions(topic).forEach(topicPartition -> {
             long consumed = consumedOffsets.get(topicPartition);
             consumerFactory.addConsumer(new MockConsumer(cluster));
             receiverOptions = receiverOptions.assignment(Collections.singleton(topicPartition));
-            inboundFlux = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions)
+            Flux<ConsumerRecord<Integer, String>> inboundFlux = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions)
                     .receiveAtmostOnce();
             StepVerifier.create(inboundFlux, 1)
-                .expectNextMatches(r -> r.offset() > consumed && r.offset() <= consumed + commitAhead + 1)
+                .expectNextMatches(r -> r.offset() == consumed + 1)
                 .thenCancel()
                 .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
-        }
-
+        });
     }
+
 
     /**
      * Tests that transient commit failures are retried with {@link KafkaReceiver#receiveAtmostOnce()}.

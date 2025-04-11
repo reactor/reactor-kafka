@@ -44,7 +44,7 @@ class AtmostOnceOffsets {
         boolean undoRequired = false;
         for (Map.Entry<TopicPartition, Long> entry : committedOffsets.entrySet()) {
             TopicPartition topicPartition = entry.getKey();
-            long offsetToCommit = dispatchedOffsets.get(entry.getKey()) + 1;
+            long offsetToCommit = dispatchedOffsets.get(entry.getKey());
             if (entry.getValue() > offsetToCommit) {
                 committableBatch.updateOffset(topicPartition, offsetToCommit);
                 undoRequired = true;
