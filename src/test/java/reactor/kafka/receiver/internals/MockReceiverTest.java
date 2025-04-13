@@ -66,6 +66,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.regex.Pattern;
@@ -411,6 +412,48 @@ public class MockReceiverTest {
         });
     }
 
+    /**
+     * Tests if commit-ahead doesn't break offsets for partitions that have been revoked from the consumer.
+     */
+    @Test
+    public void atmostOnceUndoCommitAhead() {
+        int commitAhead = 5;
+        List<TopicPartition> initialPartitions = new ArrayList<>(cluster.partitions(topic));
+        receiverOptions = receiverOptions
+            .atmostOnceCommitAheadSize(commitAhead)
+            .subscription(Collections.singleton(topic));
+        sendMessages(topic, 0, 2);
+        Flux<ConsumerRecord<Integer, String>> inboundFlux = new DefaultKafkaReceiver<>(consumerFactory, receiverOptions)
+            .receiveAtmostOnce();
+
+        int consumeCount = 2;
+        AtomicReference<ParitionWithOffset> partition = new AtomicReference<>();
+        StepVerifier.create(inboundFlux, consumeCount)
+            .recordWith(() -> receivedMessages)
+            .then(() -> consumer.rebalance(initialPartitions))
+            .expectNextCount(consumeCount)
+            .then(() -> revokeAndRegisterPartition(initialPartitions, partition))
+            .thenCancel()
+            .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
+        verifyMessages(consumeCount);
+        verifyNoMoreCommitsOn(partition.get());
+    }
+
+    private void revokeAndRegisterPartition(
+        List<TopicPartition> initialPartitions,
+        AtomicReference<ParitionWithOffset> revokedPartitionRef
+    ) {
+        List<TopicPartition> newPartitions = initialPartitions.subList(1, initialPartitions.size());
+        TopicPartition revokedPartition = initialPartitions.get(0);
+        long commitAheadOffset = cluster.committedOffset(consumer.groupMetadata().groupId(), revokedPartition);
+        revokedPartitionRef.set(new ParitionWithOffset(revokedPartition, commitAheadOffset));
+        consumer.rebalance(newPartitions);
+    }
+
+    private void verifyNoMoreCommitsOn(ParitionWithOffset revokedPartition) {
+        long lastCommittedOffset = cluster.committedOffset(consumer.groupMetadata().groupId(), revokedPartition.partition);
+        assertEquals("Consumer committed on partition that was revoked", lastCommittedOffset, revokedPartition.offset);
+    }
 
     /**
      * Tests that transient commit failures are retried with {@link KafkaReceiver#receiveAtmostOnce()}.
@@ -1523,5 +1566,15 @@ public class MockReceiverTest {
 
     private TopicPartition topicPartition(ConsumerRecord<?, ?> record) {
         return new TopicPartition(record.topic(), record.partition());
+    }
+
+    private static class ParitionWithOffset {
+        private final TopicPartition partition;
+        private final long offset;
+
+        public ParitionWithOffset(TopicPartition partition, long offset) {
+            this.partition = partition;
+            this.offset = offset;
+        }
     }
 }

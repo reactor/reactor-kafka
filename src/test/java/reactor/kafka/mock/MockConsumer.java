@@ -162,6 +162,7 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
                 }
             }
             assignmentPending = true;
+            super.subscribe(topics, callback);
         } finally {
             release();
         }

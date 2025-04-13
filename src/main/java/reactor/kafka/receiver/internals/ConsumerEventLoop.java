@@ -295,6 +295,9 @@ class ConsumerEventLoop<K, V> implements Sinks.EmitFailureHandler {
                         public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
                             ConsumerEventLoop.this.onPartitionsRevoked(partitions);
                             ConsumerEventLoop.this.pollEvent.commitBatch.partitionsRevoked(partitions);
+                            if (ConsumerEventLoop.this.atmostOnceOffsets != null) {
+                                ConsumerEventLoop.this.atmostOnceOffsets.partitionsRevoked(partitions);
+                            }
                         }
                     })
                     .accept(consumer);

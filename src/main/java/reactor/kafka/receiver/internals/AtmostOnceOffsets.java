@@ -19,6 +19,7 @@ package reactor.kafka.receiver.internals;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 
+import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -51,5 +52,11 @@ class AtmostOnceOffsets {
             }
         }
         return undoRequired;
+    }
+
+    // The consumer shouldn't commit offsets for partitions that aren't assigned to it
+    // as this might break processing guarantees for other consumers.
+    void partitionsRevoked(Collection<TopicPartition> partitions) {
+        partitions.forEach(committedOffsets::remove);
     }
 }
