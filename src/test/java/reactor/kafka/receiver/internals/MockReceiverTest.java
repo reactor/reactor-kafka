@@ -369,7 +369,7 @@ public class MockReceiverTest {
      * Tests {@link KafkaReceiver#receiveAtmostOnce()} with commit-ahead.
      */
     @Test
-    public void atmostOnceCommitAheadSize() {
+    public void atmostOnceCommitAheadSize() throws InterruptedException {
         int commitAhead = 5;
         receiverOptions = receiverOptions
                 .atmostOnceCommitAheadSize(commitAhead)
@@ -387,6 +387,7 @@ public class MockReceiverTest {
             .thenCancel()
             .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
         verifyMessages(consumeCount);
+        waitForConsumerToClose();
         verifyUndoCommitAhead(consumedOffsets);
     }
 
@@ -416,7 +417,7 @@ public class MockReceiverTest {
      * Tests if commit-ahead doesn't break offsets for partitions that have been revoked from the consumer.
      */
     @Test
-    public void atmostOnceUndoCommitAhead() {
+    public void atmostOnceUndoCommitAhead() throws InterruptedException {
         int commitAhead = 5;
         List<TopicPartition> initialPartitions = new ArrayList<>(cluster.partitions(topic));
         receiverOptions = receiverOptions
@@ -436,6 +437,7 @@ public class MockReceiverTest {
             .thenCancel()
             .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
         verifyMessages(consumeCount);
+        waitForConsumerToClose();
         verifyNoMoreCommitsOn(partition.get());
     }
 
@@ -1566,6 +1568,12 @@ public class MockReceiverTest {
 
     private TopicPartition topicPartition(ConsumerRecord<?, ?> record) {
         return new TopicPartition(record.topic(), record.partition());
+    }
+
+    private void waitForConsumerToClose() throws InterruptedException {
+        while (!consumer.closed()) {
+            Thread.sleep(100);
+        }
     }
 
     private static class ParitionWithOffset {
