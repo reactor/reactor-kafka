@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2023 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2025 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import org.apache.kafka.common.Metric;
 import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
 import org.apache.kafka.common.errors.ProducerFencedException;
@@ -55,6 +56,7 @@ public class MockProducer implements Producer<Integer, String> {
     private final MockCluster cluster;
     private final AtomicInteger inFlightCount;
     public final AtomicInteger sendCount = new AtomicInteger();
+    private final Uuid clientInstanceId = Uuid.randomUuid();
     private SenderOptions<Integer, String> senderOptions;
     private long sendDelayMs;
     private boolean closed;
@@ -130,6 +132,11 @@ public class MockProducer implements Producer<Integer, String> {
     @Override
     public Map<MetricName, ? extends Metric> metrics() {
         return new HashMap<>();
+    }
+
+    @Override
+    public Uuid clientInstanceId(Duration timeout) {
+        return clientInstanceId;
     }
 
     @Override
