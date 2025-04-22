@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2023 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2025 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -856,7 +856,7 @@ public class MockSenderTest {
                 RecordMetadata metadata = null;
                 Exception e = null;
                 if (!fail)
-                    metadata = new RecordMetadata(partition, 0, partitionResponses.size(), 0, 0L, 0, 0);
+                    metadata = new RecordMetadata(partition, 0, partitionResponses.size(), 0, 0, 0);
                 else
                     e = new InvalidTopicException("Topic not found: " + topic);
                 partitionResponses.add(new Response<>(metadata, e, correlation));

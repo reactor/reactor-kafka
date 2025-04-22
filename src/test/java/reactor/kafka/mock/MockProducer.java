@@ -30,11 +30,13 @@ import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
 import org.apache.kafka.common.errors.ProducerFencedException;
+import org.apache.kafka.common.metrics.KafkaMetric;
 import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.internals.ProducerFactory;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -48,6 +50,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static java.lang.Math.toIntExact;
 import static org.junit.Assert.assertTrue;
 
 public class MockProducer implements Producer<Integer, String> {
@@ -57,6 +60,7 @@ public class MockProducer implements Producer<Integer, String> {
     private final AtomicInteger inFlightCount;
     public final AtomicInteger sendCount = new AtomicInteger();
     private final Uuid clientInstanceId = Uuid.randomUuid();
+    private final List<KafkaMetric> addedMetrics = new ArrayList<>();
     private SenderOptions<Integer, String> senderOptions;
     private long sendDelayMs;
     private boolean closed;
@@ -178,7 +182,7 @@ public class MockProducer implements Producer<Integer, String> {
         } else {
             try {
                 long offset = cluster.appendMessage(record, !senderOptions.isTransactional());
-                RecordMetadata metadata = new RecordMetadata(topicPartition, 0, offset, System.currentTimeMillis(), 0L, 4, record.value().length());
+                RecordMetadata metadata = new RecordMetadata(topicPartition, 0, toIntExact(offset), System.currentTimeMillis(), 4, record.value().length());
                 callback.onCompletion(metadata, null);
                 return metadata;
             } catch (Exception e) {
@@ -204,12 +208,6 @@ public class MockProducer implements Producer<Integer, String> {
         verifyTransactionsInitialized();
         this.transactionInFlight = true;
         this.beginCount++;
-    }
-
-    @Override
-    public void sendOffsetsToTransaction(Map<TopicPartition, OffsetAndMetadata> offsets,
-                                         String consumerGroupId) throws ProducerFencedException {
-        sendOffsetsToTransaction(offsets, new ConsumerGroupMetadata(consumerGroupId));
     }
 
     @Override
@@ -249,6 +247,20 @@ public class MockProducer implements Producer<Integer, String> {
         this.transactionInFlight = false;
         cluster.abortTransaction();
         this.abortCount++;
+    }
+
+    @Override
+    public void registerMetricForSubscription(KafkaMetric metric) {
+        addedMetrics.add(metric);
+    }
+
+    @Override
+    public void unregisterMetricFromSubscription(KafkaMetric metric) {
+        addedMetrics.remove(metric);
+    }
+
+    public List<KafkaMetric> addedMetrics() {
+        return Collections.unmodifiableList(addedMetrics);
     }
 
     public void fenceProducer() {

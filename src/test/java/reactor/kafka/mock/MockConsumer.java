@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2025 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,6 +31,7 @@ import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InvalidOffsetException;
+import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.apache.kafka.common.record.TimestampType;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.internals.ConsumerFactory;
@@ -239,7 +240,7 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
                     Message message = log.get((int) offset);
                     ConsumerRecord<Integer, String> record = new ConsumerRecord<Integer, String>(partition.topic(), partition.partition(), offset,
                             message.timestamp(), TimestampType.CREATE_TIME,
-                            0, 4, message.value().length(), message.key(), message.value());
+                            0, 4, message.key(), message.value(), new RecordHeaders(), Optional.empty());
                     records.get(partition).add(record);
                     offsets.put(partition, offset + 1);
                     if (++count == maxPollRecords)
@@ -344,18 +345,6 @@ public class MockConsumer extends org.apache.kafka.clients.consumer.MockConsumer
                 return 0L;
             }
             return offsets.get(partition);
-        } finally {
-            release();
-        }
-    }
-
-    @Override
-    @Deprecated
-    public OffsetAndMetadata committed(TopicPartition partition) {
-        acquire();
-        try {
-            Long offset = cluster.committedOffset(receiverOptions.groupId(), partition);
-            return offset == null ? null : new OffsetAndMetadata(offset);
         } finally {
             release();
         }

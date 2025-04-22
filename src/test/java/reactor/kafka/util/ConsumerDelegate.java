@@ -23,11 +23,13 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.consumer.OffsetAndTimestamp;
 import org.apache.kafka.clients.consumer.OffsetCommitCallback;
+import org.apache.kafka.clients.consumer.SubscriptionPattern;
 import org.apache.kafka.common.Metric;
 import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
+import org.apache.kafka.common.metrics.KafkaMetric;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -95,14 +97,18 @@ public class ConsumerDelegate<K, V> implements Consumer<K, V> {
     }
 
     @Override
-    public void unsubscribe() {
-        delegate.unsubscribe();
+    public void subscribe(SubscriptionPattern pattern, ConsumerRebalanceListener callback) {
+        delegate.subscribe(pattern, callback);
     }
 
     @Override
-    @Deprecated
-    public ConsumerRecords<K, V> poll(long timeout) {
-        return delegate.poll(timeout);
+    public void subscribe(SubscriptionPattern pattern) {
+        delegate.subscribe(pattern);
+    }
+
+    @Override
+    public void unsubscribe() {
+        delegate.unsubscribe();
     }
 
     @Override
@@ -146,6 +152,16 @@ public class ConsumerDelegate<K, V> implements Consumer<K, V> {
     }
 
     @Override
+    public void registerMetricForSubscription(KafkaMetric metric) {
+
+    }
+
+    @Override
+    public void unregisterMetricFromSubscription(KafkaMetric metric) {
+
+    }
+
+    @Override
     public void seek(TopicPartition partition, long offset) {
         delegate.seek(partition, offset);
     }
@@ -173,18 +189,6 @@ public class ConsumerDelegate<K, V> implements Consumer<K, V> {
     @Override
     public long position(TopicPartition partition, Duration timeout) {
         return delegate.position(partition, timeout);
-    }
-
-    @Override
-    @Deprecated
-    public OffsetAndMetadata committed(TopicPartition partition) {
-        return delegate.committed(partition);
-    }
-
-    @Override
-    @Deprecated
-    public OffsetAndMetadata committed(TopicPartition partition, Duration timeout) {
-        return delegate.committed(partition, timeout);
     }
 
     @Override

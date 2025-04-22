@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2025 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,12 +50,12 @@ public class ReceiverRecord<K, V> extends ConsumerRecord<K, V> {
                 consumerRecord.offset(),
                 consumerRecord.timestamp(),
                 consumerRecord.timestampType(),
-                checksum(consumerRecord),
                 consumerRecord.serializedKeySize(),
                 consumerRecord.serializedValueSize(),
                 consumerRecord.key(),
                 consumerRecord.value(),
-                consumerRecord.headers());
+                consumerRecord.headers(),
+            consumerRecord.leaderEpoch());
         this.receiverOffset = receiverOffset;
     }
 
