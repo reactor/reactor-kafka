@@ -71,6 +71,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -1190,7 +1191,8 @@ public class MockReceiverTest {
         testConsumerMethod(c -> {
             Collection<TopicPartition> partitions = Collections.singleton(new TopicPartition(topic, 1));
             c.pause(partitions);
-            assertEquals(partitions, c.paused());
+            // Due to backpressure other partitions can be paused at the same moment in time
+            assertThat(c.paused()).containsAll(partitions);
             c.resume(partitions);
         });
         testConsumerMethod(c -> {

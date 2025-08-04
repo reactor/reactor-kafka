@@ -5,7 +5,8 @@ reactorCore = "3.7.0-SNAPSHOT"
 asciidoctor = "3.3.2"
 kafka-doc = "28"
 log4j = "2.17.1"
-micrometer = "1.10.10"
+# Micrometer 1.10.13 is the last OSS release for 1.10.x series
+micrometer = "1.10.13"
 powermock = "2.0.9"
 reactiveStreams = "1.0.3"
 micrometerTracing = '1.1.4'

@@ -1,6 +1,9 @@
 Reactor Kafka
 ===================
 
+### **NOTICE**
+**Reactor Kafka had been discontinued in May 2025. The team has laid out the reasons to discontinue the project [in the announcement](https://spring.io/blog/2025/05/20/reactor-kafka-discontinued). The OSS and Enterprise Support Timeline can be found [here](https://projectreactor.io/support).**
+
 [![Join the chat at https://gitter.im/reactor/reactor](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/reactor/reactor?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 [![Travis CI](https://img.shields.io/travis/reactor/reactor-kafka.svg)](https://travis-ci.org/reactor/reactor-kafka)
 [![Coverage](https://img.shields.io/codecov/c/github/reactor/reactor-kafka.svg)](https://travis-ci.org/reactor/reactor-kafka)
