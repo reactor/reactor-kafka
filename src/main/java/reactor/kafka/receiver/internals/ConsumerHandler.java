@@ -47,7 +47,6 @@ import java.util.function.Predicate;
  * To be exposed as a public class in the next major version (a subject to the API review).
  */
 class ConsumerHandler<K, V> {
-
     /** Note: Methods added to this set should also be included in javadoc for {@link KafkaReceiver#doOnConsumer(Function)} */
     private static final Set<String> DELEGATE_METHODS = new HashSet<>(Arrays.asList(
         "assignment",
@@ -126,10 +125,15 @@ class ConsumerHandler<K, V> {
     }
 
     public Mono<Void> close() {
+        if (!consumerEventLoop.isActive.get()) {
+            return Mono.empty();
+        }
+
         if (consumerListener != null) {
             consumerListener.consumerRemoved(consumerId, consumer);
         }
-        return consumerEventLoop.stop().doFinally(__ -> eventScheduler.dispose());
+
+        return consumerEventLoop.stop().doFinally(__ -> eventScheduler.disposeGracefully().subscribe());
     }
 
     public <T> Mono<T> doOnConsumer(Function<Consumer<K, V>, ? extends T> function) {

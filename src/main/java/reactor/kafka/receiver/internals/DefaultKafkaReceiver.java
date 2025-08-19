@@ -172,6 +172,16 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
         return consumerHandler.doOnConsumer(function);
     }
 
+    @Override
+    public Mono<Void> stop() {
+        ConsumerHandler<K, V> consumerHandler = consumerHandlerRef.get();
+        if (consumerHandler == null) {
+            log.debug("KafkaReceiver already stopped");
+            return Mono.empty();
+        }
+        return consumerHandler.close().doFinally(__ -> consumerHandlerRef.compareAndSet(consumerHandler, null));
+    }
+
     private <T> Flux<T> withHandler(AckMode ackMode, BiFunction<Scheduler, ConsumerHandler<K, V>, Flux<T>> function) {
         return Flux.usingWhen(
             Mono.fromCallable(() -> {
@@ -190,7 +200,7 @@ public class DefaultKafkaReceiver<K, V> implements KafkaReceiver<K, V> {
                 scheduler -> function.apply(scheduler, handler),
                 Scheduler::dispose
             ),
-            handler -> handler.close().doFinally(__ -> consumerHandlerRef.compareAndSet(handler, null))
+            handler -> handler.close().doFinally(__ -> consumerHandlerRef.set(null))
         );
     }
 
