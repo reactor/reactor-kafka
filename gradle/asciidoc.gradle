@@ -61,6 +61,9 @@ configure(rootProject) {
   task docsZip(type: Zip, dependsOn: [asciidoctor, asciidoctorPdf]) {
     archiveBaseName.set("reactor-kafka")
     archiveClassifier.set('docs')
+    from("${rootDir}/docs/src/docs/dist") {
+      include "LICENSE"
+    }
     afterEvaluate() {
       //we configure the pdf copy late, when a potential customVersion has been applied to rootProject
       from(asciidoctorPdf) {

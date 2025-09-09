@@ -37,18 +37,30 @@ jar {
     manifest.attributes["Implementation-Title"] = project.name
     manifest.attributes["Implementation-Version"] = project.version
     from '../NOTICE'
+    from("${rootDir}/docs/src/docs/dist") {
+        include "LICENSE"
+        into "META-INF"
+    }
 }
 
 task sourcesJar(type: Jar) {
     archiveClassifier.set('sources')
     from sourceSets.main.allSource
     from '../NOTICE'
+    from("${rootDir}/docs/src/docs/dist") {
+        include "LICENSE"
+        into "META-INF"
+    }
 }
 
 task javadocJar(type: Jar) {
     archiveClassifier.set('javadoc')
     from javadoc
     from '../NOTICE'
+    from("${rootDir}/docs/src/docs/dist") {
+        include "LICENSE"
+        into "META-INF"
+  }
 }
 
 static def outputToGha(String versionType, String fullVersion) {
