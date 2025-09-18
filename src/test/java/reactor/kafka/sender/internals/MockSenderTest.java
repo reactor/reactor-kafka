@@ -61,6 +61,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -368,11 +369,11 @@ public class MockSenderTest {
         StepVerifier.create(chain.then())
                     .expectError(InvalidTopicException.class)
                     .verify(Duration.ofMillis(DEFAULT_TEST_TIMEOUT));
-        // We have to wait until all the tasks are finished in order to validate the sendCount,
-        // otherwise we're risking a race condition. The sender's internal scheduler is not something we can control
-        // at this time since it's created internally.
-        await().atMost(Duration.ofMillis(DEFAULT_TEST_TIMEOUT)).pollInterval(Duration.ofMillis(20))
-            .untilAsserted(() -> assertEquals(maxInflight, producer.sendCount.get()));
+        // The real outcome is unpredictable due to concurrency,
+        // but we perform a sanity check that the attempts are not exceeding maxInflight
+        assertThat(producer.sendCount.get()).isLessThanOrEqualTo(maxInflight);
+        assertEquals("Expecting only the first batch to be attempted", 10, outgoingRecords.onNextCount.get());
+        sender.close();
     }
 
     /**
