@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2020-2025 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ import org.apache.kafka.common.Metric;
 import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.Uuid;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -318,5 +319,10 @@ public class ConsumerDelegate<K, V> implements Consumer<K, V> {
     @Override
     public void wakeup() {
         delegate.wakeup();
+    }
+
+    @Override
+    public Uuid clientInstanceId(Duration duration) {
+        return delegate.clientInstanceId(duration);
     }
 }
