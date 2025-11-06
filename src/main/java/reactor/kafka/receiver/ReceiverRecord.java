@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2025 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,9 +18,6 @@ package reactor.kafka.receiver;
 
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-
 /**
  * Represents an incoming record dispatched by {@link KafkaReceiver}.
  *
@@ -29,46 +26,21 @@ import java.lang.reflect.Method;
  */
 public class ReceiverRecord<K, V> extends ConsumerRecord<K, V> {
 
-    private static final Method CHECKSUM_METHOD;
-
-    static {
-        Method method;
-        try {
-            method = ConsumerRecord.class.getDeclaredMethod("checksum");
-        } catch (NoSuchMethodException | SecurityException e) {
-            method = null;
-        }
-        CHECKSUM_METHOD = method;
-    }
-
     private final ReceiverOffset receiverOffset;
 
-    @SuppressWarnings("deprecation")
     public ReceiverRecord(ConsumerRecord<K, V> consumerRecord, ReceiverOffset receiverOffset) {
         super(consumerRecord.topic(),
                 consumerRecord.partition(),
                 consumerRecord.offset(),
                 consumerRecord.timestamp(),
                 consumerRecord.timestampType(),
-                checksum(consumerRecord),
                 consumerRecord.serializedKeySize(),
                 consumerRecord.serializedValueSize(),
                 consumerRecord.key(),
                 consumerRecord.value(),
-                consumerRecord.headers());
+                consumerRecord.headers(),
+                consumerRecord.leaderEpoch());
         this.receiverOffset = receiverOffset;
-    }
-
-    private static Long checksum(@SuppressWarnings("rawtypes") ConsumerRecord consumerRecord) {
-        Long checksum = -1L;
-        if (CHECKSUM_METHOD != null) {
-            try {
-                checksum = (Long) CHECKSUM_METHOD.invoke(consumerRecord);
-            } catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
-                throw new IllegalStateException(e);
-            }
-        }
-        return checksum;
     }
 
     /**
