@@ -14,6 +14,7 @@ micrometerTracing = '1.1.4'
 
 [libraries]
 kafka = "org.apache.kafka:kafka-clients:3.9.1"
+lz4 = "org.lz4:lz4-java:1.10.1"
 reactor-core = { module = "io.projectreactor:reactor-core", version.ref = "reactorCore" }
 reactor-test = { module = "io.projectreactor:reactor-test", version.ref = "reactorCore" }
 
